@@ -6,8 +6,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json && vite build --config miniapp/vite.config.ts",
-    "start": "node dist/index.js",
+    "build": "vite build --config miniapp/vite.config.ts",
+    "start": "tsx src/index.ts",
     "prisma": "prisma"
   },
   "prisma": {
@@ -22,14 +22,14 @@
     "hono": "^4.13.3",
     "luxon": "^3.7.2",
     "nanoid": "^6.0.1",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "tsx": "^4.23.12"
   },
   "devDependencies": {
     "@types/luxon": "^3.7.5",
     "@types/node": "^26.2.0",
     "@types/qrcode": "^1.5.6",
     "prisma": "^6.19.3",
-    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
