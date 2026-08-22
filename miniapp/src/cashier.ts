@@ -1,9 +1,11 @@
+import type { GuestCard } from "./api.ts";
 import {
   applyCheck,
   lookupGuest,
+  manualAdjust,
   openVisit,
   redeemBonuses,
-  type GuestCard,
+  redeemCoupon,
 } from "./api.ts";
 
 type DetectedBarcode = {
@@ -67,7 +69,7 @@ const renderCard = (root: HTMLElement, card: GuestCard) => {
   if (!(cardEl instanceof HTMLElement)) {
     return;
   }
-  const coupons = card.coupons.length > 0 ? card.coupons.join(", ") : "нет";
+  const coupons = card.coupons.length > 0 ? card.coupons.map((coupon) => coupon.title).join(", ") : "нет";
   cardEl.hidden = false;
   cardEl.innerHTML = [
     `<p><strong>${guestName(card)}</strong></p>`,
@@ -79,6 +81,20 @@ const renderCard = (root: HTMLElement, card: GuestCard) => {
   const actions = root.querySelector("[data-actions]");
   if (actions instanceof HTMLElement) {
     actions.hidden = false;
+  }
+  const couponSelect = root.querySelector("[data-coupon-select]");
+  const couponForm = root.querySelector("[data-coupon]");
+  if (couponSelect instanceof HTMLSelectElement) {
+    couponSelect.replaceChildren();
+    for (const coupon of card.coupons) {
+      const option = document.createElement("option");
+      option.value = coupon.id;
+      option.textContent = coupon.title;
+      couponSelect.append(option);
+    }
+  }
+  if (couponForm instanceof HTMLElement) {
+    couponForm.hidden = card.coupons.length === 0;
   }
 };
 
@@ -114,6 +130,24 @@ export const renderCashier = (root: HTMLElement) => {
           <input name="amount" type="number" min="1" step="1" required />
         </label>
         <button type="submit">Списать</button>
+      </form>
+      <form data-manual>
+        <label>
+          Изменить баланс
+          <input name="delta" type="number" step="1" required />
+        </label>
+        <label>
+          Комментарий
+          <input name="comment" autocomplete="off" required />
+        </label>
+        <button type="submit">Ручная правка</button>
+      </form>
+      <form data-coupon>
+        <label>
+          Купон
+          <select name="couponId" data-coupon-select required></select>
+        </label>
+        <button type="submit">Погасить купон</button>
       </form>
       <button type="button" data-visit>Открыть визит</button>
     </section>
@@ -262,6 +296,62 @@ export const renderCashier = (root: HTMLElement) => {
         current = { ...guest, balance: result.data.balance };
         renderCard(root, current);
         setStatus(root, `Списано. Баланс: ${result.data.balance}`);
+      })();
+    });
+  }
+
+  const manualForm = root.querySelector("[data-manual]");
+  if (manualForm instanceof HTMLFormElement) {
+    manualForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const guest = current;
+      if (guest === undefined) {
+        setStatus(root, "Сначала найдите гостя", true);
+        return;
+      }
+      const data = new FormData(manualForm);
+      const delta = Number(data.get("delta"));
+      const comment = String(data.get("comment") ?? "");
+      void (async () => {
+        const result = await manualAdjust({ ...queryFromCard(guest), delta, comment });
+        if (result.kind === "error") {
+          setStatus(root, result.message, true);
+          return;
+        }
+        current = { ...guest, balance: result.data.balance };
+        renderCard(root, current);
+        setStatus(root, `Баланс: ${result.data.balance}`);
+      })();
+    });
+  }
+
+  const couponForm = root.querySelector("[data-coupon]");
+  if (couponForm instanceof HTMLFormElement) {
+    couponForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const guest = current;
+      if (guest === undefined) {
+        setStatus(root, "Сначала найдите гостя", true);
+        return;
+      }
+      const data = new FormData(couponForm);
+      const couponId = String(data.get("couponId") ?? "");
+      if (couponId.length === 0) {
+        setStatus(root, "Выберите купон", true);
+        return;
+      }
+      void (async () => {
+        const result = await redeemCoupon({ couponId });
+        if (result.kind === "error") {
+          setStatus(root, result.message, true);
+          return;
+        }
+        current = {
+          ...guest,
+          coupons: guest.coupons.filter((coupon) => coupon.id !== couponId),
+        };
+        renderCard(root, current);
+        setStatus(root, "Купон погашен");
       })();
     });
   }

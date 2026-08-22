@@ -18,6 +18,9 @@ export const submitScore = async (store: Store, input: SubmitScoreParameters) =>
   if (user === null) {
     throw new DomainError("not_found", "Гость не найден");
   }
+  if (user.role !== "guest") {
+    throw new DomainError("forbidden", "Недостаточно прав");
+  }
   const visit = await store.getActiveVisit(user.id, input.now);
   if (visit === null) {
     throw new DomainError("no_visit", "Игры доступны во время визита в «Друзьях»");

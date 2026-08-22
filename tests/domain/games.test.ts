@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import { submitScore } from "../../src/domain/games.ts";
 import { applyCheck } from "../../src/domain/ledger.ts";
 import { registerGuest } from "../../src/domain/users.ts";
+import { openOrExtendVisit } from "../../src/domain/visits.ts";
 import { weekStartMoscow } from "../../src/domain/week.ts";
 import { MemoryStore } from "../../src/store/memory.ts";
 
@@ -34,6 +35,19 @@ test("rejects score without visit", async () => {
   await expect(
     submitScore(store, { userId: user.id, slug: "match3", points: 100, now }),
   ).rejects.toMatchObject({ code: "no_visit" });
+});
+
+test("master with an open visit cannot submitScore", async () => {
+  const { store, staff } = await seed();
+  await openOrExtendVisit(store, {
+    userId: staff.id,
+    openedBy: staff.id,
+    hours: 4,
+    now,
+  });
+  await expect(
+    submitScore(store, { userId: staff.id, slug: "match3", points: 100, now }),
+  ).rejects.toMatchObject({ code: "forbidden" });
 });
 
 test("rejects score above cap after visit opened", async () => {

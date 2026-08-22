@@ -13,6 +13,7 @@ import type {
   UserRecord,
   VisitRecord,
 } from "../domain/types.ts";
+import { moscowCalendarYear } from "../domain/week.ts";
 import type { NewUser, Store } from "./types.ts";
 
 export class MemoryStore implements Store {
@@ -113,7 +114,7 @@ export class MemoryStore implements Store {
   }
   async hasBirthdayLedgerInYear(userId: string, year: number) {
     return this.ledger.some(
-      (l) => l.userId === userId && l.type === "birthday" && l.createdAt.getUTCFullYear() === year,
+      (l) => l.userId === userId && l.type === "birthday" && moscowCalendarYear(l.createdAt) === year,
     );
   }
   async listUsersWithBirthday() {

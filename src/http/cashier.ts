@@ -97,7 +97,7 @@ const guestCard = async (store: Store, guest: UserRecord) => {
     balance: guest.balance,
     qrToken: guest.qrToken,
     visitActive: visit !== null,
-    coupons: coupons.map((coupon) => coupon.title),
+    coupons: coupons.map((coupon) => ({ id: coupon.id, title: coupon.title })),
   };
 };
 

@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import type { Store } from "../store/types.ts";
-import { MOSCOW } from "./week.ts";
+import { MOSCOW, moscowCalendarYear } from "./week.ts";
 
 const anniversaryInYear = (birthday: Date, year: number): DateTime => {
   const month = birthday.getUTCMonth() + 1;
@@ -26,7 +26,7 @@ export function isBirthdayWeek(birthday: Date, now: Date): boolean {
 export async function grantDueBirthdays(store: Store, now: Date) {
   const settings = await store.getSettings();
   const users = await store.listUsersWithBirthday();
-  const year = DateTime.fromJSDate(now, { zone: MOSCOW }).year;
+  const year = moscowCalendarYear(now);
   let granted = 0;
   for (const user of users) {
     if (user.birthday === null) {

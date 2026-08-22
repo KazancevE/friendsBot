@@ -58,6 +58,27 @@ test("master can apply check via api with phone or qrToken", async () => {
   expect(qrBody.balance).toBe(900);
 });
 
+test("lookup returns coupons as id and title", async () => {
+  const { store, guest, master, app } = await seedCashier();
+  const coupon = await store.createCoupon({
+    userId: guest.id,
+    title: "Кальян в подарок",
+    weekId: null,
+  });
+  const initData = buildInitData({ id: Number(master.telegramId) }, BOT_TOKEN);
+  const res = await app.request("/api/cashier/lookup", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Telegram-Init-Data": initData,
+    },
+    body: JSON.stringify({ phone: guest.phone }),
+  });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { coupons: ReadonlyArray<{ id: string; title: string }> };
+  expect(body.coupons).toEqual([{ id: coupon.id, title: "Кальян в подарок" }]);
+});
+
 test("guest cannot apply check", async () => {
   const { store, guest, app } = await seedCashier();
   const initData = buildInitData({ id: Number(guest.telegramId) }, BOT_TOKEN);

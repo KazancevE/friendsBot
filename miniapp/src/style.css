@@ -70,7 +70,8 @@ form + button {
   margin-top: 0.85rem;
 }
 
-input {
+input,
+select {
   background: var(--bg);
   border: 1px solid var(--coal);
   border-radius: 0.5rem;

@@ -8,6 +8,11 @@ export type Me = {
   readonly visitActive: boolean;
 };
 
+export type GuestCoupon = {
+  readonly id: string;
+  readonly title: string;
+};
+
 export type GuestCard = {
   readonly id: string;
   readonly firstName: string | null;
@@ -16,7 +21,7 @@ export type GuestCard = {
   readonly balance: number;
   readonly qrToken: string;
   readonly visitActive: boolean;
-  readonly coupons: ReadonlyArray<string>;
+  readonly coupons: ReadonlyArray<GuestCoupon>;
 };
 
 export type CheckResult = {
@@ -61,8 +66,11 @@ const isMe = (value: unknown): value is Me => {
   );
 };
 
-const isStringArray = (value: unknown): value is ReadonlyArray<string> => {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+const isGuestCoupon = (value: unknown): value is GuestCoupon => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.id === "string" && typeof value.title === "string";
 };
 
 const isGuestCard = (value: unknown): value is GuestCard => {
@@ -77,7 +85,8 @@ const isGuestCard = (value: unknown): value is GuestCard => {
     typeof value.balance === "number" &&
     typeof value.qrToken === "string" &&
     typeof value.visitActive === "boolean" &&
-    isStringArray(value.coupons)
+    Array.isArray(value.coupons) &&
+    value.coupons.every(isGuestCoupon)
   );
 };
 
@@ -250,4 +259,30 @@ export const openVisit = ({ phone, qrToken }: OpenVisitParameters) => {
       return isRecord(value) && typeof value.visitActive === "boolean";
     },
   );
+};
+
+type ManualAdjustParameters = {
+  readonly phone?: string;
+  readonly qrToken?: string;
+  readonly delta: number;
+  readonly comment: string;
+};
+
+export const manualAdjust = ({ phone, qrToken, delta, comment }: ManualAdjustParameters) => {
+  return postJson("/api/cashier/manual", { phone, qrToken, delta, comment }, isRedeemResult);
+};
+
+type RedeemCouponParameters = {
+  readonly couponId: string;
+};
+
+const isCouponRedeemResult = (value: unknown): value is { readonly id: string; readonly status: string } => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.id === "string" && typeof value.status === "string";
+};
+
+export const redeemCoupon = ({ couponId }: RedeemCouponParameters) => {
+  return postJson("/api/cashier/coupon/redeem", { couponId }, isCouponRedeemResult);
 };

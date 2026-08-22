@@ -29,6 +29,7 @@ import type {
   UserRecord,
   VisitRecord,
 } from "../domain/types.ts";
+import { moscowYearStart } from "../domain/week.ts";
 import type { NewUser, Store } from "./types.ts";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -182,8 +183,8 @@ export class PrismaStore implements Store {
   }
 
   async hasBirthdayLedgerInYear(userId: string, year: number): Promise<boolean> {
-    const start = new Date(Date.UTC(year, 0, 1));
-    const end = new Date(Date.UTC(year + 1, 0, 1));
+    const start = moscowYearStart(year);
+    const end = moscowYearStart(year + 1);
     const count = await this.prisma.ledger.count({
       where: {
         userId,
