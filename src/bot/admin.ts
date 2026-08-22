@@ -5,7 +5,7 @@ import { recipientsForBroadcast } from "../domain/broadcast.ts";
 import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
-import type { Role, Settings } from "../domain/types.ts";
+import type { PrizePlace, Role, Settings } from "../domain/types.ts";
 import type { BotContext } from "./context.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
@@ -18,6 +18,7 @@ const SETTINGS_CONVERSATIONS = {
   registration: "setRegistrationBonus",
   birthday: "setBirthdayBonus",
   visitHours: "setVisitHours",
+  prizes: "setWeeklyPrizes",
 } as const;
 
 type SettingsAction = keyof typeof SETTINGS_CONVERSATIONS;
@@ -27,7 +28,8 @@ const isSettingsAction = (value: string): value is SettingsAction => {
     value === "percent" ||
     value === "registration" ||
     value === "birthday" ||
-    value === "visitHours"
+    value === "visitHours" ||
+    value === "prizes"
   );
 };
 
@@ -41,7 +43,14 @@ const settingsKeyboard = (): InlineKeyboard => {
     .text("Регистрация", "admin:registration")
     .row()
     .text("День рождения", "admin:birthday")
-    .text("Визит", "admin:visitHours");
+    .text("Визит", "admin:visitHours")
+    .row()
+    .text("Призы недели", "admin:prizes");
+};
+
+const formatPrizeRow = (row: PrizePlace) => {
+  const coupon = row.couponTitle === null ? "без купона" : row.couponTitle;
+  return `${row.place} место: ${row.bonuses} бонусов, ${coupon}`;
 };
 
 const formatSettings = (settings: Settings): string => {
@@ -50,6 +59,9 @@ const formatSettings = (settings: Settings): string => {
     `Бонус регистрации: ${settings.registrationBonus}`,
     `Бонус на день рождения: ${settings.birthdayBonus}`,
     `Длина визита (часы): ${settings.visitHours}`,
+    `Победителей: ${settings.winnersCount}`,
+    "Призы:",
+    ...settings.prizeTable.map(formatPrizeRow),
   ].join("\n");
 };
 
@@ -281,6 +293,60 @@ export async function setVisitHoursConversation(
     return;
   }
   await ctx.reply(`Длина визита: ${result.value} ч`);
+}
+
+export async function setWeeklyPrizesConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+  const current = await conversation.external((outer) => outer.store.getSettings());
+  const winnersCount = await askInt(
+    conversation,
+    ctx,
+    `Сколько победителей (сейчас ${current.winnersCount}). Введите N`,
+  );
+  if (winnersCount < 1) {
+    await ctx.reply("N должно быть ≥ 1");
+    return;
+  }
+  const prizeTable: PrizePlace[] = [];
+  for (let place = 1; place <= winnersCount; place += 1) {
+    const bonuses = await askInt(
+      conversation,
+      ctx,
+      `Место ${place}: бонусы`,
+    );
+    await ctx.reply(`Место ${place}: название купона или «-»`);
+    const raw = (
+      await conversation.waitFor(":text", {
+        otherwise: (c) => c.reply("Отправьте название купона или «-»"),
+      })
+    ).msg.text.trim();
+    const couponTitle = raw === "-" || raw.length === 0 ? null : raw;
+    prizeTable.push({ place, bonuses, couponTitle });
+  }
+  const result = await conversation.external(async (outer) => {
+    if (outer.dbUser?.role !== "admin") {
+      return { ok: false as const, message: ADMIN_ONLY };
+    }
+    try {
+      const settings = await outer.store.updateSettings({ winnersCount, prizeTable });
+      return { ok: true as const, settings };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+  await ctx.reply(formatSettings(result.settings));
 }
 
 export async function assignRoleConversation(
@@ -644,7 +710,7 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     await ctx.conversation.enter("createPromo");
   });
 
-  bot.callbackQuery(/^admin:(percent|registration|birthday|visitHours)$/, async (ctx) => {
+  bot.callbackQuery(/^admin:(percent|registration|birthday|visitHours|prizes)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireAdminOrReply(ctx))) {
       return;

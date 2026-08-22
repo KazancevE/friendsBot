@@ -306,6 +306,11 @@ export class PrismaStore implements Store {
     return row ? toGame(row) : null;
   }
 
+  async listOpenWeeks(): Promise<GameWeekRecord[]> {
+    const rows = await this.prisma.gameWeek.findMany({ where: { closedAt: null } });
+    return rows.map(toWeek);
+  }
+
   async getOrCreateOpenWeek(gameId: string, weekStart: Date): Promise<GameWeekRecord> {
     const existing = await this.prisma.gameWeek.findUnique({
       where: { gameId_weekStart: { gameId, weekStart } },

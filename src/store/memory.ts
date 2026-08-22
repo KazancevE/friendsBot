@@ -172,6 +172,9 @@ export class MemoryStore implements Store {
   async findGameBySlug(slug: string) {
     return [...this.games.values()].find((g) => g.slug === slug) ?? null;
   }
+  async listOpenWeeks() {
+    return [...this.weeks.values()].filter((week) => week.closedAt === null);
+  }
   async getOrCreateOpenWeek(gameId: string, weekStart: Date) {
     const found = [...this.weeks.values()].find(
       (w) => w.gameId === gameId && w.weekStart.getTime() === weekStart.getTime() && !w.closedAt,

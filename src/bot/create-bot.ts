@@ -12,6 +12,7 @@ import {
   setPercentConversation,
   setRegistrationBonusConversation,
   setVisitHoursConversation,
+  setWeeklyPrizesConversation,
   wireAdminHandlers,
 } from "./admin.ts";
 import type { BotContext } from "./context.ts";
@@ -67,6 +68,7 @@ export function createBot(
   bot.use(createConversation(setRegistrationBonusConversation, "setRegistrationBonus"));
   bot.use(createConversation(setBirthdayBonusConversation, "setBirthdayBonus"));
   bot.use(createConversation(setVisitHoursConversation, "setVisitHours"));
+  bot.use(createConversation(setWeeklyPrizesConversation, "setWeeklyPrizes"));
   bot.use(createConversation(assignRoleConversation, "assignRole"));
   bot.use(createConversation(addMenuItemConversation, "addMenuItem"));
   bot.use(createConversation(editContactsConversation, "editContacts"));

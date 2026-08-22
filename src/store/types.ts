@@ -68,6 +68,7 @@ export interface Store {
 
   listActiveGames(): Promise<GameRecord[]>;
   findGameBySlug(slug: string): Promise<GameRecord | null>;
+  listOpenWeeks(): Promise<GameWeekRecord[]>;
   getOrCreateOpenWeek(gameId: string, weekStart: Date): Promise<GameWeekRecord>;
   addScore(weekId: string, userId: string, delta: number, at: Date): Promise<GameScoreRecord>;
   listWeekScores(weekId: string): Promise<GameScoreRecord[]>;
