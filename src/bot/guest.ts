@@ -1,5 +1,5 @@
 import type { Conversation } from "@grammyjs/conversations";
-import { InlineKeyboard } from "grammy";
+import { InlineKeyboard, InputFile } from "grammy";
 import type { Bot } from "grammy";
 import { listActiveMenu } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
@@ -8,6 +8,7 @@ import type { MenuItemRecord, PromoRecord } from "../domain/types.ts";
 import { updateGuestProfile } from "../domain/users.ts";
 import type { BotContext } from "./context.ts";
 import { contactKeyboard, mainKeyboard } from "./keyboards.ts";
+import { qrPngBuffer } from "./qr.ts";
 import { askBirthday } from "./register.ts";
 
 const formatMenu = (items: MenuItemRecord[]): string => {
@@ -106,7 +107,10 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       await ctx.conversation.enter("registerGuest");
       return;
     }
-    await ctx.reply(`Баланс: ${ctx.dbUser.balance}\nКод: ${ctx.dbUser.qrToken}`);
+    const buf = await qrPngBuffer(ctx.dbUser.qrToken);
+    await ctx.replyWithPhoto(new InputFile(buf), {
+      caption: `Баланс: ${ctx.dbUser.balance}\nКод: ${ctx.dbUser.qrToken}`,
+    });
   });
 
   bot.hears("История", async (ctx) => {
