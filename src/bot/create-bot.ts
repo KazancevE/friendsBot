@@ -5,6 +5,7 @@ import type { Store } from "../store/types.ts";
 import {
   addMenuItemConversation,
   assignRoleConversation,
+  createPromoConversation,
   editContactsConversation,
   editDirectionsConversation,
   setBirthdayBonusConversation,
@@ -68,6 +69,7 @@ export function createBot(
   bot.use(createConversation(addMenuItemConversation, "addMenuItem"));
   bot.use(createConversation(editContactsConversation, "editContacts"));
   bot.use(createConversation(editDirectionsConversation, "editDirections"));
+  bot.use(createConversation(createPromoConversation, "createPromo"));
   wireGuestHandlers(bot);
   wireStaffHandlers(bot);
   wireAdminHandlers(bot);

@@ -1,6 +1,7 @@
 import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard } from "grammy";
-import type { Bot } from "grammy";
+import type { Api, Bot } from "grammy";
+import { recipientsForBroadcast } from "../domain/broadcast.ts";
 import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
@@ -10,6 +11,7 @@ import type { BotContext } from "./context.ts";
 type BotConversation = Conversation<BotContext, BotContext>;
 
 const ADMIN_ONLY = "Только для админа";
+const BROADCAST_BATCH_SIZE = 25;
 
 const SETTINGS_CONVERSATIONS = {
   percent: "setPercent",
@@ -68,6 +70,81 @@ const requireAdminOrReply = async (ctx: BotContext): Promise<boolean> => {
   }
   await ctx.reply(ADMIN_ONLY);
   return false;
+};
+
+const parseYesNo = (raw: string): boolean | undefined => {
+  const value = raw.trim().toLowerCase();
+  if (value === "да" || value === "yes" || value === "+") {
+    return true;
+  }
+  if (value === "нет" || value === "no" || value === "-") {
+    return false;
+  }
+  return undefined;
+};
+
+const askYesNo = async (
+  conversation: BotConversation,
+  ctx: BotContext,
+  prompt: string,
+): Promise<boolean> => {
+  await ctx.reply(prompt);
+  for (;;) {
+    const raw = (
+      await conversation.waitFor(":text", {
+        otherwise: (c) => c.reply("Ответьте «да» или «нет»"),
+      })
+    ).msg.text;
+    const parsed = parseYesNo(raw);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+    await ctx.reply("Ответьте «да» или «нет»");
+  }
+};
+
+const sendPromoToChat = async (input: {
+  api: Api;
+  chatId: string;
+  body: string;
+  photoId: string | undefined;
+}) => {
+  if (input.photoId !== undefined) {
+    await input.api.sendPhoto(input.chatId, input.photoId, { caption: input.body });
+    return;
+  }
+  await input.api.sendMessage(input.chatId, input.body);
+};
+
+const sendBroadcast = async (input: {
+  api: Api;
+  telegramIds: readonly bigint[];
+  body: string;
+  photoId: string | undefined;
+}): Promise<{ sent: number; failed: number }> => {
+  let sent = 0;
+  let failed = 0;
+  for (let i = 0; i < input.telegramIds.length; i += BROADCAST_BATCH_SIZE) {
+    const batch = input.telegramIds.slice(i, i + BROADCAST_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (telegramId) => {
+        try {
+          await sendPromoToChat({
+            api: input.api,
+            chatId: telegramId.toString(),
+            body: input.body,
+            photoId: input.photoId,
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    sent += results.filter((ok) => ok).length;
+    failed += results.filter((ok) => !ok).length;
+  }
+  return { sent, failed };
 };
 
 export async function setPercentConversation(
@@ -458,6 +535,92 @@ export async function editDirectionsConversation(
   await ctx.reply("«Как доехать» обновлено");
 }
 
+export async function createPromoConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+
+  await ctx.reply("Текст акции");
+  let body: string | undefined;
+  while (body === undefined) {
+    const raw = (
+      await conversation.waitFor(":text", {
+        otherwise: (c) => c.reply("Отправьте текст акции"),
+      })
+    ).msg.text.trim();
+    if (raw.length === 0) {
+      await ctx.reply("Текст не должен быть пустым");
+      continue;
+    }
+    body = raw;
+  }
+
+  await ctx.reply("Пришлите фото или «пропустить»");
+  let photoId: string | undefined;
+  for (;;) {
+    const next = await conversation.wait();
+    const photos = next.message?.photo;
+    if (photos !== undefined && photos.length > 0) {
+      const largest = photos[photos.length - 1];
+      if (largest !== undefined) {
+        photoId = largest.file_id;
+        break;
+      }
+    }
+    const text = next.message?.text?.trim().toLowerCase();
+    if (text === "пропустить" || text === "-" || text === "нет") {
+      break;
+    }
+    await ctx.reply("Пришлите фото или «пропустить»");
+  }
+
+  const showInFeed = await askYesNo(conversation, ctx, "Показать в разделе «Акции»? да/нет");
+  const sendNow = await askYesNo(conversation, ctx, "Разослать сейчас? да/нет");
+
+  const result = await conversation.external(async (outer) => {
+    const actor = outer.dbUser;
+    if (!actor || actor.role !== "admin") {
+      return { ok: false as const, message: ADMIN_ONLY };
+    }
+    try {
+      await outer.store.createPromo({
+        body,
+        photos: photoId === undefined ? [] : [photoId],
+        showInFeed,
+      });
+      if (!sendNow) {
+        return { ok: true as const, sent: 0, failed: 0, skippedSend: true as const };
+      }
+      const telegramIds = await recipientsForBroadcast(outer.store);
+      const stats = await sendBroadcast({
+        api: outer.api,
+        telegramIds,
+        body,
+        photoId,
+      });
+      return { ok: true as const, ...stats, skippedSend: false as const };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+  if (result.skippedSend) {
+    await ctx.reply("Акция сохранена");
+    return;
+  }
+  await ctx.reply(`Акция сохранена. Разослано: ${result.sent}, ошибок: ${result.failed}`);
+}
+
 export function wireAdminHandlers(bot: Bot<BotContext>) {
   bot.hears("Настройки", async (ctx) => {
     if (!(await requireAdminOrReply(ctx))) {
@@ -478,7 +641,7 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }
-    await ctx.reply("Настройка рассылки будет в следующей версии");
+    await ctx.conversation.enter("createPromo");
   });
 
   bot.callbackQuery(/^admin:(percent|registration|birthday|visitHours)$/, async (ctx) => {

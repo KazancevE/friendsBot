@@ -19,6 +19,9 @@ export function mainKeyboard(role: Role): Keyboard {
     .text("Контакты")
     .text("Игры");
 
+  if (role === "guest") {
+    keyboard.row().text("Отключить рассылку");
+  }
   if (role === "master" || role === "admin") {
     keyboard.row().text("Найти гостя");
   }
