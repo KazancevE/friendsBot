@@ -5,7 +5,7 @@ export function contactKeyboard(): Keyboard {
   return new Keyboard().requestContact("Поделиться контактом").resized().oneTime();
 }
 
-const cashierWebAppUrl = (publicUrl: string) => {
+const miniAppUrl = (publicUrl: string) => {
   const origin = publicUrl.replace(/\/$/, "");
   return `${origin}/app/`;
 };
@@ -26,14 +26,19 @@ export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
     .text("Акции")
     .text("Как доехать")
     .row()
-    .text("Контакты")
-    .text("Игры");
+    .text("Контакты");
+
+  if (role === "guest") {
+    keyboard.webApp("Игры", miniAppUrl(publicUrl));
+  } else {
+    keyboard.text("Игры");
+  }
 
   if (role === "guest") {
     keyboard.row().text("Отключить рассылку");
   }
   if (role === "master" || role === "admin") {
-    keyboard.row().text("Найти гостя").row().webApp("Касса QR", cashierWebAppUrl(publicUrl));
+    keyboard.row().text("Найти гостя").row().webApp("Касса QR", miniAppUrl(publicUrl));
   }
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");

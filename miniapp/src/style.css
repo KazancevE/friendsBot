@@ -34,6 +34,17 @@ h1 {
   font-size: 1.4rem;
 }
 
+h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.leaderboard {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--smoke);
+}
+
 .muted {
   margin: 0 0 1rem;
   color: var(--ash);

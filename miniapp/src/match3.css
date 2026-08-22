@@ -1,0 +1,37 @@
+.match3-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--smoke);
+}
+
+.match3-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 0.25rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--coal);
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+}
+
+.match3-tile {
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 0;
+  font-size: clamp(0.9rem, 4vw, 1.45rem);
+  line-height: 1;
+  background: var(--coal);
+  color: var(--text);
+  border-radius: 0.4rem;
+}
+
+.match3-tile.selected {
+  outline: 2px solid var(--ember);
+  background: #4a3228;
+}
+
+.match3-done {
+  margin-top: 0.85rem;
+}

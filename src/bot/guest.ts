@@ -179,6 +179,13 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     await ctx.reply(text);
   });
 
+  bot.hears("Игры", async (ctx) => {
+    const origin = ctx.config.publicUrl.replace(/\/$/, "");
+    await ctx.reply("Игры в Mini App", {
+      reply_markup: new InlineKeyboard().webApp("Открыть", `${origin}/app/`),
+    });
+  });
+
   bot.hears("Акции", async (ctx) => {
     if (!ctx.dbUser) {
       await ctx.conversation.enter("registerGuest");

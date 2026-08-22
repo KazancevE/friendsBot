@@ -128,8 +128,84 @@ const postJson = async <T>(
   return { kind: "ok", data: parsed };
 };
 
+const getJson = async <T>(
+  path: string,
+  guard: (value: unknown) => value is T,
+): Promise<ApiResult<T>> => {
+  const res = await fetch(path, {
+    headers: {
+      "X-Telegram-Init-Data": initData(),
+    },
+  });
+  if (!res.ok) {
+    return parseError(res);
+  }
+  const parsed: unknown = await res.json();
+  if (!guard(parsed)) {
+    return { kind: "error", status: res.status, code: "bad_response", message: "Некорректный ответ" };
+  }
+  return { kind: "ok", data: parsed };
+};
+
 export const fetchMe = () => {
   return postJson("/api/me", {}, isMe);
+};
+
+export type LeaderboardEntry = {
+  readonly place: number;
+  readonly userId: string;
+  readonly points: number;
+};
+
+export type Leaderboard = {
+  readonly me: {
+    readonly place: number | null;
+    readonly points: number;
+  };
+  readonly top: ReadonlyArray<LeaderboardEntry>;
+};
+
+const isLeaderboardEntry = (value: unknown): value is LeaderboardEntry => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.place === "number" &&
+    typeof value.userId === "string" &&
+    typeof value.points === "number"
+  );
+};
+
+const isLeaderboard = (value: unknown): value is Leaderboard => {
+  if (!isRecord(value) || !isRecord(value.me) || !Array.isArray(value.top)) {
+    return false;
+  }
+  const placeOk = value.me.place === null || typeof value.me.place === "number";
+  return (
+    placeOk &&
+    typeof value.me.points === "number" &&
+    value.top.every(isLeaderboardEntry)
+  );
+};
+
+export const fetchLeaderboard = (slug: string) => {
+  const params = new URLSearchParams({ slug });
+  return getJson(`/api/games/leaderboard?${params.toString()}`, isLeaderboard);
+};
+
+type SubmitGameScoreParameters = {
+  readonly slug: string;
+  readonly points: number;
+};
+
+export const submitGameScore = ({ slug, points }: SubmitGameScoreParameters) => {
+  return postJson(
+    "/api/games/score",
+    { slug, points },
+    (value): value is { readonly points: number } => {
+      return isRecord(value) && typeof value.points === "number";
+    },
+  );
 };
 
 type LookupGuestParameters = {

@@ -11,8 +11,12 @@ test("staff keyboard includes Касса QR web app at PUBLIC_URL/app/", () => {
   });
 });
 
-test("guest keyboard has no cashier web app", () => {
+test("guest keyboard opens games web app at PUBLIC_URL/app/", () => {
   const keyboard = mainKeyboard({ role: "guest", publicUrl: "https://friends.example" });
-  const hasWebApp = keyboard.keyboard.flat().some((button) => "web_app" in button);
-  expect(hasWebApp).toBe(false);
+  const buttons = keyboard.keyboard.flat();
+  const webApp = buttons.find((button) => "web_app" in button);
+  expect(webApp).toEqual({
+    text: "Игры",
+    web_app: { url: "https://friends.example/app/" },
+  });
 });

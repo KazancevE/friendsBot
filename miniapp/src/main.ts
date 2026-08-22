@@ -1,5 +1,6 @@
 import { fetchMe } from "./api.ts";
 import { renderCashier } from "./cashier.ts";
+import { renderHub } from "./hub.ts";
 import "./style.css";
 import { readyTelegram } from "./telegram.ts";
 
@@ -16,11 +17,11 @@ const boot = async () => {
     root.textContent = me.message;
     return;
   }
-  if (!STAFF_ROLES.has(me.data.role)) {
-    root.textContent = "Касса только для персонала";
+  if (STAFF_ROLES.has(me.data.role)) {
+    renderCashier(root);
     return;
   }
-  renderCashier(root);
+  await renderHub(root);
 };
 
 void boot();
