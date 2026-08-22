@@ -1,6 +1,7 @@
 import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
+import { redeemCoupon } from "../domain/coupons.ts";
 import { DomainError } from "../domain/errors.ts";
 import { applyCheck, manualAdjust, redeemBonuses } from "../domain/ledger.ts";
 import { normalizePhone } from "../domain/phone.ts";
@@ -30,13 +31,19 @@ const isStaffAction = (value: string): value is StaffAction => {
   );
 };
 
-const guestCardKeyboard = (): InlineKeyboard => {
-  return new InlineKeyboard()
+type GuestCoupon = { id: string; title: string };
+
+const guestCardKeyboard = (coupons: GuestCoupon[]): InlineKeyboard => {
+  const keyboard = new InlineKeyboard()
     .text("Чек", "staff:check")
     .text("Списать", "staff:redeem")
     .row()
     .text("Ручное", "staff:manual")
     .text("Визит", "staff:visit");
+  for (const coupon of coupons) {
+    keyboard.row().text(`Погасить: ${coupon.title}`, `staff:coupon:${coupon.id}`);
+  }
+  return keyboard;
 };
 
 type GuestCard = {
@@ -45,12 +52,12 @@ type GuestCard = {
   phone: string | null;
   balance: number;
   visitActive: boolean;
-  coupons: string[];
+  coupons: GuestCoupon[];
 };
 
 const formatGuestCard = (card: GuestCard): string => {
   const name = `${card.firstName ?? ""} ${card.lastName ?? ""}`.trim() || "—";
-  const coupons = card.coupons.length > 0 ? card.coupons.join(", ") : "нет";
+  const coupons = card.coupons.length > 0 ? card.coupons.map((c) => c.title).join(", ") : "нет";
   return [
     `ФИО: ${name}`,
     `Телефон: ${card.phone ?? "—"}`,
@@ -106,7 +113,7 @@ export async function staffFindConversation(
           phone: guest.phone,
           balance: guest.balance,
           visitActive: visit !== null,
-          coupons: coupons.map((coupon) => coupon.title),
+          coupons: coupons.map((coupon) => ({ id: coupon.id, title: coupon.title })),
         } satisfies GuestCard,
       };
     } catch (err) {
@@ -123,7 +130,7 @@ export async function staffFindConversation(
   }
 
   await ctx.reply(formatGuestCard(found.card), {
-    reply_markup: guestCardKeyboard(),
+    reply_markup: guestCardKeyboard(found.card.coupons),
   });
 }
 
@@ -312,6 +319,43 @@ export async function staffVisitConversation(
   await ctx.reply(`Визит открыт до ${result.endsAt}`);
 }
 
+export async function staffCouponRedeemConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  if (!isStaffRole(ctx.dbUser?.role)) {
+    await ctx.reply("Недостаточно прав");
+    return;
+  }
+
+  const result = await conversation.external(async (outer) => {
+    const actor = outer.dbUser;
+    const couponId = outer.session.staffCouponId;
+    if (!actor || !isStaffRole(actor.role)) {
+      return { ok: false as const, message: "Недостаточно прав" };
+    }
+    if (couponId === undefined) {
+      return { ok: false as const, message: "Купон не выбран" };
+    }
+    try {
+      await redeemCoupon(outer.store, { couponId, actorId: actor.id, now: new Date() });
+      return { ok: true as const };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+
+  await ctx.reply("Купон погашен");
+}
+
 export function wireStaffHandlers(bot: Bot<BotContext>) {
   bot.hears("Найти гостя", async (ctx) => {
     if (!isStaffRole(ctx.dbUser?.role)) {
@@ -333,5 +377,20 @@ export function wireStaffHandlers(bot: Bot<BotContext>) {
       return;
     }
     await ctx.conversation.enter(STAFF_CONVERSATIONS[action]);
+  });
+
+  bot.callbackQuery(/^staff:coupon:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!isStaffRole(ctx.dbUser?.role)) {
+      await ctx.reply("Недостаточно прав");
+      return;
+    }
+    const matched = ctx.match;
+    const couponId = Array.isArray(matched) ? matched[1] : undefined;
+    if (couponId === undefined) {
+      return;
+    }
+    ctx.session.staffCouponId = couponId;
+    await ctx.conversation.enter("staffCouponRedeem");
   });
 }

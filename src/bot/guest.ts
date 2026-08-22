@@ -108,8 +108,11 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       return;
     }
     const buf = await qrPngBuffer(ctx.dbUser.qrToken);
+    const coupons = await ctx.store.listActiveCoupons(ctx.dbUser.id);
+    const couponLine =
+      coupons.length > 0 ? coupons.map((coupon) => coupon.title).join(", ") : "нет";
     await ctx.replyWithPhoto(new InputFile(buf), {
-      caption: `Баланс: ${ctx.dbUser.balance}\nКод: ${ctx.dbUser.qrToken}`,
+      caption: `Баланс: ${ctx.dbUser.balance}\nКод: ${ctx.dbUser.qrToken}\nКупоны: ${couponLine}`,
     });
   });
 
@@ -138,6 +141,10 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       await ctx.conversation.enter("registerGuest");
       return;
     }
+    const coupons = await ctx.store.listActiveCoupons(ctx.dbUser.id);
+    const couponLine =
+      coupons.length > 0 ? coupons.map((coupon) => coupon.title).join(", ") : "нет";
+    await ctx.reply(`Купоны: ${couponLine}`);
     await ctx.conversation.enter("editGuestProfile");
   });
 

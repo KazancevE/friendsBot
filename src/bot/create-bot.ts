@@ -19,6 +19,7 @@ import { editGuestProfileConversation, wireGuestHandlers } from "./guest.ts";
 import { registerGuestConversation } from "./register.ts";
 import {
   staffCheckConversation,
+  staffCouponRedeemConversation,
   staffFindConversation,
   staffManualConversation,
   staffRedeemConversation,
@@ -61,6 +62,7 @@ export function createBot(
   bot.use(createConversation(staffRedeemConversation, "staffRedeem"));
   bot.use(createConversation(staffManualConversation, "staffManual"));
   bot.use(createConversation(staffVisitConversation, "staffVisit"));
+  bot.use(createConversation(staffCouponRedeemConversation, "staffCouponRedeem"));
   bot.use(createConversation(setPercentConversation, "setPercent"));
   bot.use(createConversation(setRegistrationBonusConversation, "setRegistrationBonus"));
   bot.use(createConversation(setBirthdayBonusConversation, "setBirthdayBonus"));

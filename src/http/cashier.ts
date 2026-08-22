@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { redeemCoupon } from "../domain/coupons.ts";
 import { DomainError } from "../domain/errors.ts";
 import { applyCheck, manualAdjust, redeemBonuses } from "../domain/ledger.ts";
 import { normalizePhone } from "../domain/phone.ts";
@@ -98,31 +99,6 @@ const guestCard = async (store: Store, guest: UserRecord) => {
     visitActive: visit !== null,
     coupons: coupons.map((coupon) => coupon.title),
   };
-};
-
-const redeemCoupon = async (
-  store: Store,
-  input: { readonly couponId: string; readonly actorId: string; readonly now: Date },
-) => {
-  return store.withTransaction(async (tx) => {
-    const coupon = await tx.findCoupon(input.couponId);
-    if (coupon === null) {
-      throw new DomainError("not_found", "Купон не найден");
-    }
-    if (coupon.status === "redeemed") {
-      throw new DomainError("coupon_used", "Купон уже погашен");
-    }
-    const redeemed = await tx.redeemCoupon(coupon.id, input.actorId, input.now);
-    await tx.addLedger({
-      userId: coupon.userId,
-      type: "coupon_redeem",
-      amount: 0,
-      actorId: input.actorId,
-      comment: `Купон: ${coupon.title}`,
-      checkAmount: null,
-    });
-    return redeemed;
-  });
 };
 
 const requireNumber = (value: unknown, code: string, message: string) => {
