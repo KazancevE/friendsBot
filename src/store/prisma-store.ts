@@ -12,6 +12,7 @@ import type {
   User,
   Visit,
 } from "@prisma/client";
+import { DomainError } from "../domain/errors.ts";
 import { DEFAULT_SETTINGS, parsePrizeTable } from "../domain/settings.ts";
 import type {
   ContentPageRecord,
@@ -306,12 +307,19 @@ export class PrismaStore implements Store {
   }
 
   async getOrCreateOpenWeek(gameId: string, weekStart: Date): Promise<GameWeekRecord> {
-    const row = await this.prisma.gameWeek.upsert({
+    const existing = await this.prisma.gameWeek.findUnique({
       where: { gameId_weekStart: { gameId, weekStart } },
-      create: { gameId, weekStart },
-      update: {},
     });
-    return toWeek(row);
+    if (existing !== null && existing.closedAt === null) {
+      return toWeek(existing);
+    }
+    if (existing !== null) {
+      throw new DomainError("week_closed", "Неделя уже закрыта");
+    }
+    const created = await this.prisma.gameWeek.create({
+      data: { gameId, weekStart },
+    });
+    return toWeek(created);
   }
 
   async addScore(weekId: string, userId: string, delta: number, at: Date): Promise<GameScoreRecord> {

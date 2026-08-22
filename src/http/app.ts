@@ -4,6 +4,7 @@ import { webhookCallback } from "grammy";
 import { Hono } from "hono";
 import type { Store } from "../store/types.ts";
 import { createCashierRoutes } from "./cashier.ts";
+import { createGameRoutes } from "./games.ts";
 
 type CreateHttpAppParameters = {
   readonly store: Store;
@@ -22,6 +23,7 @@ const rewriteMiniAppPath = (path: string) => {
 export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters) => {
   const app = new Hono();
   app.route("/", createCashierRoutes({ store, botToken }));
+  app.route("/", createGameRoutes({ store, botToken }));
 
   if (bot !== undefined) {
     const handleUpdate = webhookCallback(bot, "hono");
