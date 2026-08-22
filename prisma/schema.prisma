@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  guest
+  master
+  admin
+}
+
+enum LedgerType {
+  check
+  manual
+  registration
+  birthday
+  weekly_prize
+  redeem
+  coupon_redeem
+}
+
+enum CouponStatus {
+  active
+  redeemed
+}
+
+model User {
+  id               String    @id @default(uuid())
+  telegramId       BigInt    @unique
+  role             Role      @default(guest)
+  firstName        String?
+  lastName         String?
+  birthday         DateTime? @db.Date
+  phone            String?   @unique
+  balance          Int       @default(0)
+  qrToken          String    @unique
+  broadcastOptOut  Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  ledger           Ledger[]  @relation("UserLedger")
+  actedLedger      Ledger[]  @relation("ActorLedger")
+  visits           Visit[]   @relation("VisitGuest")
+  openedVisits     Visit[]   @relation("VisitOpener")
+  coupons          Coupon[]
+  scores           GameScore[]
+  awards           WeeklyAward[]
+}
+
+model Ledger {
+  id          String     @id @default(uuid())
+  user        User       @relation("UserLedger", fields: [userId], references: [id])
+  userId      String
+  type        LedgerType
+  amount      Int
+  actor       User?      @relation("ActorLedger", fields: [actorId], references: [id])
+  actorId     String?
+  comment     String?
+  checkAmount Int?
+  createdAt   DateTime   @default(now())
+}
+
+model Visit {
+  id        String   @id @default(uuid())
+  user      User     @relation("VisitGuest", fields: [userId], references: [id])
+  userId    String
+  opener    User     @relation("VisitOpener", fields: [openedBy], references: [id])
+  openedBy  String
+  startedAt DateTime
+  endsAt    DateTime
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model ContentPage {
+  slug   String  @id
+  body   String  @default("")
+  mapUrl String?
+}
+
+model MenuItem {
+  id           String  @id @default(uuid())
+  title        String
+  description  String  @default("")
+  priceRubles  Int?
+  sort         Int     @default(0)
+  active       Boolean @default(true)
+}
+
+model Promo {
+  id         String   @id @default(uuid())
+  body       String
+  photos     String[]
+  showInFeed Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model Game {
+  id                  String     @id @default(uuid())
+  slug                String     @unique
+  title               String
+  active              Boolean    @default(true)
+  maxScorePerSession  Int
+  weeks               GameWeek[]
+}
+
+model GameWeek {
+  id        String      @id @default(uuid())
+  game      Game        @relation(fields: [gameId], references: [id])
+  gameId    String
+  weekStart DateTime
+  closedAt  DateTime?
+  scores    GameScore[]
+  coupons   Coupon[]
+  awards    WeeklyAward[]
+  @@unique([gameId, weekStart])
+}
+
+model GameScore {
+  week      GameWeek @relation(fields: [weekId], references: [id])
+  weekId    String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  points    Int      @default(0)
+  updatedAt DateTime
+  @@id([weekId, userId])
+}
+
+model Coupon {
+  id         String       @id @default(uuid())
+  user       User         @relation(fields: [userId], references: [id])
+  userId     String
+  title      String
+  week       GameWeek?    @relation(fields: [weekId], references: [id])
+  weekId     String?
+  status     CouponStatus @default(active)
+  redeemedBy String?
+  redeemedAt DateTime?
+}
+
+model WeeklyAward {
+  week   GameWeek @relation(fields: [weekId], references: [id])
+  weekId String
+  user   User     @relation(fields: [userId], references: [id])
+  userId String
+  place  Int
+  @@id([weekId, userId])
+}
