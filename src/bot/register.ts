@@ -65,7 +65,7 @@ export async function registerGuestConversation(
   });
 }
 
-async function askBirthday(
+export async function askBirthday(
   conversation: Conversation<BotContext, BotContext>,
   ctx: BotContext,
 ): Promise<Date> {
