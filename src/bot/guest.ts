@@ -98,7 +98,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     }
 
     await ctx.reply("Добро пожаловать в Друзья", {
-      reply_markup: mainKeyboard(ctx.dbUser.role),
+      reply_markup: mainKeyboard({ role: ctx.dbUser.role, publicUrl: ctx.config.publicUrl }),
     });
   });
 
@@ -285,9 +285,13 @@ export async function editGuestProfileConversation(
   });
 
   if (!result.ok) {
-    await ctx.reply(result.message, { reply_markup: mainKeyboard(role) });
+    await ctx.reply(result.message, {
+      reply_markup: mainKeyboard({ role, publicUrl: ctx.config.publicUrl }),
+    });
     return;
   }
 
-  await ctx.reply("Профиль обновлён", { reply_markup: mainKeyboard(role) });
+  await ctx.reply("Профиль обновлён", {
+    reply_markup: mainKeyboard({ role, publicUrl: ctx.config.publicUrl }),
+  });
 }

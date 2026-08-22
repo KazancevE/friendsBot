@@ -61,7 +61,7 @@ export async function registerGuestConversation(
   }
 
   await ctx.reply(`Добро пожаловать в Друзья\nБаланс: ${result.balance}`, {
-    reply_markup: mainKeyboard(result.role),
+    reply_markup: mainKeyboard({ role: result.role, publicUrl: ctx.config.publicUrl }),
   });
 }
 

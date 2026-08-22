@@ -1,0 +1,96 @@
+:root {
+  color-scheme: dark;
+  --bg: #1a1210;
+  --bg-panel: #241a17;
+  --coal: #3a2a24;
+  --smoke: #c4b8b0;
+  --ash: #8a7a72;
+  --ember: #d4784a;
+  --text: #f3ece6;
+  --danger: #e07070;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+#app {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2rem;
+}
+
+h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.4rem;
+}
+
+.muted {
+  margin: 0 0 1rem;
+  color: var(--ash);
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--coal);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+form,
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+form + form,
+form + button {
+  margin-top: 0.85rem;
+}
+
+input {
+  background: var(--bg);
+  border: 1px solid var(--coal);
+  border-radius: 0.5rem;
+  color: var(--text);
+  padding: 0.6rem 0.7rem;
+  font-size: 1rem;
+}
+
+button {
+  margin-top: 0.5rem;
+  background: var(--ember);
+  color: #1a1210;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+video {
+  width: 100%;
+  border-radius: 0.5rem;
+  margin-bottom: 0.6rem;
+  background: #000;
+}
+
+.status {
+  color: var(--smoke);
+  min-height: 1.25rem;
+}
+
+.status.error {
+  color: var(--danger);
+}

@@ -1,3 +1,4 @@
+import { serveStatic } from "@hono/node-server/serve-static";
 import type { Bot } from "grammy";
 import { webhookCallback } from "grammy";
 import { Hono } from "hono";
@@ -8,6 +9,14 @@ type CreateHttpAppParameters = {
   readonly store: Store;
   readonly botToken: string;
   readonly bot?: Bot;
+};
+
+const MINIAPP_INDEX = "miniapp/dist/index.html";
+
+const rewriteMiniAppPath = (path: string) => {
+  const stripped = path.replace(/^\/app\/?/, "");
+  const file = stripped === "" ? "index.html" : stripped;
+  return `miniapp/dist/${file}`;
 };
 
 export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters) => {
@@ -24,6 +33,16 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
       return handleUpdate(c);
     });
   }
+
+  app.use("/app", serveStatic({ root: ".", path: MINIAPP_INDEX }));
+  app.use("/app/", serveStatic({ root: ".", path: MINIAPP_INDEX }));
+  app.use(
+    "/app/*",
+    serveStatic({
+      root: ".",
+      rewriteRequestPath: rewriteMiniAppPath,
+    }),
+  );
 
   return app;
 };
