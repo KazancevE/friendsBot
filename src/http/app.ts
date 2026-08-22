@@ -22,6 +22,7 @@ const rewriteMiniAppPath = (path: string) => {
 
 export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters) => {
   const app = new Hono();
+  app.get("/health", (c) => c.json({ ok: true }));
   app.route("/", createCashierRoutes({ store, botToken }));
   app.route("/", createGameRoutes({ store, botToken }));
 

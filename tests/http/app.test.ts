@@ -8,6 +8,13 @@ import { MemoryStore } from "../../src/store/memory.ts";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const INDEX = join(ROOT, "miniapp/dist/index.html");
 
+test("health check is public", async () => {
+  const app = createHttpApp({ store: new MemoryStore(), botToken: "test-token" });
+  const res = await app.request("/health");
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+});
+
 test("serves mini app index at /app and /app/", async () => {
   await mkdir(dirname(INDEX), { recursive: true });
   await writeFile(INDEX, "<!doctype html><title>касса</title>", "utf8");

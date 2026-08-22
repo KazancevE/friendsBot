@@ -73,6 +73,36 @@ npm run start
 
 Планировщик в том же процессе: день рождения каждую ночь 02:00 МСК, закрытие недели в понедельник 00:00 МСК.
 
+## Timeweb Cloud Apps
+
+Деплой из Git через [App Platform + Dockerfile](https://timeweb.cloud/docs/apps/deploying-with-dockerfile). База — отдельно: [облачный PostgreSQL](https://timeweb.cloud/docs/dbaas/postgresql).
+
+1. Залейте этот репозиторий на GitHub / GitLab (`main`).
+2. В Timeweb: **Базы данных** → PostgreSQL (минимум). Скопируйте строку подключения. Если кластер требует TLS, добавьте `?sslmode=require` к `DATABASE_URL`.
+3. **App Platform** → создать приложение → тип **Dockerfile** → подключить репозиторий, ветка `main`.
+4. Регион тот же, что у базы. Приватную сеть выберите ту же, что у Postgres (потом её не сменить).
+5. Переменные:
+
+   | Ключ | Значение |
+   |---|---|
+   | `BOT_TOKEN` | токен BotFather |
+   | `TELEGRAM_ADMIN_ID` | ваш числовой Telegram ID |
+   | `DATABASE_URL` | строка из шага 2 (внутренний хост, если есть приватная сеть) |
+   | `PUBLIC_URL` | пока заглушка `https://placeholder.twc1.net` — после первого деплоя замените на технический домен с Дашборда |
+   | `PORT` | `3000` |
+
+   Путь проверки состояния: `/health`.
+
+6. Запустить деплой. В логе должно быть `listening 3000`.
+7. На Дашборде скопируйте технический домен (`https://….twc1.net`), пропишите его в `PUBLIC_URL` без слэша в конце и передеплойте (чтобы webhook и Mini App смотрели на правильный URL).
+8. Один раз сид: в приложении откройте консоль / разовую команду  
+   `npx prisma db seed`  
+   или локально: `DATABASE_URL=... npx prisma db seed`.
+9. BotFather → Mini App URL: `https://ваш-домен.twc1.net/app/`
+10. Напишите боту с аккаунта `TELEGRAM_ADMIN_ID`, добавьте мастеров через «Роли».
+
+Проверка: `https://ваш-домен.twc1.net/health` → `{"ok":true}`.
+
 ## Docker
 
 ```sh
