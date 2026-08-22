@@ -3,7 +3,10 @@ import { Bot, session } from "grammy";
 import { newQrToken } from "../domain/qr-token.ts";
 import type { Store } from "../store/types.ts";
 import {
+  addMenuItemConversation,
   assignRoleConversation,
+  editContactsConversation,
+  editDirectionsConversation,
   setBirthdayBonusConversation,
   setPercentConversation,
   setRegistrationBonusConversation,
@@ -62,6 +65,9 @@ export function createBot(
   bot.use(createConversation(setBirthdayBonusConversation, "setBirthdayBonus"));
   bot.use(createConversation(setVisitHoursConversation, "setVisitHours"));
   bot.use(createConversation(assignRoleConversation, "assignRole"));
+  bot.use(createConversation(addMenuItemConversation, "addMenuItem"));
+  bot.use(createConversation(editContactsConversation, "editContacts"));
+  bot.use(createConversation(editDirectionsConversation, "editDirections"));
   wireGuestHandlers(bot);
   wireStaffHandlers(bot);
   wireAdminHandlers(bot);

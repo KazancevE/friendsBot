@@ -1,6 +1,7 @@
 import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
+import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
 import type { Role, Settings } from "../domain/types.ts";
@@ -271,6 +272,192 @@ export async function assignRoleConversation(
   await ctx.reply(`Роль назначена: ${result.role}`);
 }
 
+export async function addMenuItemConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+
+  await ctx.reply("Название позиции");
+  const title = (
+    await conversation.waitFor(":text", {
+      otherwise: (c) => c.reply("Отправьте название текстом"),
+    })
+  ).msg.text.trim();
+
+  await ctx.reply("Описание");
+  const description = (
+    await conversation.waitFor(":text", {
+      otherwise: (c) => c.reply("Отправьте описание текстом"),
+    })
+  ).msg.text;
+
+  await ctx.reply("Цена в рублях или «пропустить»");
+  let priceRubles: number | null = null;
+  for (;;) {
+    const raw = (
+      await conversation.waitFor(":text", {
+        otherwise: (c) => c.reply("Отправьте цену числом или «пропустить»"),
+      })
+    ).msg.text.trim().toLowerCase();
+    if (raw === "пропустить" || raw === "-" || raw === "нет") {
+      break;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      await ctx.reply("Отправьте цену числом или «пропустить»");
+      continue;
+    }
+    priceRubles = parsed;
+    break;
+  }
+
+  const result = await conversation.external(async (outer) => {
+    const actor = outer.dbUser;
+    if (!actor || actor.role !== "admin") {
+      return { ok: false as const, message: ADMIN_ONLY };
+    }
+    try {
+      const item = await addMenuItem(outer.store, {
+        actorId: actor.id,
+        title,
+        description,
+        priceRubles,
+      });
+      return { ok: true as const, title: item.title };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+
+  await ctx.reply(`Позиция добавлена: ${result.title}`);
+}
+
+export async function editContactsConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+
+  const current = await conversation.external((outer) => outer.store.getPage("contacts"));
+  await ctx.reply(
+    current?.body?.trim()
+      ? `Текущий текст:\n${current.body}\n\nОтправьте новый текст контактов`
+      : "Отправьте текст контактов",
+  );
+  const body = (
+    await conversation.waitFor(":text", {
+      otherwise: (c) => c.reply("Отправьте текст контактов"),
+    })
+  ).msg.text;
+
+  const result = await conversation.external(async (outer) => {
+    const actor = outer.dbUser;
+    if (!actor || actor.role !== "admin") {
+      return { ok: false as const, message: ADMIN_ONLY };
+    }
+    try {
+      await savePage(outer.store, {
+        actorId: actor.id,
+        slug: "contacts",
+        body,
+        mapUrl: null,
+      });
+      return { ok: true as const };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+
+  await ctx.reply("Контакты обновлены");
+}
+
+export async function editDirectionsConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+
+  const current = await conversation.external((outer) => outer.store.getPage("directions"));
+  await ctx.reply(
+    current?.body?.trim()
+      ? `Текущий текст:\n${current.body}\n\nОтправьте новый текст «Как доехать»`
+      : "Отправьте текст «Как доехать»",
+  );
+  const body = (
+    await conversation.waitFor(":text", {
+      otherwise: (c) => c.reply("Отправьте текст"),
+    })
+  ).msg.text;
+
+  await ctx.reply("Ссылка на карту или «пропустить»");
+  let mapUrl: string | null = current?.mapUrl ?? null;
+  for (;;) {
+    const raw = (
+      await conversation.waitFor(":text", {
+        otherwise: (c) => c.reply("Отправьте ссылку или «пропустить»"),
+      })
+    ).msg.text.trim();
+    const lower = raw.toLowerCase();
+    if (lower === "пропустить" || lower === "-" || lower === "нет") {
+      mapUrl = null;
+      break;
+    }
+    mapUrl = raw;
+    break;
+  }
+
+  const result = await conversation.external(async (outer) => {
+    const actor = outer.dbUser;
+    if (!actor || actor.role !== "admin") {
+      return { ok: false as const, message: ADMIN_ONLY };
+    }
+    try {
+      await savePage(outer.store, {
+        actorId: actor.id,
+        slug: "directions",
+        body,
+        mapUrl,
+      });
+      return { ok: true as const };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+
+  await ctx.reply("«Как доехать» обновлено");
+}
+
 export function wireAdminHandlers(bot: Bot<BotContext>) {
   bot.hears("Настройки", async (ctx) => {
     if (!(await requireAdminOrReply(ctx))) {
@@ -305,5 +492,29 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
       return;
     }
     await ctx.conversation.enter(SETTINGS_CONVERSATIONS[action]);
+  });
+
+  bot.callbackQuery("admin:addMenuItem", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    await ctx.conversation.enter("addMenuItem");
+  });
+
+  bot.callbackQuery("admin:editContacts", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    await ctx.conversation.enter("editContacts");
+  });
+
+  bot.callbackQuery("admin:editDirections", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    await ctx.conversation.enter("editDirections");
   });
 }

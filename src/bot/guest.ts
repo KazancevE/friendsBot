@@ -1,11 +1,41 @@
 import type { Conversation } from "@grammyjs/conversations";
+import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
+import { listActiveMenu } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { newQrToken } from "../domain/qr-token.ts";
+import type { MenuItemRecord } from "../domain/types.ts";
 import { updateGuestProfile } from "../domain/users.ts";
 import type { BotContext } from "./context.ts";
 import { contactKeyboard, mainKeyboard } from "./keyboards.ts";
 import { askBirthday } from "./register.ts";
+
+const formatMenu = (items: MenuItemRecord[]): string => {
+  if (items.length === 0) {
+    return "Меню пока пусто";
+  }
+  return items
+    .map((item) => {
+      const lines = [item.title, item.description];
+      if (item.priceRubles !== null) {
+        lines.push(`${item.priceRubles} ₽`);
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
+};
+
+const adminMenuKeyboard = (): InlineKeyboard => {
+  return new InlineKeyboard().text("Добавить позицию", "admin:addMenuItem");
+};
+
+const adminContactsKeyboard = (): InlineKeyboard => {
+  return new InlineKeyboard().text("Редактировать", "admin:editContacts");
+};
+
+const adminDirectionsKeyboard = (): InlineKeyboard => {
+  return new InlineKeyboard().text("Редактировать", "admin:editDirections");
+};
 
 export function wireGuestHandlers(bot: Bot<BotContext>) {
   bot.command("start", async (ctx) => {
@@ -73,6 +103,37 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       return;
     }
     await ctx.conversation.enter("editGuestProfile");
+  });
+
+  bot.hears("Меню", async (ctx) => {
+    const menu = await listActiveMenu(ctx.store);
+    const text = formatMenu(menu);
+    if (ctx.dbUser?.role === "admin") {
+      await ctx.reply(text, { reply_markup: adminMenuKeyboard() });
+      return;
+    }
+    await ctx.reply(text);
+  });
+
+  bot.hears("Контакты", async (ctx) => {
+    const page = await ctx.store.getPage("contacts");
+    const text = page?.body?.trim() || "Контакты пока не добавлены";
+    if (ctx.dbUser?.role === "admin") {
+      await ctx.reply(text, { reply_markup: adminContactsKeyboard() });
+      return;
+    }
+    await ctx.reply(text);
+  });
+
+  bot.hears("Как доехать", async (ctx) => {
+    const page = await ctx.store.getPage("directions");
+    const body = page?.body?.trim() || "Маршрут пока не добавлен";
+    const text = page?.mapUrl ? `${body}\n\nКарта: ${page.mapUrl}` : body;
+    if (ctx.dbUser?.role === "admin") {
+      await ctx.reply(text, { reply_markup: adminDirectionsKeyboard() });
+      return;
+    }
+    await ctx.reply(text);
   });
 }
 
