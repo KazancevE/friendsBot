@@ -82,7 +82,7 @@ export async function askBirthday(
   }
 }
 
-function parseBirthday(text: string): Date | null {
+export function parseBirthday(text: string): Date | null {
   const match = BIRTHDAY_RE.exec(text);
   if (!match) {
     return null;

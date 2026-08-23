@@ -19,6 +19,7 @@ import type { BotContext } from "./context.ts";
 import { editGuestProfileConversation, wireGuestHandlers } from "./guest.ts";
 import { hydrateBotContext } from "./hydrate.ts";
 import { registerGuestConversation } from "./register.ts";
+import { requireRegisteredUser } from "./require-registered.ts";
 import {
   staffCheckConversation,
   staffCouponRedeemConversation,
@@ -62,6 +63,7 @@ export function createBot(
   bot.use(createConversation(editContactsConversation, "editContacts"));
   bot.use(createConversation(editDirectionsConversation, "editDirections"));
   bot.use(createConversation(createPromoConversation, "createPromo"));
+  bot.use(requireRegisteredUser);
   wireGuestHandlers(bot);
   wireStaffHandlers(bot);
   wireAdminHandlers(bot);

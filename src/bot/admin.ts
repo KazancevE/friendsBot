@@ -6,8 +6,19 @@ import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
 import type { PrizePlace, Role, Settings } from "../domain/types.ts";
+import {
+  askCancellableInt,
+  askCancellablePriceOrSkip,
+  askCancellableText,
+  askCancellableYesNo,
+  replyMainMenu,
+  runCancellable,
+  waitCancellablePhotoOrSkip,
+  waitCancellableText,
+} from "./conversation-cancel.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
+import { cancelKeyboard } from "./keyboards.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
 
@@ -83,37 +94,6 @@ const requireAdminOrReply = async (ctx: BotContext): Promise<boolean> => {
   }
   await ctx.reply(ADMIN_ONLY);
   return false;
-};
-
-const parseYesNo = (raw: string): boolean | undefined => {
-  const value = raw.trim().toLowerCase();
-  if (value === "да" || value === "yes" || value === "+") {
-    return true;
-  }
-  if (value === "нет" || value === "no" || value === "-") {
-    return false;
-  }
-  return undefined;
-};
-
-const askYesNo = async (
-  conversation: BotConversation,
-  ctx: BotContext,
-  prompt: string,
-): Promise<boolean> => {
-  await ctx.reply(prompt);
-  for (;;) {
-    const raw = (
-      await conversation.waitFor(":text", {
-        otherwise: (c) => c.reply("Ответьте «да» или «нет»"),
-      })
-    ).msg.text;
-    const parsed = parseYesNo(raw);
-    if (parsed !== undefined) {
-      return parsed;
-    }
-    await ctx.reply("Ответьте «да» или «нет»");
-  }
 };
 
 const sendPromoToChat = async (input: {
@@ -304,50 +284,57 @@ export async function setWeeklyPrizesConversation(
     return;
   }
   const current = await conversation.external((outer) => outer.store.getSettings());
-  const winnersCount = await askInt(
-    conversation,
+  await runCancellable({
     ctx,
-    `Сколько победителей (сейчас ${current.winnersCount}). Введите N`,
-  );
-  if (winnersCount < 1) {
-    await ctx.reply("N должно быть ≥ 1");
-    return;
-  }
-  const prizeTable: PrizePlace[] = [];
-  for (let place = 1; place <= winnersCount; place += 1) {
-    const bonuses = await askInt(
-      conversation,
-      ctx,
-      `Место ${place}: бонусы`,
-    );
-    await ctx.reply(`Место ${place}: название купона или «-»`);
-    const raw = (
-      await conversation.waitFor(":text", {
-        otherwise: (c) => c.reply("Отправьте название купона или «-»"),
-      })
-    ).msg.text.trim();
-    const couponTitle = raw === "-" || raw.length === 0 ? null : raw;
-    prizeTable.push({ place, bonuses, couponTitle });
-  }
-  const result = await conversation.external(async (outer) => {
-    if (outer.dbUser?.role !== "admin") {
-      return { ok: false as const, message: ADMIN_ONLY };
-    }
-    try {
-      const settings = await outer.store.updateSettings({ winnersCount, prizeTable });
-      return { ok: true as const, settings };
-    } catch (err) {
-      if (err instanceof DomainError) {
-        return { ok: false as const, message: err.message };
+    body: async () => {
+      const winnersCount = await askCancellableInt({
+        conversation,
+        ctx,
+        prompt: `Сколько победителей (сейчас ${current.winnersCount}). Введите N`,
+      });
+      if (winnersCount < 1) {
+        await replyMainMenu({ ctx, text: "N должно быть ≥ 1" });
+        return;
       }
-      throw err;
-    }
+      const prizeTable: PrizePlace[] = [];
+      for (let place = 1; place <= winnersCount; place += 1) {
+        const bonuses = await askCancellableInt({
+          conversation,
+          ctx,
+          prompt: `Место ${place}: бонусы`,
+        });
+        const raw = (
+          await askCancellableText({
+            conversation,
+            ctx,
+            prompt: `Место ${place}: название купона или «-»`,
+            otherwise: "Отправьте название купона или «-»",
+          })
+        ).trim();
+        const couponTitle = raw === "-" || raw.length === 0 ? null : raw;
+        prizeTable.push({ place, bonuses, couponTitle });
+      }
+      const result = await conversation.external(async (outer) => {
+        if (outer.dbUser?.role !== "admin") {
+          return { ok: false as const, message: ADMIN_ONLY };
+        }
+        try {
+          const settings = await outer.store.updateSettings({ winnersCount, prizeTable });
+          return { ok: true as const, settings };
+        } catch (err) {
+          if (err instanceof DomainError) {
+            return { ok: false as const, message: err.message };
+          }
+          throw err;
+        }
+      });
+      if (!result.ok) {
+        await replyMainMenu({ ctx, text: result.message });
+        return;
+      }
+      await replyMainMenu({ ctx, text: formatSettings(result.settings) });
+    },
   });
-  if (!result.ok) {
-    await ctx.reply(result.message);
-    return;
-  }
-  await ctx.reply(formatSettings(result.settings));
 }
 
 export async function assignRoleConversation(
@@ -424,67 +411,54 @@ export async function addMenuItemConversation(
     return;
   }
 
-  await ctx.reply("Название позиции");
-  const title = (
-    await conversation.waitFor(":text", {
-      otherwise: (c) => c.reply("Отправьте название текстом"),
-    })
-  ).msg.text.trim();
-
-  await ctx.reply("Описание");
-  const description = (
-    await conversation.waitFor(":text", {
-      otherwise: (c) => c.reply("Отправьте описание текстом"),
-    })
-  ).msg.text;
-
-  await ctx.reply("Цена в рублях или «пропустить»");
-  let priceRubles: number | null = null;
-  for (;;) {
-    const raw = (
-      await conversation.waitFor(":text", {
-        otherwise: (c) => c.reply("Отправьте цену числом или «пропустить»"),
-      })
-    ).msg.text.trim().toLowerCase();
-    if (raw === "пропустить" || raw === "-" || raw === "нет") {
-      break;
-    }
-    const parsed = Number.parseInt(raw, 10);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      await ctx.reply("Отправьте цену числом или «пропустить»");
-      continue;
-    }
-    priceRubles = parsed;
-    break;
-  }
-
-  const result = await conversation.external(async (outer) => {
-    const actor = outer.dbUser;
-    if (!actor || actor.role !== "admin") {
-      return { ok: false as const, message: ADMIN_ONLY };
-    }
-    try {
-      const item = await addMenuItem(outer.store, {
-        actorId: actor.id,
-        title,
-        description,
-        priceRubles,
+  await runCancellable({
+    ctx,
+    body: async () => {
+      const title = (
+        await askCancellableText({
+          conversation,
+          ctx,
+          prompt: "Название позиции",
+          otherwise: "Отправьте название текстом",
+        })
+      ).trim();
+      const description = await askCancellableText({
+        conversation,
+        ctx,
+        prompt: "Описание",
+        otherwise: "Отправьте описание текстом",
       });
-      return { ok: true as const, title: item.title };
-    } catch (err) {
-      if (err instanceof DomainError) {
-        return { ok: false as const, message: err.message };
+      const priceRubles = await askCancellablePriceOrSkip({ conversation, ctx });
+
+      const result = await conversation.external(async (outer) => {
+        const actor = outer.dbUser;
+        if (!actor || actor.role !== "admin") {
+          return { ok: false as const, message: ADMIN_ONLY };
+        }
+        try {
+          const item = await addMenuItem(outer.store, {
+            actorId: actor.id,
+            title,
+            description,
+            priceRubles,
+          });
+          return { ok: true as const, title: item.title };
+        } catch (err) {
+          if (err instanceof DomainError) {
+            return { ok: false as const, message: err.message };
+          }
+          throw err;
+        }
+      });
+
+      if (!result.ok) {
+        await replyMainMenu({ ctx, text: result.message });
+        return;
       }
-      throw err;
-    }
+
+      await replyMainMenu({ ctx, text: `Позиция добавлена: ${result.title}` });
+    },
   });
-
-  if (!result.ok) {
-    await ctx.reply(result.message);
-    return;
-  }
-
-  await ctx.reply(`Позиция добавлена: ${result.title}`);
 }
 
 export async function editContactsConversation(
@@ -610,82 +584,86 @@ export async function createPromoConversation(
     return;
   }
 
-  await ctx.reply("Текст акции");
-  let body: string | undefined;
-  while (body === undefined) {
-    const raw = (
-      await conversation.waitFor(":text", {
-        otherwise: (c) => c.reply("Отправьте текст акции"),
-      })
-    ).msg.text.trim();
-    if (raw.length === 0) {
-      await ctx.reply("Текст не должен быть пустым");
-      continue;
-    }
-    body = raw;
-  }
-
-  await ctx.reply("Пришлите фото или «пропустить»");
-  let photoId: string | undefined;
-  for (;;) {
-    const next = await conversation.wait();
-    const photos = next.message?.photo;
-    if (photos !== undefined && photos.length > 0) {
-      const largest = photos[photos.length - 1];
-      if (largest !== undefined) {
-        photoId = largest.file_id;
-        break;
+  await runCancellable({
+    ctx,
+    body: async () => {
+      await ctx.reply("Текст акции", { reply_markup: cancelKeyboard() });
+      let body: string | undefined;
+      while (body === undefined) {
+        const raw = (
+          await waitCancellableText({
+            conversation,
+            ctx,
+            otherwise: "Отправьте текст акции",
+          })
+        ).trim();
+        if (raw.length === 0) {
+          await ctx.reply("Текст не должен быть пустым", { reply_markup: cancelKeyboard() });
+          continue;
+        }
+        body = raw;
       }
-    }
-    const text = next.message?.text?.trim().toLowerCase();
-    if (text === "пропустить" || text === "-" || text === "нет") {
-      break;
-    }
-    await ctx.reply("Пришлите фото или «пропустить»");
-  }
 
-  const showInFeed = await askYesNo(conversation, ctx, "Показать в разделе «Акции»? да/нет");
-  const sendNow = await askYesNo(conversation, ctx, "Разослать сейчас? да/нет");
-
-  const result = await conversation.external(async (outer) => {
-    const actor = outer.dbUser;
-    if (!actor || actor.role !== "admin") {
-      return { ok: false as const, message: ADMIN_ONLY };
-    }
-    try {
-      await outer.store.createPromo({
-        body,
-        photos: photoId === undefined ? [] : [photoId],
-        showInFeed,
+      const photoId = await waitCancellablePhotoOrSkip({
+        conversation,
+        ctx,
+        prompt: "Пришлите фото или «пропустить»",
       });
-      if (!sendNow) {
-        return { ok: true as const, sent: 0, failed: 0, skippedSend: true as const };
-      }
-      const telegramIds = await recipientsForBroadcast(outer.store);
-      const stats = await sendBroadcast({
-        api: outer.api,
-        telegramIds,
-        body,
-        photoId,
+      const showInFeed = await askCancellableYesNo({
+        conversation,
+        ctx,
+        prompt: "Показать в разделе «Акции»? да/нет",
       });
-      return { ok: true as const, ...stats, skippedSend: false as const };
-    } catch (err) {
-      if (err instanceof DomainError) {
-        return { ok: false as const, message: err.message };
+      const sendNow = await askCancellableYesNo({
+        conversation,
+        ctx,
+        prompt: "Разослать сейчас? да/нет",
+      });
+
+      const result = await conversation.external(async (outer) => {
+        const actor = outer.dbUser;
+        if (!actor || actor.role !== "admin") {
+          return { ok: false as const, message: ADMIN_ONLY };
+        }
+        try {
+          await outer.store.createPromo({
+            body,
+            photos: photoId === undefined ? [] : [photoId],
+            showInFeed,
+          });
+          if (!sendNow) {
+            return { ok: true as const, sent: 0, failed: 0, skippedSend: true as const };
+          }
+          const telegramIds = await recipientsForBroadcast(outer.store);
+          const stats = await sendBroadcast({
+            api: outer.api,
+            telegramIds,
+            body,
+            photoId,
+          });
+          return { ok: true as const, ...stats, skippedSend: false as const };
+        } catch (err) {
+          if (err instanceof DomainError) {
+            return { ok: false as const, message: err.message };
+          }
+          throw err;
+        }
+      });
+
+      if (!result.ok) {
+        await replyMainMenu({ ctx, text: result.message });
+        return;
       }
-      throw err;
-    }
+      if (result.skippedSend) {
+        await replyMainMenu({ ctx, text: "Акция сохранена" });
+        return;
+      }
+      await replyMainMenu({
+        ctx,
+        text: `Акция сохранена. Разослано: ${result.sent}, ошибок: ${result.failed}`,
+      });
+    },
   });
-
-  if (!result.ok) {
-    await ctx.reply(result.message);
-    return;
-  }
-  if (result.skippedSend) {
-    await ctx.reply("Акция сохранена");
-    return;
-  }
-  await ctx.reply(`Акция сохранена. Разослано: ${result.sent}, ошибок: ${result.failed}`);
 }
 
 export function wireAdminHandlers(bot: Bot<BotContext>) {

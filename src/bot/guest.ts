@@ -7,10 +7,16 @@ import { newQrToken } from "../domain/qr-token.ts";
 import type { MenuItemRecord, PromoRecord } from "../domain/types.ts";
 import { updateGuestProfile } from "../domain/users.ts";
 import type { BotContext } from "./context.ts";
+import {
+  askCancellableBirthday,
+  askCancellableText,
+  replyMainMenu,
+  runCancellable,
+  waitCancellableContactOrSkip,
+} from "./conversation-cancel.ts";
 import { enterConversation } from "./enter-conversation.ts";
-import { contactKeyboard, mainKeyboard } from "./keyboards.ts";
+import { mainKeyboard } from "./keyboards.ts";
 import { qrPngBuffer } from "./qr.ts";
-import { askBirthday } from "./register.ts";
 
 const formatMenu = (items: MenuItemRecord[]): string => {
   if (items.length === 0) {
@@ -247,66 +253,55 @@ export async function editGuestProfileConversation(
     return;
   }
 
-  await ctx.reply("Как вас зовут? (имя)");
-  const firstName = (
-    await conversation.waitFor(":text", {
-      otherwise: (c) => c.reply("Отправьте имя текстом"),
-    })
-  ).msg.text.trim();
-
-  await ctx.reply("Фамилия?");
-  const lastName = (
-    await conversation.waitFor(":text", {
-      otherwise: (c) => c.reply("Отправьте фамилию текстом"),
-    })
-  ).msg.text.trim();
-
-  const birthday = await askBirthday(conversation, ctx);
-
-  await ctx.reply("Новый телефон: нажмите «Поделиться контактом» или напишите «пропустить»", {
-    reply_markup: contactKeyboard(),
-  });
-
-  let phone: string | undefined;
-  for (;;) {
-    const next = await conversation.wait();
-    const contact = next.message?.contact;
-    if (contact) {
-      phone = contact.phone_number;
-      break;
-    }
-    const text = next.message?.text?.trim().toLowerCase();
-    if (text === "пропустить" || text === "-" || text === "нет") {
-      break;
-    }
-    await ctx.reply("Нажмите «Поделиться контактом» или напишите «пропустить»");
-  }
-
-  const result = await conversation.external(async (outer) => {
-    try {
-      await updateGuestProfile(outer.store, userId, {
-        firstName,
-        lastName,
-        birthday,
-        ...(phone !== undefined ? { phone } : {}),
+  await runCancellable({
+    ctx,
+    body: async () => {
+      const firstName = (
+        await askCancellableText({
+          conversation,
+          ctx,
+          prompt: "Как вас зовут? (имя)",
+          otherwise: "Отправьте имя текстом",
+        })
+      ).trim();
+      const lastName = (
+        await askCancellableText({
+          conversation,
+          ctx,
+          prompt: "Фамилия?",
+          otherwise: "Отправьте фамилию текстом",
+        })
+      ).trim();
+      const birthday = await askCancellableBirthday({ conversation, ctx });
+      const phone = await waitCancellableContactOrSkip({
+        conversation,
+        ctx,
+        prompt: "Новый телефон: нажмите «Поделиться контактом» или напишите «пропустить»",
       });
-      return { ok: true as const };
-    } catch (err) {
-      if (err instanceof DomainError) {
-        return { ok: false as const, message: err.message };
+
+      const result = await conversation.external(async (outer) => {
+        try {
+          await updateGuestProfile(outer.store, userId, {
+            firstName,
+            lastName,
+            birthday,
+            ...(phone !== undefined ? { phone } : {}),
+          });
+          return { ok: true as const };
+        } catch (err) {
+          if (err instanceof DomainError) {
+            return { ok: false as const, message: err.message };
+          }
+          throw err;
+        }
+      });
+
+      if (!result.ok) {
+        await replyMainMenu({ ctx, text: result.message });
+        return;
       }
-      throw err;
-    }
-  });
 
-  if (!result.ok) {
-    await ctx.reply(result.message, {
-      reply_markup: mainKeyboard({ role, publicUrl: ctx.config.publicUrl }),
-    });
-    return;
-  }
-
-  await ctx.reply("Профиль обновлён", {
-    reply_markup: mainKeyboard({ role, publicUrl: ctx.config.publicUrl }),
+      await replyMainMenu({ ctx, text: "Профиль обновлён" });
+    },
   });
 }

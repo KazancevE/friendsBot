@@ -77,7 +77,59 @@ const sendContact = async (
   });
 };
 
-const createTestBot = (store: MemoryStore) => {
+type SentMessage = {
+  readonly method: string;
+  readonly payload: Record<string, unknown>;
+};
+
+const parsePayload = (body: unknown): Record<string, unknown> => {
+  if (body === undefined || body === null) {
+    return {};
+  }
+  const raw = typeof body === "string" ? body : String(body);
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return Object.fromEntries(new URLSearchParams(raw).entries());
+  }
+  return {};
+};
+
+const hrefOf = (url: unknown): string => {
+  if (typeof url === "string") {
+    return url;
+  }
+  if (url instanceof URL) {
+    return url.href;
+  }
+  return String(url);
+};
+
+const keyboardTexts = (sent: SentMessage | undefined): readonly string[] => {
+  const markup = sent?.payload.reply_markup;
+  if (typeof markup !== "object" || markup === null || !("keyboard" in markup)) {
+    return [];
+  }
+  const keyboard = markup.keyboard;
+  if (!Array.isArray(keyboard)) {
+    return [];
+  }
+  return keyboard.flat().flatMap((button) => {
+    if (typeof button === "object" && button !== null && "text" in button) {
+      return [String(button.text)];
+    }
+    return [];
+  });
+};
+
+const lastSendMessage = (sent: readonly SentMessage[]): SentMessage | undefined => {
+  return [...sent].reverse().find((row) => row.method === "sendMessage");
+};
+
+const createTestBot = (store: MemoryStore, sent: SentMessage[] = []) => {
   return createBot(
     "test-token",
     store,
@@ -88,10 +140,15 @@ const createTestBot = (store: MemoryStore) => {
     {
       botInfo,
       client: {
-        fetch: () =>
-          Promise.resolve({
+        fetch: (url, init) => {
+          sent.push({
+            method: hrefOf(url).split("/").pop() ?? "",
+            payload: parsePayload(init?.body),
+          });
+          return Promise.resolve({
             json: () => Promise.resolve({ ok: true, result: dummyMessage }),
-          }),
+          });
+        },
       },
     },
   );
@@ -126,4 +183,93 @@ test("guest registration finishes after name birthday and contact", async () => 
   expect(guest?.lastName).toBe("Петров");
   expect(guest?.phone).toBe("79991234567");
   expect(guest?.balance).toBeGreaterThan(0);
+});
+
+test("admin cancel during broadcast does not save promo", async () => {
+  const store = new MemoryStore();
+  const sent: SentMessage[] = [];
+  const bot = createTestBot(store, sent);
+
+  await sendText(bot, { userId: ADMIN_ID, text: "/start", updateId: 1 });
+  await sendText(bot, { userId: ADMIN_ID, text: "Рассылка", updateId: 2 });
+
+  expect(keyboardTexts(lastSendMessage(sent))).toContain("Отмена");
+
+  await sendText(bot, { userId: ADMIN_ID, text: "Отмена", updateId: 3 });
+
+  expect(await store.listFeedPromos()).toEqual([]);
+  const cancelled = sent.find((row) => row.payload.text === "Отменено");
+  expect(cancelled).toBeDefined();
+  expect(keyboardTexts(cancelled)).toContain("Рассылка");
+});
+
+test("admin broadcast success restores the main keyboard", async () => {
+  const store = new MemoryStore();
+  const sent: SentMessage[] = [];
+  const bot = createTestBot(store, sent);
+
+  await sendText(bot, { userId: ADMIN_ID, text: "/start", updateId: 1 });
+  await sendText(bot, { userId: ADMIN_ID, text: "Рассылка", updateId: 2 });
+  await sendText(bot, { userId: ADMIN_ID, text: "Скидка на кальян", updateId: 3 });
+  await sendText(bot, { userId: ADMIN_ID, text: "пропустить", updateId: 4 });
+  await sendText(bot, { userId: ADMIN_ID, text: "да", updateId: 5 });
+  await sendText(bot, { userId: ADMIN_ID, text: "нет", updateId: 6 });
+
+  const promos = await store.listFeedPromos();
+  expect(promos).toHaveLength(1);
+  expect(promos[0]?.body).toBe("Скидка на кальян");
+  const saved = sent.find((row) => row.payload.text === "Акция сохранена");
+  expect(saved).toBeDefined();
+  expect(keyboardTexts(saved)).toContain("Рассылка");
+});
+
+test("guest cancel during profile does not change data", async () => {
+  const store = new MemoryStore();
+  await store.createUser({
+    telegramId: BigInt(GUEST_ID),
+    role: "guest",
+    firstName: "Иван",
+    lastName: "Петров",
+    birthday: new Date("1990-02-01"),
+    phone: "79991234567",
+    qrToken: "qr-guest-1",
+  });
+  const sent: SentMessage[] = [];
+  const bot = createTestBot(store, sent);
+
+  await sendText(bot, { userId: GUEST_ID, text: "/start", updateId: 1 });
+  await sendText(bot, { userId: GUEST_ID, text: "Профиль", updateId: 2 });
+  await sendText(bot, { userId: GUEST_ID, text: "Отмена", updateId: 3 });
+
+  const guest = await store.findUserByTelegramId(BigInt(GUEST_ID));
+  expect(guest?.firstName).toBe("Иван");
+  expect(guest?.lastName).toBe("Петров");
+  const cancelled = sent.find((row) => row.payload.text === "Отменено");
+  expect(cancelled).toBeDefined();
+  expect(keyboardTexts(cancelled)).toContain("Профиль");
+});
+
+test("unregistered guest cannot skip registration via menu", async () => {
+  const store = new MemoryStore();
+  const sent: SentMessage[] = [];
+  const bot = createTestBot(store, sent);
+
+  await sendText(bot, { userId: GUEST_ID, text: "Меню", updateId: 1 });
+
+  expect(await store.findUserByTelegramId(BigInt(GUEST_ID))).toBeNull();
+  expect(sent.some((row) => row.payload.text === "Как вас зовут? (имя)")).toBe(true);
+  expect(keyboardTexts(lastSendMessage(sent))).not.toContain("Отмена");
+});
+
+test("Отмена during registration does not skip the wizard", async () => {
+  const store = new MemoryStore();
+  const sent: SentMessage[] = [];
+  const bot = createTestBot(store, sent);
+
+  await sendText(bot, { userId: GUEST_ID, text: "/start", updateId: 1 });
+  await sendText(bot, { userId: GUEST_ID, text: "Отмена", updateId: 2 });
+
+  expect(await store.findUserByTelegramId(BigInt(GUEST_ID))).toBeNull();
+  expect(sent.some((row) => row.payload.text === "Фамилия?")).toBe(true);
+  expect(sent.some((row) => row.payload.text === "Отменено")).toBe(false);
 });
