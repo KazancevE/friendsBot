@@ -7,6 +7,7 @@ import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
 import type { PrizePlace, Role, Settings } from "../domain/types.ts";
 import type { BotContext } from "./context.ts";
+import { enterConversation } from "./enter-conversation.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
 
@@ -700,14 +701,14 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }
-    await ctx.conversation.enter("assignRole");
+    await enterConversation(ctx, "assignRole");
   });
 
   bot.hears("Рассылка", async (ctx) => {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }
-    await ctx.conversation.enter("createPromo");
+    await enterConversation(ctx, "createPromo");
   });
 
   bot.callbackQuery(/^admin:(percent|registration|birthday|visitHours|prizes)$/, async (ctx) => {
@@ -720,7 +721,7 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     if (action === undefined || !isSettingsAction(action)) {
       return;
     }
-    await ctx.conversation.enter(SETTINGS_CONVERSATIONS[action]);
+    await enterConversation(ctx, SETTINGS_CONVERSATIONS[action]);
   });
 
   bot.callbackQuery("admin:addMenuItem", async (ctx) => {
@@ -728,7 +729,7 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }
-    await ctx.conversation.enter("addMenuItem");
+    await enterConversation(ctx, "addMenuItem");
   });
 
   bot.callbackQuery("admin:editContacts", async (ctx) => {
@@ -736,7 +737,7 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }
-    await ctx.conversation.enter("editContacts");
+    await enterConversation(ctx, "editContacts");
   });
 
   bot.callbackQuery("admin:editDirections", async (ctx) => {
@@ -744,6 +745,6 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }
-    await ctx.conversation.enter("editDirections");
+    await enterConversation(ctx, "editDirections");
   });
 }

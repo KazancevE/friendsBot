@@ -9,6 +9,7 @@ import type { Role } from "../domain/types.ts";
 import { openOrExtendVisit } from "../domain/visits.ts";
 import { MOSCOW } from "../domain/week.ts";
 import type { BotContext } from "./context.ts";
+import { enterConversation } from "./enter-conversation.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
 
@@ -362,7 +363,7 @@ export function wireStaffHandlers(bot: Bot<BotContext>) {
       await ctx.reply("Недостаточно прав");
       return;
     }
-    await ctx.conversation.enter("staffFind");
+    await enterConversation(ctx, "staffFind");
   });
 
   bot.callbackQuery(/^staff:(check|redeem|manual|visit)$/, async (ctx) => {
@@ -376,7 +377,7 @@ export function wireStaffHandlers(bot: Bot<BotContext>) {
     if (action === undefined || !isStaffAction(action)) {
       return;
     }
-    await ctx.conversation.enter(STAFF_CONVERSATIONS[action]);
+    await enterConversation(ctx, STAFF_CONVERSATIONS[action]);
   });
 
   bot.callbackQuery(/^staff:coupon:(.+)$/, async (ctx) => {
@@ -391,6 +392,6 @@ export function wireStaffHandlers(bot: Bot<BotContext>) {
       return;
     }
     ctx.session.staffCouponId = couponId;
-    await ctx.conversation.enter("staffCouponRedeem");
+    await enterConversation(ctx, "staffCouponRedeem");
   });
 }

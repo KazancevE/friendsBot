@@ -7,6 +7,7 @@ import { newQrToken } from "../domain/qr-token.ts";
 import type { MenuItemRecord, PromoRecord } from "../domain/types.ts";
 import { updateGuestProfile } from "../domain/users.ts";
 import type { BotContext } from "./context.ts";
+import { enterConversation } from "./enter-conversation.ts";
 import { contactKeyboard, mainKeyboard } from "./keyboards.ts";
 import { qrPngBuffer } from "./qr.ts";
 import { askBirthday } from "./register.ts";
@@ -59,7 +60,7 @@ const sendPromoMessage = async (ctx: BotContext, promo: PromoRecord) => {
 
 const setBroadcastOptOut = async (ctx: BotContext, optOut: boolean) => {
   if (!ctx.dbUser) {
-    await ctx.conversation.enter("registerGuest");
+    await enterConversation(ctx, "registerGuest");
     return;
   }
   ctx.dbUser = await ctx.store.updateUser(ctx.dbUser.id, { broadcastOptOut: optOut });
@@ -92,7 +93,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
           qrToken: newQrToken(),
         });
       } else {
-        await ctx.conversation.enter("registerGuest");
+        await enterConversation(ctx, "registerGuest");
         return;
       }
     }
@@ -104,7 +105,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
 
   bot.hears("Баланс и QR", async (ctx) => {
     if (!ctx.dbUser) {
-      await ctx.conversation.enter("registerGuest");
+      await enterConversation(ctx, "registerGuest");
       return;
     }
     const buf = await qrPngBuffer(ctx.dbUser.qrToken);
@@ -118,7 +119,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
 
   bot.hears("История", async (ctx) => {
     if (!ctx.dbUser) {
-      await ctx.conversation.enter("registerGuest");
+      await enterConversation(ctx, "registerGuest");
       return;
     }
     const rows = await ctx.store.listLedger(ctx.dbUser.id);
@@ -138,14 +139,14 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
 
   bot.hears("Профиль", async (ctx) => {
     if (!ctx.dbUser) {
-      await ctx.conversation.enter("registerGuest");
+      await enterConversation(ctx, "registerGuest");
       return;
     }
     const coupons = await ctx.store.listActiveCoupons(ctx.dbUser.id);
     const couponLine =
       coupons.length > 0 ? coupons.map((coupon) => coupon.title).join(", ") : "нет";
     await ctx.reply(`Купоны: ${couponLine}`);
-    await ctx.conversation.enter("editGuestProfile");
+    await enterConversation(ctx, "editGuestProfile");
   });
 
   bot.hears("Меню", async (ctx) => {
@@ -188,7 +189,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
 
   bot.hears("Акции", async (ctx) => {
     if (!ctx.dbUser) {
-      await ctx.conversation.enter("registerGuest");
+      await enterConversation(ctx, "registerGuest");
       return;
     }
     const promos = (await ctx.store.listFeedPromos()).slice().sort((a, b) => {
