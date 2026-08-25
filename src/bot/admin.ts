@@ -345,16 +345,20 @@ export async function assignRoleConversation(
     return;
   }
 
-  await ctx.reply("Telegram ID пользователя");
+  await ctx.reply("Telegram ID или контакт пользователя");
   let telegramId: bigint | undefined;
   while (telegramId === undefined) {
-    const raw = (
-      await conversation.waitFor(":text", {
-        otherwise: (c) => c.reply("Отправьте Telegram ID числом"),
-      })
-    ).msg.text.trim();
+    const next = await conversation.waitFor(["message:text", "message:contact"], {
+      otherwise: (c) => c.reply("Отправьте Telegram ID числом или контакт"),
+    });
+    const fromContact = next.msg.contact?.user_id;
+    if (fromContact !== undefined) {
+      telegramId = BigInt(fromContact);
+      continue;
+    }
+    const raw = next.msg.text?.trim() ?? "";
     if (!/^\d+$/.test(raw)) {
-      await ctx.reply("Отправьте Telegram ID числом");
+      await ctx.reply("Отправьте Telegram ID числом или контакт");
       continue;
     }
     telegramId = BigInt(raw);

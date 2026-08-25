@@ -18,6 +18,7 @@ import {
 import type { BotContext } from "./context.ts";
 import { editGuestProfileConversation, wireGuestHandlers } from "./guest.ts";
 import { hydrateBotContext } from "./hydrate.ts";
+import { ignoreMyChatMember } from "./ignore-my-chat-member.ts";
 import { registerGuestConversation } from "./register.ts";
 import { requireRegisteredUser } from "./require-registered.ts";
 import {
@@ -42,9 +43,13 @@ export function createBot(
   bot.use(hydrate);
   bot.use(conversations({ plugins: [hydrate] }));
   bot.catch((err) => {
+    const inner = err.error;
     console.error(err.message);
-    console.error(err.error);
+    if (inner instanceof Error) {
+      console.error(inner.message);
+    }
   });
+  bot.use(ignoreMyChatMember);
   bot.use(createConversation(registerGuestConversation, "registerGuest"));
   bot.use(createConversation(editGuestProfileConversation, "editGuestProfile"));
   bot.use(createConversation(staffFindConversation, "staffFind"));
