@@ -40,13 +40,8 @@ export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
     .text("Акции")
     .text("Как доехать")
     .row()
-    .text("Контакты");
-
-  if (role === "guest") {
-    keyboard.webApp("Игры", miniAppUrl(publicUrl));
-  } else {
-    keyboard.text("Игры");
-  }
+    .text("Контакты")
+    .text("Игры");
 
   if (role === "guest") {
     keyboard.row().text("Отключить рассылку");
