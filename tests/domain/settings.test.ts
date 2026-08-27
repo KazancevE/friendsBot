@@ -7,6 +7,11 @@ test("defaults match spec", () => {
   expect(DEFAULT_SETTINGS.birthdayBonus).toBe(500);
   expect(DEFAULT_SETTINGS.visitHours).toBe(4);
   expect(DEFAULT_SETTINGS.winnersCount).toBe(3);
+  expect(DEFAULT_SETTINGS.checkBonusTtlDays).toBe(30);
+  expect(DEFAULT_SETTINGS.giftBonusTtlDays).toBe(15);
+  expect(DEFAULT_SETTINGS.couponClaimDaysDefault).toBe(10);
+  expect(DEFAULT_SETTINGS.couponClaimDays).toBe(10);
+  expect(DEFAULT_SETTINGS.expireNotifyMinBonuses).toBe(300);
 });
 
 test("prize table place 1 can mix bonuses and coupon", () => {

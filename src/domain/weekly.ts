@@ -1,6 +1,8 @@
 import { DateTime } from "luxon";
 import type { Store } from "../store/types.ts";
 import type { GameScoreRecord, PrizePlace } from "./types.ts";
+import { createLotForCredit } from "./bonus-lots.ts";
+import { expiresAfterDays } from "./settings.ts";
 import { weekStartMoscow } from "./week.ts";
 
 const rankScores = (scores: ReadonlyArray<GameScoreRecord>) => {
@@ -25,40 +27,50 @@ export const closeOpenWeeks = async (store: Store, now: Date) => {
   for (const week of due) {
     await store.withTransaction(async (tx) => {
       const ranked = rankScores(await tx.listWeekScores(week.id));
-      const winnerCount = Math.min(settings.winnersCount, ranked.length);
-      for (let index = 0; index < winnerCount; index += 1) {
-        const score = ranked[index];
-        if (score === undefined) {
+      let awarded = 0;
+      for (const score of ranked) {
+        if (awarded >= settings.winnersCount) {
+          break;
+        }
+        const user = await tx.findUserById(score.userId);
+        if (user === null || user.role !== "guest") {
           continue;
         }
-        const place = index + 1;
         if (await tx.hasWeeklyAward(week.id, score.userId)) {
           continue;
         }
+        awarded += 1;
+        const place = awarded;
         await tx.addWeeklyAward(week.id, score.userId, place);
         const prize = prizeForPlace(settings.prizeTable, place);
         if (prize === undefined) {
           continue;
         }
         if (prize.bonuses > 0) {
-          const user = await tx.findUserById(score.userId);
-          if (user !== null) {
-            await tx.updateUser(user.id, { balance: user.balance + prize.bonuses });
-            await tx.addLedger({
-              userId: user.id,
-              type: "weekly_prize",
-              amount: prize.bonuses,
-              actorId: null,
-              comment: `Приз за ${place} место`,
-              checkAmount: null,
-            });
-          }
+          await tx.updateUser(user.id, { balance: user.balance + prize.bonuses });
+          const ledger = await tx.addLedger({
+            userId: user.id,
+            type: "weekly_prize",
+            amount: prize.bonuses,
+            actorId: null,
+            comment: `Приз за ${place} место`,
+            checkAmount: null,
+          });
+          await createLotForCredit(tx, {
+            userId: user.id,
+            ledgerId: ledger.id,
+            type: "weekly_prize",
+            amount: prize.bonuses,
+            createdAt: ledger.createdAt,
+            settings,
+          });
         }
         if (prize.couponTitle !== null && prize.couponTitle.length > 0) {
           await tx.createCoupon({
             userId: score.userId,
             title: prize.couponTitle,
             weekId: week.id,
+            expiresAt: expiresAfterDays(now, settings.couponClaimDays),
           });
         }
       }

@@ -13,6 +13,8 @@ import {
   askCancellableYesNo,
   replyMainMenu,
   runCancellable,
+  throwIfCancel,
+  waitCancellablePhoto,
   waitCancellablePhotoOrSkip,
   waitCancellableText,
 } from "./conversation-cancel.ts";
@@ -30,19 +32,17 @@ const SETTINGS_CONVERSATIONS = {
   registration: "setRegistrationBonus",
   birthday: "setBirthdayBonus",
   visitHours: "setVisitHours",
+  checkTtl: "setCheckBonusTtl",
+  giftTtl: "setGiftBonusTtl",
+  couponDefault: "setCouponClaimDefault",
+  notifyMin: "setExpireNotifyMin",
   prizes: "setWeeklyPrizes",
 } as const;
 
 type SettingsAction = keyof typeof SETTINGS_CONVERSATIONS;
 
 const isSettingsAction = (value: string): value is SettingsAction => {
-  return (
-    value === "percent" ||
-    value === "registration" ||
-    value === "birthday" ||
-    value === "visitHours" ||
-    value === "prizes"
-  );
+  return value in SETTINGS_CONVERSATIONS;
 };
 
 const isAdmin = (ctx: BotContext): boolean => {
@@ -56,6 +56,12 @@ const settingsKeyboard = (): InlineKeyboard => {
     .row()
     .text("День рождения", "admin:birthday")
     .text("Визит", "admin:visitHours")
+    .row()
+    .text("Срок чековых", "admin:checkTtl")
+    .text("Срок подарочных", "admin:giftTtl")
+    .row()
+    .text("Купон (дефолт)", "admin:couponDefault")
+    .text("Порог уведомл.", "admin:notifyMin")
     .row()
     .text("Призы недели", "admin:prizes");
 };
@@ -71,6 +77,12 @@ const formatSettings = (settings: Settings): string => {
     `Бонус регистрации: ${settings.registrationBonus}`,
     `Бонус на день рождения: ${settings.birthdayBonus}`,
     `Длина визита (часы): ${settings.visitHours}`,
+    `Срок чековых бонусов (дни): ${settings.checkBonusTtlDays}`,
+    `Срок подарочных/призовых (дни): ${settings.giftBonusTtlDays}`,
+    `Срок купона — дефолт (дни): ${settings.couponClaimDaysDefault}`,
+    `Срок купона в розыгрыше (дни): ${settings.couponClaimDays}`,
+    `Порог уведомлений о бонусах: ${settings.expireNotifyMinBonuses}`,
+    "Предупреждения о сгорании: за 7, 3 и 1 день",
     `Победителей: ${settings.winnersCount}`,
     "Призы:",
     ...settings.prizeTable.map(formatPrizeRow),
@@ -276,6 +288,88 @@ export async function setVisitHoursConversation(
   await ctx.reply(`Длина визита: ${result.value} ч`);
 }
 
+async function setDaysSettingConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+  input: {
+    prompt: (current: Settings) => string;
+    apply: (value: number) => Partial<Settings>;
+    confirm: (value: number) => string;
+    min?: number;
+  },
+) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+  const current = await conversation.external((outer) => outer.store.getSettings());
+  const value = await askInt(conversation, ctx, input.prompt(current));
+  const min = input.min ?? 1;
+  if (value < min) {
+    await ctx.reply(`Значение должно быть ≥ ${min}`);
+    return;
+  }
+  const result = await conversation.external(async (outer) => {
+    if (outer.dbUser?.role !== "admin") {
+      return { ok: false as const, message: ADMIN_ONLY };
+    }
+    try {
+      const settings = await outer.store.updateSettings(input.apply(value));
+      return { ok: true as const, value };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+  await ctx.reply(input.confirm(result.value));
+}
+
+export async function setCheckBonusTtlConversation(conversation: BotConversation, ctx: BotContext) {
+  await setDaysSettingConversation(conversation, ctx, {
+    prompt: (s) => `Срок чековых бонусов в днях (сейчас ${s.checkBonusTtlDays}). Введите новое значение`,
+    apply: (checkBonusTtlDays) => ({ checkBonusTtlDays }),
+    confirm: (v) => `Срок чековых бонусов: ${v} дн.`,
+  });
+}
+
+export async function setGiftBonusTtlConversation(conversation: BotConversation, ctx: BotContext) {
+  await setDaysSettingConversation(conversation, ctx, {
+    prompt: (s) => `Срок подарочных/призовых бонусов в днях (сейчас ${s.giftBonusTtlDays}). Введите новое значение`,
+    apply: (giftBonusTtlDays) => ({ giftBonusTtlDays }),
+    confirm: (v) => `Срок подарочных/призовых: ${v} дн.`,
+  });
+}
+
+export async function setCouponClaimDefaultConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  await setDaysSettingConversation(conversation, ctx, {
+    prompt: (s) =>
+      `Дефолт срока забора купона в днях (сейчас ${s.couponClaimDaysDefault}). Введите новое значение`,
+    apply: (couponClaimDaysDefault) => ({ couponClaimDaysDefault }),
+    confirm: (v) => `Дефолт срока купона: ${v} дн.`,
+  });
+}
+
+export async function setExpireNotifyMinConversation(
+  conversation: BotConversation,
+  ctx: BotContext,
+) {
+  await setDaysSettingConversation(conversation, ctx, {
+    prompt: (s) =>
+      `Мин. сумма бонусов для уведомлений (сейчас ${s.expireNotifyMinBonuses}). Введите новое значение`,
+    apply: (expireNotifyMinBonuses) => ({ expireNotifyMinBonuses }),
+    confirm: (v) => `Порог уведомлений: ${v} бонусов`,
+    min: 0,
+  });
+}
+
 export async function setWeeklyPrizesConversation(
   conversation: BotConversation,
   ctx: BotContext,
@@ -314,12 +408,21 @@ export async function setWeeklyPrizesConversation(
         const couponTitle = raw === "-" || raw.length === 0 ? null : raw;
         prizeTable.push({ place, bonuses, couponTitle });
       }
+      const couponClaimDays = await askCancellableInt({
+        conversation,
+        ctx,
+        prompt: `Срок забора купонов в днях (сейчас ${current.couponClaimDays})`,
+      });
+      if (couponClaimDays < 1) {
+        await replyMainMenu({ ctx, text: "Срок купона должен быть ≥ 1" });
+        return;
+      }
       const result = await conversation.external(async (outer) => {
         if (outer.dbUser?.role !== "admin") {
           return { ok: false as const, message: ADMIN_ONLY };
         }
         try {
-          const settings = await outer.store.updateSettings({ winnersCount, prizeTable });
+          const settings = await outer.store.updateSettings({ winnersCount, prizeTable, couponClaimDays });
           return { ok: true as const, settings };
         } catch (err) {
           if (err instanceof DomainError) {
@@ -418,21 +521,67 @@ export async function addMenuItemConversation(
   await runCancellable({
     ctx,
     body: async () => {
-      const title = (
-        await askCancellableText({
+      const typeKeyboard = new InlineKeyboard()
+        .text("Текстовая позиция", "menuItem:text")
+        .text("Только картинка", "menuItem:image");
+
+      await ctx.reply("Выберите тип позиции", { reply_markup: typeKeyboard });
+
+      let itemType: "text" | "image" | undefined;
+      while (itemType === undefined) {
+        const next = await conversation.wait();
+        throwIfCancel(next.message?.text);
+        const data = next.callbackQuery?.data;
+        if (data === "menuItem:text" || data === "menuItem:image") {
+          await next.answerCallbackQuery();
+          itemType = data === "menuItem:text" ? "text" : "image";
+          continue;
+        }
+        await ctx.reply("Выберите тип позиции", { reply_markup: typeKeyboard });
+      }
+
+      let title = "";
+      let description = "";
+      let priceRubles: number | null = null;
+      let imageFileId: string | null = null;
+
+      if (itemType === "image") {
+        imageFileId = await waitCancellablePhoto({
           conversation,
           ctx,
-          prompt: "Название позиции",
-          otherwise: "Отправьте название текстом",
-        })
-      ).trim();
-      const description = await askCancellableText({
-        conversation,
-        ctx,
-        prompt: "Описание",
-        otherwise: "Отправьте описание текстом",
-      });
-      const priceRubles = await askCancellablePriceOrSkip({ conversation, ctx });
+          prompt: "Пришлите фото позиции",
+        });
+        priceRubles = await askCancellablePriceOrSkip({ conversation, ctx });
+      } else {
+        title = (
+          await askCancellableText({
+            conversation,
+            ctx,
+            prompt: "Название позиции",
+            otherwise: "Отправьте название текстом",
+          })
+        ).trim();
+        description = await askCancellableText({
+          conversation,
+          ctx,
+          prompt: "Описание",
+          otherwise: "Отправьте описание текстом",
+        });
+        priceRubles = await askCancellablePriceOrSkip({ conversation, ctx });
+        const addPhoto = await askCancellableYesNo({
+          conversation,
+          ctx,
+          prompt: "Добавить фото? да/нет",
+        });
+        if (addPhoto) {
+          imageFileId =
+            (await waitCancellablePhotoOrSkip({
+              conversation,
+              ctx,
+              prompt: "Пришлите фото",
+            })) ?? null;
+        }
+      }
 
       const result = await conversation.external(async (outer) => {
         const actor = outer.dbUser;
@@ -445,8 +594,13 @@ export async function addMenuItemConversation(
             title,
             description,
             priceRubles,
+            imageFileId,
           });
-          return { ok: true as const, title: item.title };
+          return {
+            ok: true as const,
+            title: item.title,
+            imageOnly: item.imageFileId !== null && item.title.length === 0,
+          };
         } catch (err) {
           if (err instanceof DomainError) {
             return { ok: false as const, message: err.message };
@@ -460,7 +614,10 @@ export async function addMenuItemConversation(
         return;
       }
 
-      await replyMainMenu({ ctx, text: `Позиция добавлена: ${result.title}` });
+      const successText = result.imageOnly
+        ? "Позиция добавлена"
+        : `Позиция добавлена: ${result.title}`;
+      await replyMainMenu({ ctx, text: successText });
     },
   });
 }
@@ -693,7 +850,9 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     await enterConversation(ctx, "createPromo");
   });
 
-  bot.callbackQuery(/^admin:(percent|registration|birthday|visitHours|prizes)$/, async (ctx) => {
+  bot.callbackQuery(
+    /^admin:(percent|registration|birthday|visitHours|checkTtl|giftTtl|couponDefault|notifyMin|prizes)$/,
+    async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!(await requireAdminOrReply(ctx))) {
       return;

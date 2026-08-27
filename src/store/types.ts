@@ -1,4 +1,5 @@
 import type {
+  BonusLotRecord,
   ContentPageRecord,
   CouponRecord,
   GameRecord,
@@ -48,6 +49,23 @@ export interface Store {
   hasBirthdayLedgerInYear(userId: string, year: number): Promise<boolean>;
   listUsersWithBirthday(): Promise<UserRecord[]>;
 
+  createBonusLot(input: {
+    userId: string;
+    ledgerId: string | null;
+    category: "gift" | "check";
+    initial: number;
+    remaining: number;
+    expiresAt: Date;
+    createdAt: Date;
+  }): Promise<BonusLotRecord>;
+  listBonusLots(userId: string): Promise<BonusLotRecord[]>;
+  listBonusLotsWithRemaining(): Promise<BonusLotRecord[]>;
+  updateBonusLot(
+    id: string,
+    patch: Partial<Pick<BonusLotRecord, "remaining" | "warned7d" | "warned3d" | "warned1d" | "expiresAt">>,
+  ): Promise<BonusLotRecord>;
+  findBonusLotByLedgerId(ledgerId: string): Promise<BonusLotRecord | null>;
+
   getActiveVisit(userId: string, now: Date): Promise<VisitRecord | null>;
   createVisit(input: {
     userId: string;
@@ -60,7 +78,7 @@ export interface Store {
   listMenu(): Promise<MenuItemRecord[]>;
   upsertMenuItem(item: Omit<MenuItemRecord, "id"> & { id?: string }): Promise<MenuItemRecord>;
   deleteMenuItem(id: string): Promise<void>;
-  getPage(slug: "contacts" | "directions"): Promise<ContentPageRecord | null>;
+  getPage(slug: "contacts" | "directions" | "game_rules"): Promise<ContentPageRecord | null>;
   upsertPage(page: ContentPageRecord): Promise<ContentPageRecord>;
 
   createPromo(input: { body: string; photos: string[]; showInFeed: boolean }): Promise<PromoRecord>;
@@ -80,10 +98,12 @@ export interface Store {
     userId: string;
     title: string;
     weekId: string | null;
+    expiresAt: Date;
   }): Promise<CouponRecord>;
   listActiveCoupons(userId: string): Promise<CouponRecord[]>;
   findCoupon(id: string): Promise<CouponRecord | null>;
   redeemCoupon(id: string, by: string, at: Date): Promise<CouponRecord>;
+  expireCoupons(now: Date): Promise<number>;
 
   withTransaction<T>(fn: (store: Store) => Promise<T>): Promise<T>;
 }

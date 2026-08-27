@@ -31,6 +31,16 @@ async function main() {
     create: { slug: "directions", body: "", mapUrl: null },
     update: {},
   });
+  await prisma.contentPage.upsert({
+    where: { slug: "game_rules" },
+    create: {
+      slug: "game_rules",
+      body:
+        "Каждую неделю мы подводим итоги игр в «Друзьях». Очки начисляются только во время визита. В конце недели лучшие гости получают бонусы и купоны по таблице призов. Играйте честно и возвращайтесь снова!",
+      mapUrl: null,
+    },
+    update: {},
+  });
 
   await prisma.game.upsert({
     where: { slug: "match3" },

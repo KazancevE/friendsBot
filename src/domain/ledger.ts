@@ -1,3 +1,4 @@
+import { allocateBonusSpend, createLotForCredit } from "./bonus-lots.ts";
 import { DomainError } from "./errors.ts";
 import { calculateCheckBonus } from "./settings.ts";
 import { openOrExtendVisit } from "./visits.ts";
@@ -23,13 +24,21 @@ export async function applyCheck(
     const guest = await tx.findUserById(input.guestId);
     if (!guest) throw new DomainError("not_found", "Гость не найден");
     const user = await tx.updateUser(guest.id, { balance: guest.balance + bonus });
-    await tx.addLedger({
+    const ledger = await tx.addLedger({
       userId: guest.id,
       type: "check",
       amount: bonus,
       actorId: input.actorId,
       comment: `Чек ${input.checkRubles} ₽`,
       checkAmount: input.checkRubles,
+    });
+    await createLotForCredit(tx, {
+      userId: guest.id,
+      ledgerId: ledger.id,
+      type: "check",
+      amount: bonus,
+      createdAt: ledger.createdAt,
+      settings,
     });
     const visit = await openOrExtendVisit(tx, {
       userId: guest.id,
@@ -43,16 +52,15 @@ export async function applyCheck(
 
 export async function redeemBonuses(
   store: Store,
-  input: { guestId: string; actorId: string; amount: number },
+  input: { guestId: string; actorId: string; amount: number; now?: Date },
 ) {
+  const now = input.now ?? new Date();
   if (input.amount <= 0) throw new DomainError("bad_amount", "Сумма должна быть > 0");
   return store.withTransaction(async (tx) => {
     await requireStaff(tx, input.actorId);
     const guest = await tx.findUserById(input.guestId);
     if (!guest) throw new DomainError("not_found", "Гость не найден");
-    if (guest.balance < input.amount) {
-      throw new DomainError("insufficient", "Недостаточно бонусов");
-    }
+    await allocateBonusSpend(tx, { userId: guest.id, amount: input.amount, now });
     const user = await tx.updateUser(guest.id, { balance: guest.balance - input.amount });
     await tx.addLedger({
       userId: guest.id,
@@ -68,18 +76,23 @@ export async function redeemBonuses(
 
 export async function manualAdjust(
   store: Store,
-  input: { guestId: string; actorId: string; delta: number; comment: string },
+  input: { guestId: string; actorId: string; delta: number; comment: string; now?: Date },
 ) {
+  const now = input.now ?? new Date();
   if (!input.comment.trim()) throw new DomainError("bad_comment", "Нужен комментарий");
   if (input.delta === 0) throw new DomainError("bad_amount", "Дельта не ноль");
   return store.withTransaction(async (tx) => {
     await requireStaff(tx, input.actorId);
     const guest = await tx.findUserById(input.guestId);
     if (!guest) throw new DomainError("not_found", "Гость не найден");
+    const settings = await tx.getSettings();
+    if (input.delta < 0) {
+      await allocateBonusSpend(tx, { userId: guest.id, amount: -input.delta, now });
+    }
     const next = guest.balance + input.delta;
     if (next < 0) throw new DomainError("insufficient", "Баланс уйдёт в минус");
     const user = await tx.updateUser(guest.id, { balance: next });
-    await tx.addLedger({
+    const ledger = await tx.addLedger({
       userId: guest.id,
       type: "manual",
       amount: input.delta,
@@ -87,6 +100,16 @@ export async function manualAdjust(
       comment: input.comment.trim(),
       checkAmount: null,
     });
+    if (input.delta > 0) {
+      await createLotForCredit(tx, {
+        userId: guest.id,
+        ledgerId: ledger.id,
+        type: "manual",
+        amount: input.delta,
+        createdAt: ledger.createdAt,
+        settings,
+      });
+    }
     return user;
   });
 }

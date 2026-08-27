@@ -9,6 +9,10 @@ import {
   editContactsConversation,
   editDirectionsConversation,
   setBirthdayBonusConversation,
+  setCheckBonusTtlConversation,
+  setCouponClaimDefaultConversation,
+  setExpireNotifyMinConversation,
+  setGiftBonusTtlConversation,
   setPercentConversation,
   setRegistrationBonusConversation,
   setVisitHoursConversation,
@@ -62,6 +66,10 @@ export function createBot(
   bot.use(createConversation(setRegistrationBonusConversation, "setRegistrationBonus"));
   bot.use(createConversation(setBirthdayBonusConversation, "setBirthdayBonus"));
   bot.use(createConversation(setVisitHoursConversation, "setVisitHours"));
+  bot.use(createConversation(setCheckBonusTtlConversation, "setCheckBonusTtl"));
+  bot.use(createConversation(setGiftBonusTtlConversation, "setGiftBonusTtl"));
+  bot.use(createConversation(setCouponClaimDefaultConversation, "setCouponClaimDefault"));
+  bot.use(createConversation(setExpireNotifyMinConversation, "setExpireNotifyMin"));
   bot.use(createConversation(setWeeklyPrizesConversation, "setWeeklyPrizes"));
   bot.use(createConversation(assignRoleConversation, "assignRole"));
   bot.use(createConversation(addMenuItemConversation, "addMenuItem"));

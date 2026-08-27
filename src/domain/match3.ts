@@ -125,24 +125,53 @@ const refillTop = (board: MutableBoard, random: RandomFn) => {
   }
 };
 
+export type MatchStep = {
+  readonly next: Board;
+  readonly scoreDelta: number;
+  readonly matchedCells: ReadonlyArray<{ readonly row: number; readonly col: number }>;
+  readonly hasMore: boolean;
+};
+
+export const resolveMatchStep = (
+  board: Board,
+  cascadeIndex: number,
+  random: RandomFn = Math.random,
+): MatchStep => {
+  const groups = findGroups(board);
+  if (groups.length === 0) {
+    return { next: board, scoreDelta: 0, matchedCells: [], hasMore: false };
+  }
+  const matchedCells = groups.flatMap((group) => [...group.cells]);
+  let scoreDelta = 0;
+  for (const group of groups) {
+    scoreDelta += SCORE_PER_TILE * group.cells.length * cascadeIndex;
+  }
+  const next = cloneBoard(board);
+  clearGroups(next, groups);
+  applyGravity(next);
+  refillTop(next, random);
+  return {
+    next,
+    scoreDelta,
+    matchedCells,
+    hasMore: findGroups(next).length > 0,
+  };
+};
+
 export const resolveMatches = (
   board: Board,
   random: RandomFn = Math.random,
 ) => {
-  const next = cloneBoard(board);
+  let next = board;
   let score = 0;
   let cascadeIndex = 1;
   for (;;) {
-    const groups = findGroups(next);
-    if (groups.length === 0) {
-      return { next, score };
+    const step = resolveMatchStep(next, cascadeIndex, random);
+    if (step.scoreDelta === 0) {
+      return { next: step.next, score };
     }
-    for (const group of groups) {
-      score += SCORE_PER_TILE * group.cells.length * cascadeIndex;
-    }
-    clearGroups(next, groups);
-    applyGravity(next);
-    refillTop(next, random);
+    score += step.scoreDelta;
+    next = step.next;
     cascadeIndex += 1;
   }
 };

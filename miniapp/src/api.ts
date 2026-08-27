@@ -164,6 +164,7 @@ export type LeaderboardEntry = {
   readonly place: number;
   readonly userId: string;
   readonly points: number;
+  readonly displayName?: string;
 };
 
 export type Leaderboard = {
@@ -178,10 +179,13 @@ const isLeaderboardEntry = (value: unknown): value is LeaderboardEntry => {
   if (!isRecord(value)) {
     return false;
   }
+  const displayNameOk =
+    value.displayName === undefined || typeof value.displayName === "string";
   return (
     typeof value.place === "number" &&
     typeof value.userId === "string" &&
-    typeof value.points === "number"
+    typeof value.points === "number" &&
+    displayNameOk
   );
 };
 
@@ -202,19 +206,64 @@ export const fetchLeaderboard = (slug: string) => {
   return getJson(`/api/games/leaderboard?${params.toString()}`, isLeaderboard);
 };
 
+export type PrizePlace = {
+  readonly place: number;
+  readonly bonuses: number;
+  readonly couponTitle: string | null;
+};
+
+export type GameRules = {
+  readonly winnersCount: number;
+  readonly prizeTable: ReadonlyArray<PrizePlace>;
+  readonly body: string;
+};
+
+const isPrizePlace = (value: unknown): value is PrizePlace => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const couponOk = value.couponTitle === null || typeof value.couponTitle === "string";
+  return (
+    typeof value.place === "number" &&
+    typeof value.bonuses === "number" &&
+    couponOk
+  );
+};
+
+const isGameRules = (value: unknown): value is GameRules => {
+  if (!isRecord(value) || !Array.isArray(value.prizeTable)) {
+    return false;
+  }
+  return (
+    typeof value.winnersCount === "number" &&
+    typeof value.body === "string" &&
+    value.prizeTable.every(isPrizePlace)
+  );
+};
+
+export const fetchGameRules = () => {
+  return getJson("/api/games/rules", isGameRules);
+};
+
 type SubmitGameScoreParameters = {
   readonly slug: string;
   readonly points: number;
 };
 
+export type SubmitGameScoreResult = {
+  readonly points: number;
+  readonly counted: boolean;
+};
+
+const isSubmitGameScoreResult = (value: unknown): value is SubmitGameScoreResult => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.points === "number" && typeof value.counted === "boolean";
+};
+
 export const submitGameScore = ({ slug, points }: SubmitGameScoreParameters) => {
-  return postJson(
-    "/api/games/score",
-    { slug, points },
-    (value): value is { readonly points: number } => {
-      return isRecord(value) && typeof value.points === "number";
-    },
-  );
+  return postJson("/api/games/score", { slug, points }, isSubmitGameScoreResult);
 };
 
 type LookupGuestParameters = {

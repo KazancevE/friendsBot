@@ -13,6 +13,9 @@ export async function redeemCoupon(
     const coupon = await tx.findCoupon(input.couponId);
     if (!coupon) throw new DomainError("not_found", "Купон не найден");
     if (coupon.status === "redeemed") throw new DomainError("coupon_used", "Купон уже погашен");
+    if (coupon.status === "expired" || coupon.expiresAt.getTime() <= input.now.getTime()) {
+      throw new DomainError("coupon_expired", "Срок забора купона истёк");
+    }
     const redeemed = await tx.redeemCoupon(coupon.id, actor.id, input.now);
     await tx.addLedger({
       userId: coupon.userId,

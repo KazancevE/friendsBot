@@ -55,6 +55,34 @@ const sendText = async (
   await bot.handleUpdate(update);
 };
 
+type SendCallbackParameters = {
+  readonly userId: number;
+  readonly data: string;
+  readonly updateId: number;
+};
+
+const sendCallback = async (
+  bot: ReturnType<typeof createBot>,
+  { userId, data, updateId }: SendCallbackParameters,
+) => {
+  const from = { id: userId, is_bot: false, first_name: "Test" };
+  await bot.handleUpdate({
+    update_id: updateId,
+    callback_query: {
+      id: String(updateId),
+      from,
+      chat_instance: "test",
+      data,
+      message: {
+        message_id: updateId,
+        date: 1_700_000_000,
+        chat: { id: userId, type: "private", first_name: "Test" },
+        text: "profile",
+      },
+    },
+  });
+};
+
 const sendContact = async (
   bot: ReturnType<typeof createBot>,
   userId: number,
@@ -135,6 +163,23 @@ const keyboardTexts = (sent: SentMessage | undefined): readonly string[] => {
     return [];
   }
   const keyboard = markup.keyboard;
+  if (!Array.isArray(keyboard)) {
+    return [];
+  }
+  return keyboard.flat().flatMap((button) => {
+    if (typeof button === "object" && button !== null && "text" in button) {
+      return [String(button.text)];
+    }
+    return [];
+  });
+};
+
+const inlineKeyboardTexts = (sent: SentMessage | undefined): readonly string[] => {
+  const markup = sent?.payload.reply_markup;
+  if (typeof markup !== "object" || markup === null || !("inline_keyboard" in markup)) {
+    return [];
+  }
+  const keyboard = markup.inline_keyboard;
   if (!Array.isArray(keyboard)) {
     return [];
   }
@@ -289,6 +334,34 @@ test("admin broadcast success restores the main keyboard", async () => {
   expect(keyboardTexts(saved)).toContain("Рассылка");
 });
 
+test("guest profile shows data with edit button", async () => {
+  const store = new MemoryStore();
+  await store.createUser({
+    telegramId: BigInt(GUEST_ID),
+    role: "guest",
+    firstName: "Иван",
+    lastName: "Петров",
+    birthday: new Date("1990-02-01"),
+    phone: "79991234567",
+    qrToken: "qr-guest-1",
+  });
+  const sent: SentMessage[] = [];
+  const bot = createTestBot(store, sent);
+
+  await sendText(bot, { userId: GUEST_ID, text: "/start", updateId: 1 });
+  await sendText(bot, { userId: GUEST_ID, text: "Профиль", updateId: 2 });
+
+  expect(sent.some((row) => row.payload.text === "Как вас зовут? (имя)")).toBe(false);
+  const profile = sent.find(
+    (row) => typeof row.payload.text === "string" && row.payload.text.includes("Ваш профиль"),
+  );
+  expect(profile).toBeDefined();
+  expect(String(profile?.payload.text)).toContain("ФИО: Иван Петров");
+  expect(String(profile?.payload.text)).toContain("Дата рождения: 01.02.1990");
+  expect(String(profile?.payload.text)).toContain("Телефон: +7 999 123-45-67");
+  expect(inlineKeyboardTexts(profile)).toContain("Редактировать");
+});
+
 test("guest cancel during profile does not change data", async () => {
   const store = new MemoryStore();
   await store.createUser({
@@ -305,7 +378,8 @@ test("guest cancel during profile does not change data", async () => {
 
   await sendText(bot, { userId: GUEST_ID, text: "/start", updateId: 1 });
   await sendText(bot, { userId: GUEST_ID, text: "Профиль", updateId: 2 });
-  await sendText(bot, { userId: GUEST_ID, text: "Отмена", updateId: 3 });
+  await sendCallback(bot, { userId: GUEST_ID, data: "guest:editProfile", updateId: 3 });
+  await sendText(bot, { userId: GUEST_ID, text: "Отмена", updateId: 4 });
 
   const guest = await store.findUserByTelegramId(BigInt(GUEST_ID));
   expect(guest?.firstName).toBe("Иван");

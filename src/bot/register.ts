@@ -82,6 +82,13 @@ export async function askBirthday(
   }
 }
 
+export function formatBirthday(date: Date): string {
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  return `${day}.${month}.${year}`;
+}
+
 export function parseBirthday(text: string): Date | null {
   const match = BIRTHDAY_RE.exec(text);
   if (!match) {
