@@ -6,14 +6,22 @@ import {
   type GameCatalogEntry,
   type GameRules,
   type Leaderboard,
+  type Me,
   type PrizePlace,
   type Role,
 } from "./api.ts";
 import { renderBlockBlast } from "./block-blast.ts";
+import { formatWeekCountdown } from "./hub-week.ts";
 import { renderMatch3 } from "./match3.ts";
 
 import { renderCheckIn } from "./check-in.ts";
+
 const STAFF_ROLES = new Set<Role>(["master", "admin"]);
+
+const GAME_ICONS: Record<string, string> = {
+  match3: "🔥💧",
+  blockblast: "🧱",
+};
 
 type RenderHubOptions = {
   readonly role?: Role;
@@ -25,6 +33,14 @@ type GameBoard = {
   readonly board: Leaderboard;
 };
 
+type HubViewModel = {
+  readonly me: Me;
+  readonly gameBoards: ReadonlyArray<GameBoard>;
+  readonly rules: GameRules;
+  readonly hubOptions: RenderHubOptions;
+  readonly staffViewer: boolean;
+};
+
 const escapeHtml = (text: string) => {
   return text
     .replaceAll("&", "&amp;")
@@ -33,11 +49,11 @@ const escapeHtml = (text: string) => {
     .replaceAll('"', "&quot;");
 };
 
-const formatPlace = (place: number | null) => {
+const formatPlaceShort = (place: number | null) => {
   if (place === null) {
-    return "пока нет места";
+    return "—";
   }
-  return `${place}`;
+  return `#${place}`;
 };
 
 const formatPrizeRow = (row: PrizePlace) => {
@@ -45,8 +61,26 @@ const formatPrizeRow = (row: PrizePlace) => {
   return `${row.place} место: ${row.bonuses} бонусов, ${coupon}`;
 };
 
+const gameIcon = (slug: string) => {
+  return GAME_ICONS[slug] ?? "🎮";
+};
+
 const isStaffViewer = (role: Role, staffMode: boolean) => {
   return staffMode || STAFF_ROLES.has(role);
+};
+
+const bestPlaceAmongGames = (gameBoards: ReadonlyArray<GameBoard>) => {
+  let best: { readonly place: number; readonly title: string } | null = null;
+  for (const entry of gameBoards) {
+    const place = entry.board.me.place;
+    if (place === null) {
+      continue;
+    }
+    if (best === null || place < best.place) {
+      best = { place, title: entry.game.title };
+    }
+  }
+  return best;
 };
 
 const renderLeaderboardItem = (row: Leaderboard["top"][number], staffViewer: boolean) => {
@@ -57,7 +91,84 @@ const renderLeaderboardItem = (row: Leaderboard["top"][number], staffViewer: boo
   return `<li>${row.place}. ${row.points} очков</li>`;
 };
 
-const renderRulesSection = (rules: GameRules) => {
+const renderHero = (rules: GameRules, now: Date) => {
+  const countdown = formatWeekCountdown(now);
+  return `
+    <section class="hub-hero panel">
+      <p class="hub-hero-kicker">🌫️ Неделя в «Друзьях»</p>
+      <p class="hub-hero-lead">Соревнуйтесь за бонусы и купоны</p>
+      <div class="hub-hero-meta">
+        <span>⏱ До итогов: ${escapeHtml(countdown)}</span>
+        <span>🏆 ${rules.winnersCount} призовых мест</span>
+      </div>
+    </section>
+  `;
+};
+
+const renderStatusRow = (me: Me, gameBoards: ReadonlyArray<GameBoard>, staffViewer: boolean) => {
+  const visitLabel = staffViewer
+    ? "Режим персонала"
+    : me.visitActive
+      ? "🟢 Вы в зале"
+      : "Визит не активен";
+  const best = bestPlaceAmongGames(gameBoards);
+  const bestLabel =
+    best === null
+      ? "Лучшее место: —"
+      : `Лучшее: ${formatPlaceShort(best.place)} в «${escapeHtml(best.title)}»`;
+
+  return `
+    <section class="hub-status panel">
+      <div class="hub-status-row">
+        <span>${visitLabel}</span>
+        <span class="hub-status-accent">${bestLabel}</span>
+      </div>
+      ${
+        staffViewer
+          ? ""
+          : `<div class="hub-status-row hub-status-row--secondary">
+        <span>Баланс: <strong class="hub-status-accent">${me.balance}</strong> бонусов</span>
+      </div>`
+      }
+    </section>
+  `;
+};
+
+const renderHubLinks = () => {
+  return `
+    <nav class="hub-links" aria-label="Дополнительно">
+      <button type="button" class="hub-link-btn" data-sheet="rules">Правила и призы</button>
+      <button type="button" class="hub-link-btn" data-sheet="leaderboards">Все рейтинги</button>
+    </nav>
+  `;
+};
+
+const renderCompactGameCard = ({ game, board }: GameBoard) => {
+  return `
+    <article class="game-card-compact panel" data-game-detail="${escapeHtml(game.slug)}">
+      <span class="game-card-icon" aria-hidden="true">${gameIcon(game.slug)}</span>
+      <h3 class="game-card-title">${escapeHtml(game.title)}</h3>
+      <p class="game-card-stats">
+        <strong class="game-card-place">${formatPlaceShort(board.me.place)}</strong>
+        <span>· ${board.me.points} очков</span>
+      </p>
+      <button type="button" class="game-card-play" data-play="${escapeHtml(game.slug)}">Играть</button>
+    </article>
+  `;
+};
+
+const renderGameGrid = (gameBoards: ReadonlyArray<GameBoard>) => {
+  return `
+    <section class="hub-games" aria-label="Игры">
+      <h2 class="hub-section-title">Выберите игру</h2>
+      <div class="game-grid">
+        ${gameBoards.map((entry) => renderCompactGameCard(entry)).join("")}
+      </div>
+    </section>
+  `;
+};
+
+const renderRulesSheetContent = (rules: GameRules) => {
   const prizes =
     rules.prizeTable.length === 0
       ? "<p class=\"muted\">Призы не настроены</p>"
@@ -66,38 +177,146 @@ const renderRulesSection = (rules: GameRules) => {
           .join("")}</ul>`;
 
   return `
-    <section class="panel rules-block">
-      <h2>Правила</h2>
-      <div class="rules-body">${escapeHtml(rules.body)}</div>
-      <p class="muted">Победителей: ${rules.winnersCount}</p>
-      ${prizes}
-    </section>
+    <h2 id="hub-sheet-title">Правила и призы</h2>
+    <div class="rules-body">${escapeHtml(rules.body)}</div>
+    <p class="muted hub-sheet-note">Победителей: ${rules.winnersCount}</p>
+    ${prizes}
   `;
 };
 
-const renderGameCard = (
-  { game, board }: GameBoard,
+const renderLeaderboardsSheetContent = (
+  gameBoards: ReadonlyArray<GameBoard>,
   staffViewer: boolean,
 ) => {
+  const sections = gameBoards
+    .map(({ game, board }) => {
+      const top =
+        board.top.length === 0
+          ? "<p class=\"muted\">Пока нет результатов</p>"
+          : `<ol class="leaderboard">${board.top.map((row) => renderLeaderboardItem(row, staffViewer)).join("")}</ol>`;
+      return `
+        <section class="hub-sheet-game">
+          <h3>${escapeHtml(game.title)}</h3>
+          <p class="hub-sheet-me">Ваше место: ${formatPlaceShort(board.me.place)} · ${board.me.points} очков</p>
+          ${top}
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <h2 id="hub-sheet-title">Все рейтинги</h2>
+    ${sections}
+  `;
+};
+
+const renderSheetMarkup = () => {
+  return `
+    <div class="hub-sheet-backdrop" data-sheet-backdrop hidden>
+      <div class="hub-sheet panel" role="dialog" aria-modal="true" aria-labelledby="hub-sheet-title">
+        <button type="button" class="hub-sheet-close" data-sheet-close aria-label="Закрыть">×</button>
+        <div class="hub-sheet-body" data-sheet-body></div>
+      </div>
+    </div>
+  `;
+};
+
+const renderGameDetail = (
+  root: HTMLElement,
+  entry: GameBoard,
+  viewModel: HubViewModel,
+) => {
+  const { board, game } = entry;
   const top =
     board.top.length === 0
       ? "<p class=\"muted\">Пока нет результатов</p>"
-      : `<ol class="game-card-top">${board.top
-          .slice(0, 5)
-          .map((row) => renderLeaderboardItem(row, staffViewer))
-          .join("")}</ol>`;
+      : `<ol class="leaderboard">${board.top.map((row) => renderLeaderboardItem(row, viewModel.staffViewer)).join("")}</ol>`;
 
-  return `
-    <section class="panel game-card" data-game-card="${escapeHtml(game.slug)}">
-      <h2>${escapeHtml(game.title)}</h2>
-      <p>Ваше место: ${formatPlace(board.me.place)}</p>
-      <p>Очки недели: ${board.me.points}</p>
-      ${top}
-      <div class="game-card-actions">
-        <button type="button" data-play="${escapeHtml(game.slug)}">Играть</button>
-      </div>
-    </section>
+  root.innerHTML = `
+    <div class="game-detail">
+      <header class="game-detail-header">
+        <button type="button" class="game-detail-back" data-hub-back aria-label="Назад">←</button>
+        <div>
+          <h1>${escapeHtml(game.title)}</h1>
+          <p class="muted game-detail-sub">${gameIcon(game.slug)} Рейтинг недели</p>
+        </div>
+      </header>
+      <section class="panel game-detail-stats">
+        <p>Ваше место: <strong class="hub-status-accent">${formatPlaceShort(board.me.place)}</strong></p>
+        <p>Очки недели: <strong class="hub-status-accent">${board.me.points}</strong></p>
+      </section>
+      <section class="panel">
+        <h2>Топ недели</h2>
+        ${top}
+      </section>
+      <button type="button" class="game-detail-play" data-play="${escapeHtml(game.slug)}">Играть</button>
+    </div>
   `;
+
+  bindPlayButtons(root, viewModel.hubOptions);
+  const back = root.querySelector("[data-hub-back]");
+  if (back instanceof HTMLButtonElement) {
+    back.addEventListener("click", () => {
+      renderBoard(root, viewModel);
+    });
+  }
+};
+
+const openSheet = (
+  root: HTMLElement,
+  content: string,
+) => {
+  const backdrop = root.querySelector("[data-sheet-backdrop]");
+  const body = root.querySelector("[data-sheet-body]");
+  if (!(backdrop instanceof HTMLElement) || !(body instanceof HTMLElement)) {
+    return;
+  }
+  body.innerHTML = content;
+  backdrop.hidden = false;
+  document.body.classList.add("hub-sheet-open");
+};
+
+const closeSheet = (root: HTMLElement) => {
+  const backdrop = root.querySelector("[data-sheet-backdrop]");
+  if (!(backdrop instanceof HTMLElement)) {
+    return;
+  }
+  backdrop.hidden = true;
+  document.body.classList.remove("hub-sheet-open");
+};
+
+const bindSheetControls = (root: HTMLElement, viewModel: HubViewModel) => {
+  for (const trigger of root.querySelectorAll("[data-sheet]")) {
+    if (!(trigger instanceof HTMLButtonElement)) {
+      continue;
+    }
+    trigger.addEventListener("click", () => {
+      const sheet = trigger.dataset.sheet;
+      if (sheet === "rules") {
+        openSheet(root, renderRulesSheetContent(viewModel.rules));
+        return;
+      }
+      if (sheet === "leaderboards") {
+        openSheet(root, renderLeaderboardsSheetContent(viewModel.gameBoards, viewModel.staffViewer));
+      }
+    });
+  }
+
+  const backdrop = root.querySelector("[data-sheet-backdrop]");
+  if (backdrop instanceof HTMLElement) {
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        closeSheet(root);
+      }
+    });
+  }
+
+  const close = root.querySelector("[data-sheet-close]");
+  if (close instanceof HTMLButtonElement) {
+    close.addEventListener("click", () => {
+      closeSheet(root);
+    });
+  }
 };
 
 const launchGame = (
@@ -114,44 +333,89 @@ const launchGame = (
   }
   if (slug === "blockblast") {
     renderBlockBlast({ root, onBack });
+    return;
+  }
+  root.innerHTML = `
+    <section class="panel">
+      <h2>Игра недоступна</h2>
+      <p class="muted">Экран для «${escapeHtml(slug)}» ещё не готов.</p>
+      <button type="button" data-hub-back>Назад</button>
+    </section>
+  `;
+  const back = root.querySelector("[data-hub-back]");
+  if (back instanceof HTMLButtonElement) {
+    back.addEventListener("click", () => {
+      void renderHub(root, hubOptions);
+    });
   }
 };
 
-const renderBoard = (
-  root: HTMLElement,
-  gameBoards: ReadonlyArray<GameBoard>,
-  rules: GameRules,
-  hubOptions: RenderHubOptions,
-  staffViewer: boolean,
-) => {
+const bindPlayButtons = (root: HTMLElement, hubOptions: RenderHubOptions) => {
+  for (const play of root.querySelectorAll("[data-play]")) {
+    if (!(play instanceof HTMLButtonElement)) {
+      continue;
+    }
+    play.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const slug = play.dataset.play;
+      if (slug !== undefined && slug.length > 0) {
+        launchGame(slug, root, hubOptions);
+      }
+    });
+  }
+};
+
+const bindGameCards = (root: HTMLElement, viewModel: HubViewModel) => {
+  for (const card of root.querySelectorAll("[data-game-detail]")) {
+    if (!(card instanceof HTMLElement)) {
+      continue;
+    }
+    card.addEventListener("click", (event) => {
+      if (event.target instanceof HTMLButtonElement && event.target.dataset.play !== undefined) {
+        return;
+      }
+      const slug = card.dataset.gameDetail;
+      if (slug === undefined || slug.length === 0) {
+        return;
+      }
+      const entry = viewModel.gameBoards.find((row) => row.game.slug === slug);
+      if (entry === undefined) {
+        return;
+      }
+      renderGameDetail(root, entry, viewModel);
+    });
+  }
+};
+
+const renderBoard = (root: HTMLElement, viewModel: HubViewModel) => {
+  const { gameBoards, rules, hubOptions, staffViewer, me } = viewModel;
+  const now = new Date();
   const staffBanner = staffViewer
     ? `<p class="staff-banner">Режим персонала — очки не участвуют в розыгрыше</p>`
     : "";
 
   root.innerHTML = `
-    <header>
-      <h1>Игры</h1>
-      <p class="muted">Выберите игру недели</p>
-    </header>
-    ${staffBanner}
-    ${renderRulesSection(rules)}
-    ${gameBoards.map((entry) => renderGameCard(entry, staffViewer)).join("")}
+    <div class="hub">
+      <header class="hub-header">
+        <h1>Игры</h1>
+      </header>
+      ${renderHero(rules, now)}
+      ${renderStatusRow(me, gameBoards, staffViewer)}
+      ${staffBanner}
+      ${renderHubLinks()}
+      ${renderGameGrid(gameBoards)}
+    </div>
+    ${renderSheetMarkup()}
   `;
 
-  for (const play of root.querySelectorAll("[data-play]")) {
-    if (play instanceof HTMLButtonElement) {
-      play.addEventListener("click", () => {
-        const slug = play.dataset.play;
-        if (slug !== undefined && slug.length > 0) {
-          launchGame(slug, root, hubOptions);
-        }
-      });
-    }
-  }
+  bindPlayButtons(root, hubOptions);
+  bindGameCards(root, viewModel);
+  bindSheetControls(root, viewModel);
 };
 
 export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {}) => {
   root.textContent = "Загрузка…";
+  document.body.classList.remove("hub-sheet-open");
 
   const me = await fetchMe();
   if (me.kind === "error") {
@@ -202,5 +466,11 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
     return [];
   });
 
-  renderBoard(root, gameBoards, rules.data, options, staffViewer);
+  renderBoard(root, {
+    me: me.data,
+    gameBoards,
+    rules: rules.data,
+    hubOptions: options,
+    staffViewer,
+  });
 };
