@@ -1,3 +1,4 @@
+import { DateTime } from "luxon";
 import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard, InputFile } from "grammy";
 import type { Bot } from "grammy";
@@ -5,8 +6,11 @@ import { listActiveMenu } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { newQrToken } from "../domain/qr-token.ts";
 import type { MenuItemRecord, PromoRecord } from "../domain/types.ts";
+import { formatDisplayPhone } from "../domain/phone.ts";
 import { updateGuestProfile } from "../domain/users.ts";
+import { MOSCOW } from "../domain/week.ts";
 import type { BotContext } from "./context.ts";
+import { formatBirthday } from "./register.ts";
 import {
   askCancellableBirthday,
   askCancellableText,
@@ -18,11 +22,16 @@ import { enterConversation } from "./enter-conversation.ts";
 import { mainKeyboard } from "./keyboards.ts";
 import { qrPngBuffer } from "./qr.ts";
 
+const formatMoscowDate = (value: Date): string => {
+  return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("dd.MM.yyyy");
+};
+
 const formatMenu = (items: MenuItemRecord[]): string => {
-  if (items.length === 0) {
-    return "Меню пока пусто";
+  const textItems = items.filter((item) => item.title.trim().length > 0);
+  if (textItems.length === 0) {
+    return "";
   }
-  return items
+  return textItems
     .map((item) => {
       const lines = [item.title, item.description];
       if (item.priceRubles !== null) {
@@ -31,6 +40,26 @@ const formatMenu = (items: MenuItemRecord[]): string => {
       return lines.join("\n");
     })
     .join("\n\n");
+};
+
+const menuImageCaption = (item: MenuItemRecord): string | undefined => {
+  if (item.title.trim().length > 0) {
+    return undefined;
+  }
+  if (item.priceRubles === null) {
+    return undefined;
+  }
+  return `${item.priceRubles} ₽`;
+};
+
+const sendMenuPhotos = async (ctx: BotContext, items: MenuItemRecord[]) => {
+  for (const item of items) {
+    if (item.imageFileId === null) {
+      continue;
+    }
+    const caption = menuImageCaption(item);
+    await ctx.replyWithPhoto(item.imageFileId, caption === undefined ? {} : { caption });
+  }
 };
 
 const adminMenuKeyboard = (): InlineKeyboard => {
@@ -50,6 +79,32 @@ const broadcastOptKeyboard = (optOut: boolean): InlineKeyboard => {
     return new InlineKeyboard().text("Включить рассылку", "guest:broadcastOn");
   }
   return new InlineKeyboard().text("Отключить рассылку", "guest:broadcastOff");
+};
+
+type FormatGuestProfileParameters = {
+  firstName: string | null;
+  lastName: string | null;
+  birthday: Date | null;
+  phone: string | null;
+};
+
+const formatGuestProfile = ({
+  firstName,
+  lastName,
+  birthday,
+  phone,
+}: FormatGuestProfileParameters): string => {
+  const name = `${firstName ?? ""} ${lastName ?? ""}`.trim() || "—";
+  return [
+    "👤 Ваш профиль",
+    `ФИО: ${name}`,
+    `Дата рождения: ${birthday === null ? "—" : formatBirthday(birthday)}`,
+    `Телефон: ${formatDisplayPhone(phone)}`,
+  ].join("\n");
+};
+
+const guestProfileKeyboard = (): InlineKeyboard => {
+  return new InlineKeyboard().text("Редактировать", "guest:editProfile");
 };
 
 const sendPromoMessage = async (ctx: BotContext, promo: PromoRecord) => {
@@ -117,7 +172,9 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     const buf = await qrPngBuffer(ctx.dbUser.qrToken);
     const coupons = await ctx.store.listActiveCoupons(ctx.dbUser.id);
     const couponLine =
-      coupons.length > 0 ? coupons.map((coupon) => coupon.title).join(", ") : "нет";
+      coupons.length > 0
+        ? coupons.map((coupon) => `${coupon.title} (до ${formatMoscowDate(coupon.expiresAt)})`).join(", ")
+        : "нет";
     await ctx.replyWithPhoto(new InputFile(buf), {
       caption: `Баланс: ${ctx.dbUser.balance}\nКод: ${ctx.dbUser.qrToken}\nКупоны: ${couponLine}`,
     });
@@ -133,13 +190,22 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       await ctx.reply("История пуста");
       return;
     }
-    const text = rows
-      .map((row) => {
-        const sign = row.amount > 0 ? "+" : "";
-        const label = row.comment ?? row.type;
-        return `${row.createdAt.toISOString().slice(0, 10)} ${label}: ${sign}${row.amount}`;
-      })
-      .join("\n");
+    const text = (
+      await Promise.all(
+        rows.map(async (row) => {
+          const sign = row.amount > 0 ? "+" : "";
+          const label = row.comment ?? row.type;
+          let line = `${formatMoscowDate(row.createdAt)} ${label}: ${sign}${row.amount}`;
+          if (row.amount > 0) {
+            const lot = await ctx.store.findBonusLotByLedgerId(row.id);
+            if (lot !== null) {
+              line += ` (до ${formatMoscowDate(lot.expiresAt)})`;
+            }
+          }
+          return line;
+        }),
+      )
+    ).join("\n");
     await ctx.reply(text);
   });
 
@@ -148,21 +214,29 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       await enterConversation(ctx, "registerGuest");
       return;
     }
-    const coupons = await ctx.store.listActiveCoupons(ctx.dbUser.id);
-    const couponLine =
-      coupons.length > 0 ? coupons.map((coupon) => coupon.title).join(", ") : "нет";
-    await ctx.reply(`Купоны: ${couponLine}`);
-    await enterConversation(ctx, "editGuestProfile");
+    await ctx.reply(formatGuestProfile(ctx.dbUser), {
+      reply_markup: guestProfileKeyboard(),
+    });
   });
 
   bot.hears("Меню", async (ctx) => {
     const menu = await listActiveMenu(ctx.store);
     const text = formatMenu(menu);
-    if (ctx.dbUser?.role === "admin") {
-      await ctx.reply(text, { reply_markup: adminMenuKeyboard() });
+    const isAdmin = ctx.dbUser?.role === "admin";
+    const keyboard = isAdmin ? adminMenuKeyboard() : undefined;
+
+    if (menu.length === 0) {
+      await ctx.reply("Меню пока пусто", keyboard === undefined ? {} : { reply_markup: keyboard });
       return;
     }
-    await ctx.reply(text);
+
+    if (text.length > 0) {
+      await ctx.reply(text, keyboard === undefined ? {} : { reply_markup: keyboard });
+    } else if (isAdmin) {
+      await ctx.reply("Меню", { reply_markup: keyboard });
+    }
+
+    await sendMenuPhotos(ctx, menu);
   });
 
   bot.hears("Контакты", async (ctx) => {
@@ -229,6 +303,15 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
 
   bot.command("broadcast_opt_in", async (ctx) => {
     await setBroadcastOptOut(ctx, false);
+  });
+
+  bot.callbackQuery("guest:editProfile", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!ctx.dbUser) {
+      await ctx.reply("Сначала зарегистрируйтесь");
+      return;
+    }
+    await enterConversation(ctx, "editGuestProfile");
   });
 
   bot.callbackQuery("guest:broadcastOff", async (ctx) => {

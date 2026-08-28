@@ -106,3 +106,46 @@ test("tie ranks earlier updatedAt higher", async () => {
   expect((await store.findUserById(earlier.id))?.balance).toBe(1500);
   expect((await store.findUserById(later.id))?.balance).toBe(500);
 });
+
+test("skips staff in week rankings when awarding prizes", async () => {
+  const store = new MemoryStore();
+  await store.updateSettings({
+    winnersCount: 2,
+    prizeTable: [
+      { place: 1, bonuses: 1000, couponTitle: null },
+      { place: 2, bonuses: 500, couponTitle: null },
+    ],
+  });
+  const first = await seedGuest(store, 21n, "79990000021");
+  const second = await seedGuest(store, 22n, "79990000022");
+  const staff = await store.createUser({
+    telegramId: 97n,
+    role: "master",
+    firstName: "Мастер",
+    lastName: "Зала",
+    birthday: null,
+    phone: null,
+    qrToken: "stafftoken3",
+  });
+  const game = await store.findGameBySlug("match3");
+  if (game === null) {
+    throw new Error("match3 missing");
+  }
+  const week = await store.getOrCreateOpenWeek(
+    game.id,
+    weekStartMoscow(DateTime.fromJSDate(duringWeek)).toJSDate(),
+  );
+  await store.addScore(week.id, staff.id, 999, duringWeek);
+  await openVisit(store, first.id, staff.id, duringWeek);
+  await openVisit(store, second.id, staff.id, duringWeek);
+  await submitScore(store, { userId: first.id, slug: "match3", points: 300, now: duringWeek });
+  await submitScore(store, { userId: second.id, slug: "match3", points: 200, now: duringWeek });
+
+  await closeOpenWeeks(store, mondayAfter);
+
+  expect((await store.findUserById(first.id))?.balance).toBe(1500);
+  expect((await store.findUserById(second.id))?.balance).toBe(1000);
+  expect(await store.hasWeeklyAward(week.id, staff.id)).toBe(false);
+  expect(await store.hasWeeklyAward(week.id, first.id)).toBe(true);
+  expect(await store.hasWeeklyAward(week.id, second.id)).toBe(true);
+});

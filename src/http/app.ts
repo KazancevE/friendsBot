@@ -4,6 +4,7 @@ import { webhookCallback } from "grammy";
 import { Hono } from "hono";
 import type { Store } from "../store/types.ts";
 import { createCashierRoutes } from "./cashier.ts";
+import { createCheckInRoutes } from "./check-in.ts";
 import { createGameRoutes } from "./games.ts";
 
 type CreateHttpAppParameters = {
@@ -24,6 +25,7 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
   const app = new Hono();
   app.get("/health", (c) => c.json({ ok: true }));
   app.route("/", createCashierRoutes({ store, botToken }));
+  app.route("/", createCheckInRoutes({ store, botToken }));
   app.route("/", createGameRoutes({ store, botToken }));
 
   if (bot !== undefined) {

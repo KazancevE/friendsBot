@@ -1,4 +1,0 @@
-{"type":"server-started","port":50273,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:50273","screen_dir":"/Users/egor/projects/friendsBot/.superpowers/brainstorm/85115-1787852272/content","state_dir":"/Users/egor/projects/friendsBot/.superpowers/brainstorm/85115-1787852272/state"}
-fs.watch error: EMFILE: too many open files, watch
-{"type":"server-stopped","reason":"owner process exited"}
-{"source":"user-event","type":"click","text":"👤 Ваш профиль\n            Имя: Иван\n            Фамилия: Петров\n            Дата рождения: 01.02.1990\n            Телефон: +7 999 123-45-67\n            Баланс: 350 бонусов\n            Купоны: Скидка 10%, Бесплатный чай\n            \n              Редактировать\n            \n          \n        \n      \n    \n    \n      B — С балансом\n      То же, что A, плюс текущий баланс бонусов. Удобно, если гость редко заходит в «Баланс и QR».","choice":"extended","id":null,"timestamp":1787852363826}

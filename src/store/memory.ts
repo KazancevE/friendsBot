@@ -1,5 +1,8 @@
 import { DEFAULT_SETTINGS } from "../domain/settings.ts";
 import type {
+  ActiveVisitRow,
+  BonusLotRecord,
+  CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
   GameRecord,
@@ -11,6 +14,7 @@ import type {
   PromoRecord,
   Settings,
   UserRecord,
+  VenueCodeRecord,
   VisitRecord,
 } from "../domain/types.ts";
 import { moscowCalendarYear } from "../domain/week.ts";
@@ -21,6 +25,8 @@ export class MemoryStore implements Store {
   users = new Map<string, UserRecord>();
   ledger: LedgerRecord[] = [];
   visits = new Map<string, VisitRecord>();
+  venueCodes = new Map<string, VenueCodeRecord>();
+  checkInLogs: CheckInLogRecord[] = [];
   menu = new Map<string, MenuItemRecord>();
   pages = new Map<string, ContentPageRecord>();
   promos = new Map<string, PromoRecord>();
@@ -28,6 +34,7 @@ export class MemoryStore implements Store {
   weeks = new Map<string, GameWeekRecord>();
   scores = new Map<string, GameScoreRecord>();
   coupons = new Map<string, CouponRecord>();
+  bonusLots = new Map<string, BonusLotRecord>();
   awards = new Set<string>();
 
   constructor() {
@@ -121,6 +128,49 @@ export class MemoryStore implements Store {
     return [...this.users.values()].filter((u) => u.birthday);
   }
 
+  async createBonusLot(input: {
+    userId: string;
+    ledgerId: string | null;
+    category: "gift" | "check";
+    initial: number;
+    remaining: number;
+    expiresAt: Date;
+    createdAt: Date;
+  }) {
+    const row: BonusLotRecord = {
+      id: crypto.randomUUID(),
+      warned7d: false,
+      warned3d: false,
+      warned1d: false,
+      ...input,
+    };
+    this.bonusLots.set(row.id, row);
+    return { ...row };
+  }
+  async listBonusLots(userId: string) {
+    return [...this.bonusLots.values()]
+      .filter((lot) => lot.userId === userId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((lot) => ({ ...lot }));
+  }
+  async listBonusLotsWithRemaining() {
+    return [...this.bonusLots.values()].filter((lot) => lot.remaining > 0).map((lot) => ({ ...lot }));
+  }
+  async updateBonusLot(
+    id: string,
+    patch: Partial<Pick<BonusLotRecord, "remaining" | "warned7d" | "warned3d" | "warned1d" | "expiresAt">>,
+  ) {
+    const cur = this.bonusLots.get(id);
+    if (!cur) throw new Error("bonus lot missing");
+    const next = { ...cur, ...patch, id: cur.id };
+    this.bonusLots.set(id, next);
+    return { ...next };
+  }
+  async findBonusLotByLedgerId(ledgerId: string) {
+    const lot = [...this.bonusLots.values()].find((row) => row.ledgerId === ledgerId);
+    return lot ? { ...lot } : null;
+  }
+
   async getActiveVisit(userId: string, now: Date) {
     return (
       [...this.visits.values()].find((v) => v.userId === userId && now < v.endsAt) ?? null
@@ -138,6 +188,82 @@ export class MemoryStore implements Store {
     return next;
   }
 
+  async listActiveVisits(now: Date): Promise<ActiveVisitRow[]> {
+    const active = [...this.visits.values()].filter((visit) => now < visit.endsAt);
+    return active.map((visit) => {
+      const user = this.users.get(visit.userId);
+      const latest = [...this.checkInLogs]
+        .filter((log) => log.visitId === visit.id)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      return {
+        visitId: visit.id,
+        userId: visit.userId,
+        firstName: user?.firstName ?? null,
+        lastName: user?.lastName ?? null,
+        startedAt: visit.startedAt,
+        endsAt: visit.endsAt,
+        checkInMethod: latest?.method ?? null,
+      };
+    });
+  }
+
+  async revokeActiveVenueCodes(now: Date) {
+    for (const [id, code] of this.venueCodes) {
+      if (code.revokedAt === null && code.validFrom <= now && now < code.validUntil) {
+        this.venueCodes.set(id, { ...code, revokedAt: now });
+      }
+    }
+  }
+
+  async createVenueCode(input: {
+    pin: string;
+    token: string;
+    validFrom: Date;
+    validUntil: Date;
+    createdBy: string | null;
+    createdAt: Date;
+  }) {
+    const row: VenueCodeRecord = {
+      id: crypto.randomUUID(),
+      revokedAt: null,
+      ...input,
+    };
+    this.venueCodes.set(row.id, row);
+    return { ...row };
+  }
+
+  async findActiveVenueCode(now: Date) {
+    return (
+      [...this.venueCodes.values()].find(
+        (code) => code.revokedAt === null && code.validFrom <= now && now < code.validUntil,
+      ) ?? null
+    );
+  }
+
+  async findVenueCodeByToken(token: string) {
+    return [...this.venueCodes.values()].find((code) => code.token === token) ?? null;
+  }
+
+  async createCheckInLog(input: {
+    userId: string;
+    venueCodeId: string;
+    visitId: string;
+    method: "qr" | "pin";
+    createdAt: Date;
+  }) {
+    const row: CheckInLogRecord = { id: crypto.randomUUID(), ...input };
+    this.checkInLogs.push(row);
+    return row;
+  }
+
+  async findLatestCheckInForVisit(visitId: string) {
+    return (
+      [...this.checkInLogs]
+        .filter((log) => log.visitId === visitId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null
+    );
+  }
+
   async listMenu() {
     return [...this.menu.values()].filter((m) => m.active).sort((a, b) => a.sort - b.sort);
   }
@@ -150,7 +276,7 @@ export class MemoryStore implements Store {
   async deleteMenuItem(id: string) {
     this.menu.delete(id);
   }
-  async getPage(slug: "contacts" | "directions") {
+  async getPage(slug: "contacts" | "directions" | "game_rules") {
     return this.pages.get(slug) ?? null;
   }
   async upsertPage(page: ContentPageRecord) {
@@ -216,7 +342,12 @@ export class MemoryStore implements Store {
     this.awards.add(`${weekId}:${userId}`);
   }
 
-  async createCoupon(input: { userId: string; title: string; weekId: string | null }) {
+  async createCoupon(input: {
+    userId: string;
+    title: string;
+    weekId: string | null;
+    expiresAt: Date;
+  }) {
     const row: CouponRecord = {
       id: crypto.randomUUID(),
       status: "active",
@@ -228,7 +359,10 @@ export class MemoryStore implements Store {
     return row;
   }
   async listActiveCoupons(userId: string) {
-    return [...this.coupons.values()].filter((c) => c.userId === userId && c.status === "active");
+    const now = Date.now();
+    return [...this.coupons.values()].filter(
+      (c) => c.userId === userId && c.status === "active" && c.expiresAt.getTime() > now,
+    );
   }
   async findCoupon(id: string) {
     return this.coupons.get(id) ?? null;
@@ -238,5 +372,15 @@ export class MemoryStore implements Store {
     const next = { ...c, status: "redeemed" as const, redeemedBy: by, redeemedAt: at };
     this.coupons.set(id, next);
     return next;
+  }
+  async expireCoupons(now: Date) {
+    let count = 0;
+    for (const [id, coupon] of this.coupons) {
+      if (coupon.status === "active" && coupon.expiresAt.getTime() <= now.getTime()) {
+        this.coupons.set(id, { ...coupon, status: "expired" });
+        count += 1;
+      }
+    }
+    return count;
   }
 }

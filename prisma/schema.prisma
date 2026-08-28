@@ -21,11 +21,23 @@ enum LedgerType {
   weekly_prize
   redeem
   coupon_redeem
+  expire
 }
 
 enum CouponStatus {
   active
   redeemed
+  expired
+}
+
+enum BonusLotCategory {
+  gift
+  check
+}
+
+enum CheckInMethod {
+  qr
+  pin
 }
 
 model User {
@@ -42,11 +54,14 @@ model User {
   createdAt        DateTime  @default(now())
   ledger           Ledger[]  @relation("UserLedger")
   actedLedger      Ledger[]  @relation("ActorLedger")
+  bonusLots        BonusLot[]
   visits           Visit[]   @relation("VisitGuest")
   openedVisits     Visit[]   @relation("VisitOpener")
   coupons          Coupon[]
   scores           GameScore[]
   awards           WeeklyAward[]
+  checkIns         CheckInLog[]
+  venueCodes       VenueCode[] @relation("VenueCodeCreator")
 }
 
 model Ledger {
@@ -60,16 +75,59 @@ model Ledger {
   comment     String?
   checkAmount Int?
   createdAt   DateTime   @default(now())
+  bonusLot    BonusLot?
+}
+
+model BonusLot {
+  id        String           @id @default(uuid())
+  user      User             @relation(fields: [userId], references: [id])
+  userId    String
+  ledger    Ledger?          @relation(fields: [ledgerId], references: [id])
+  ledgerId  String?          @unique
+  category  BonusLotCategory
+  initial   Int
+  remaining Int
+  expiresAt DateTime
+  createdAt DateTime         @default(now())
+  warned7d  Boolean          @default(false)
+  warned3d  Boolean          @default(false)
+  warned1d  Boolean          @default(false)
 }
 
 model Visit {
-  id        String   @id @default(uuid())
-  user      User     @relation("VisitGuest", fields: [userId], references: [id])
+  id        String       @id @default(uuid())
+  user      User         @relation("VisitGuest", fields: [userId], references: [id])
   userId    String
-  opener    User     @relation("VisitOpener", fields: [openedBy], references: [id])
+  opener    User         @relation("VisitOpener", fields: [openedBy], references: [id])
   openedBy  String
   startedAt DateTime
   endsAt    DateTime
+  checkIns  CheckInLog[]
+}
+
+model VenueCode {
+  id         String        @id @default(uuid())
+  pin        String
+  token      String        @unique
+  validFrom  DateTime
+  validUntil DateTime
+  revokedAt  DateTime?
+  createdBy  String?
+  creator    User?         @relation("VenueCodeCreator", fields: [createdBy], references: [id])
+  createdAt  DateTime      @default(now())
+  checkIns   CheckInLog[]
+}
+
+model CheckInLog {
+  id          String        @id @default(uuid())
+  user        User          @relation(fields: [userId], references: [id])
+  userId      String
+  venueCode   VenueCode     @relation(fields: [venueCodeId], references: [id])
+  venueCodeId String
+  visit       Visit         @relation(fields: [visitId], references: [id])
+  visitId     String
+  method      CheckInMethod
+  createdAt   DateTime      @default(now())
 }
 
 model Setting {
@@ -88,6 +146,7 @@ model MenuItem {
   title        String
   description  String  @default("")
   priceRubles  Int?
+  imageFileId  String?
   sort         Int     @default(0)
   active       Boolean @default(true)
 }
@@ -139,6 +198,7 @@ model Coupon {
   week       GameWeek?    @relation(fields: [weekId], references: [id])
   weekId     String?
   status     CouponStatus @default(active)
+  expiresAt  DateTime
   redeemedBy String?
   redeemedAt DateTime?
 }

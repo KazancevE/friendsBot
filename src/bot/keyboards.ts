@@ -40,19 +40,14 @@ export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
     .text("Акции")
     .text("Как доехать")
     .row()
-    .text("Контакты");
-
-  if (role === "guest") {
-    keyboard.webApp("Игры", miniAppUrl(publicUrl));
-  } else {
-    keyboard.text("Игры");
-  }
+    .text("Контакты")
+    .text("Игры");
 
   if (role === "guest") {
     keyboard.row().text("Отключить рассылку");
   }
   if (role === "master" || role === "admin") {
-    keyboard.row().text("Найти гостя").row().webApp("Касса QR", miniAppUrl(publicUrl));
+    keyboard.row().text("Найти гостя").text("Код зала").row().webApp("Касса QR", miniAppUrl(publicUrl));
   }
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");

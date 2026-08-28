@@ -11,7 +11,16 @@ export const DEFAULT_SETTINGS: Settings = {
     { place: 2, bonuses: 500, couponTitle: null },
     { place: 3, bonuses: 300, couponTitle: null },
   ],
+  checkBonusTtlDays: 30,
+  giftBonusTtlDays: 15,
+  couponClaimDaysDefault: 10,
+  couponClaimDays: 10,
+  expireNotifyMinBonuses: 300,
 };
+
+export function expiresAfterDays(from: Date, days: number): Date {
+  return new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+}
 
 export function parsePrizeTable(json: string): PrizePlace[] {
   const raw = JSON.parse(json) as PrizePlace[];

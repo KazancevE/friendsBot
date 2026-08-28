@@ -28,6 +28,8 @@ const throwIfCancel = (text: string | undefined) => {
   }
 };
 
+export { throwIfCancel };
+
 const isSkipText = (text: string): boolean => {
   const lower = text.trim().toLowerCase();
   return lower === "пропустить" || lower === "-" || lower === "нет";
@@ -192,6 +194,26 @@ export const waitCancellablePhotoOrSkip = async ({
       return undefined;
     }
     await ctx.reply("Пришлите фото или «пропустить»", { reply_markup: cancelKeyboard() });
+  }
+};
+
+export const waitCancellablePhoto = async ({
+  conversation,
+  ctx,
+  prompt,
+}: AskPhotoParameters): Promise<string> => {
+  await ctx.reply(prompt, { reply_markup: cancelKeyboard() });
+  for (;;) {
+    const next = await conversation.wait();
+    throwIfCancel(next.message?.text);
+    const photos = next.message?.photo;
+    if (photos !== undefined && photos.length > 0) {
+      const largest = photos[photos.length - 1];
+      if (largest !== undefined) {
+        return largest.file_id;
+      }
+    }
+    await ctx.reply("Пришлите фото", { reply_markup: cancelKeyboard() });
   }
 };
 

@@ -1,6 +1,7 @@
 import { DomainError } from "./errors.ts";
 import { normalizePhone } from "./phone.ts";
 import { newQrToken } from "./qr-token.ts";
+import { createLotForCredit } from "./bonus-lots.ts";
 import type { Store } from "../store/types.ts";
 
 export async function registerGuest(
@@ -33,13 +34,21 @@ export async function registerGuest(
     const next = await tx.updateUser(user.id, {
       balance: settings.registrationBonus,
     });
-    await tx.addLedger({
+    const ledger = await tx.addLedger({
       userId: user.id,
       type: "registration",
       amount: settings.registrationBonus,
       actorId: null,
       comment: "Регистрация",
       checkAmount: null,
+    });
+    await createLotForCredit(tx, {
+      userId: user.id,
+      ledgerId: ledger.id,
+      type: "registration",
+      amount: settings.registrationBonus,
+      createdAt: ledger.createdAt,
+      settings,
     });
     return next;
   });

@@ -9,6 +9,10 @@ import {
   editContactsConversation,
   editDirectionsConversation,
   setBirthdayBonusConversation,
+  setCheckBonusTtlConversation,
+  setCouponClaimDefaultConversation,
+  setExpireNotifyMinConversation,
+  setGiftBonusTtlConversation,
   setPercentConversation,
   setRegistrationBonusConversation,
   setVisitHoursConversation,
@@ -18,6 +22,7 @@ import {
 import type { BotContext } from "./context.ts";
 import { editGuestProfileConversation, wireGuestHandlers } from "./guest.ts";
 import { hydrateBotContext } from "./hydrate.ts";
+import { ignoreMyChatMember } from "./ignore-my-chat-member.ts";
 import { registerGuestConversation } from "./register.ts";
 import { requireRegisteredUser } from "./require-registered.ts";
 import {
@@ -29,6 +34,7 @@ import {
   staffVisitConversation,
   wireStaffHandlers,
 } from "./staff.ts";
+import { wireVenueCodeHandlers } from "./venue-code.ts";
 
 export function createBot(
   token: string,
@@ -42,9 +48,13 @@ export function createBot(
   bot.use(hydrate);
   bot.use(conversations({ plugins: [hydrate] }));
   bot.catch((err) => {
+    const inner = err.error;
     console.error(err.message);
-    console.error(err.error);
+    if (inner instanceof Error) {
+      console.error(inner.message);
+    }
   });
+  bot.use(ignoreMyChatMember);
   bot.use(createConversation(registerGuestConversation, "registerGuest"));
   bot.use(createConversation(editGuestProfileConversation, "editGuestProfile"));
   bot.use(createConversation(staffFindConversation, "staffFind"));
@@ -57,6 +67,10 @@ export function createBot(
   bot.use(createConversation(setRegistrationBonusConversation, "setRegistrationBonus"));
   bot.use(createConversation(setBirthdayBonusConversation, "setBirthdayBonus"));
   bot.use(createConversation(setVisitHoursConversation, "setVisitHours"));
+  bot.use(createConversation(setCheckBonusTtlConversation, "setCheckBonusTtl"));
+  bot.use(createConversation(setGiftBonusTtlConversation, "setGiftBonusTtl"));
+  bot.use(createConversation(setCouponClaimDefaultConversation, "setCouponClaimDefault"));
+  bot.use(createConversation(setExpireNotifyMinConversation, "setExpireNotifyMin"));
   bot.use(createConversation(setWeeklyPrizesConversation, "setWeeklyPrizes"));
   bot.use(createConversation(assignRoleConversation, "assignRole"));
   bot.use(createConversation(addMenuItemConversation, "addMenuItem"));
@@ -66,6 +80,7 @@ export function createBot(
   bot.use(requireRegisteredUser);
   wireGuestHandlers(bot);
   wireStaffHandlers(bot);
+  wireVenueCodeHandlers(bot);
   wireAdminHandlers(bot);
   return bot;
 }

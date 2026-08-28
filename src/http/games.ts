@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { DomainError } from "../domain/errors.ts";
-import { getLeaderboard, submitScore } from "../domain/games.ts";
+import { getGameRules, getLeaderboard, submitScoreOrPractice } from "../domain/games.ts";
 import type { Store } from "../store/types.ts";
 import { resolveActor } from "./auth.ts";
 
@@ -70,13 +70,20 @@ export const createGameRoutes = ({ store, botToken }: CreateGameRoutesParameters
     if (typeof body.points !== "number") {
       throw new DomainError("score_cap", "Слишком много очков за партию");
     }
-    const score = await submitScore(store, {
+    const result = await submitScoreOrPractice(store, {
       userId: user.id,
       slug: body.slug,
       points: body.points,
       now: new Date(),
     });
-    return c.json({ points: score.points });
+    return c.json(result);
+  });
+
+  app.get("/api/games/rules", async (c) => {
+    const initData = readInitData(c.req.header("X-Telegram-Init-Data"), {});
+    await requireRegistered({ store, initData, botToken });
+    const rules = await getGameRules(store);
+    return c.json(rules);
   });
 
   app.get("/api/games/leaderboard", async (c) => {
@@ -90,6 +97,7 @@ export const createGameRoutes = ({ store, botToken }: CreateGameRoutesParameters
       userId: user.id,
       slug,
       now: new Date(),
+      viewerRole: user.role,
     });
     return c.json(board);
   });

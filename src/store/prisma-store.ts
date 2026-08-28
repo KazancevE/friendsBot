@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import type {
+  BonusLot,
+  CheckInLog,
   ContentPage,
   Coupon,
   Game,
@@ -10,11 +12,16 @@ import type {
   Prisma,
   Promo,
   User,
+  VenueCode,
   Visit,
 } from "@prisma/client";
 import { DomainError } from "../domain/errors.ts";
 import { DEFAULT_SETTINGS, parsePrizeTable } from "../domain/settings.ts";
 import type {
+  ActiveVisitRow,
+  BonusLotRecord,
+  CheckInLogRecord,
+  CheckInMethod,
   ContentPageRecord,
   CouponRecord,
   GameRecord,
@@ -27,6 +34,7 @@ import type {
   Role,
   Settings,
   UserRecord,
+  VenueCodeRecord,
   VisitRecord,
 } from "../domain/types.ts";
 import { moscowYearStart } from "../domain/week.ts";
@@ -41,6 +49,11 @@ const SETTING_KEYS = [
   "visitHours",
   "winnersCount",
   "prizeTable",
+  "checkBonusTtlDays",
+  "giftBonusTtlDays",
+  "couponClaimDaysDefault",
+  "couponClaimDays",
+  "expireNotifyMinBonuses",
 ] as const;
 
 export class PrismaStore implements Store {
@@ -67,6 +80,15 @@ export class PrismaStore implements Store {
       visitHours: Number(map.get("visitHours") ?? DEFAULT_SETTINGS.visitHours),
       winnersCount: Number(map.get("winnersCount") ?? DEFAULT_SETTINGS.winnersCount),
       prizeTable: prizeRaw ? parsePrizeTable(prizeRaw) : structuredClone(DEFAULT_SETTINGS.prizeTable),
+      checkBonusTtlDays: Number(map.get("checkBonusTtlDays") ?? DEFAULT_SETTINGS.checkBonusTtlDays),
+      giftBonusTtlDays: Number(map.get("giftBonusTtlDays") ?? DEFAULT_SETTINGS.giftBonusTtlDays),
+      couponClaimDaysDefault: Number(
+        map.get("couponClaimDaysDefault") ?? DEFAULT_SETTINGS.couponClaimDaysDefault,
+      ),
+      couponClaimDays: Number(map.get("couponClaimDays") ?? DEFAULT_SETTINGS.couponClaimDays),
+      expireNotifyMinBonuses: Number(
+        map.get("expireNotifyMinBonuses") ?? DEFAULT_SETTINGS.expireNotifyMinBonuses,
+      ),
     };
   }
 
@@ -79,6 +101,11 @@ export class PrismaStore implements Store {
       visitHours: String(next.visitHours),
       winnersCount: String(next.winnersCount),
       prizeTable: JSON.stringify(next.prizeTable),
+      checkBonusTtlDays: String(next.checkBonusTtlDays),
+      giftBonusTtlDays: String(next.giftBonusTtlDays),
+      couponClaimDaysDefault: String(next.couponClaimDaysDefault),
+      couponClaimDays: String(next.couponClaimDays),
+      expireNotifyMinBonuses: String(next.expireNotifyMinBonuses),
     };
     await Promise.all(
       SETTING_KEYS.map((key) =>
@@ -202,6 +229,60 @@ export class PrismaStore implements Store {
     return rows.map(toUser);
   }
 
+  async createBonusLot(input: {
+    userId: string;
+    ledgerId: string | null;
+    category: "gift" | "check";
+    initial: number;
+    remaining: number;
+    expiresAt: Date;
+    createdAt: Date;
+  }): Promise<BonusLotRecord> {
+    const row = await this.prisma.bonusLot.create({
+      data: {
+        userId: input.userId,
+        ledgerId: input.ledgerId,
+        category: input.category,
+        initial: input.initial,
+        remaining: input.remaining,
+        expiresAt: input.expiresAt,
+        createdAt: input.createdAt,
+      },
+    });
+    return toBonusLot(row);
+  }
+
+  async listBonusLots(userId: string): Promise<BonusLotRecord[]> {
+    const rows = await this.prisma.bonusLot.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toBonusLot);
+  }
+
+  async listBonusLotsWithRemaining(): Promise<BonusLotRecord[]> {
+    const rows = await this.prisma.bonusLot.findMany({
+      where: { remaining: { gt: 0 } },
+    });
+    return rows.map(toBonusLot);
+  }
+
+  async updateBonusLot(
+    id: string,
+    patch: Partial<Pick<BonusLotRecord, "remaining" | "warned7d" | "warned3d" | "warned1d" | "expiresAt">>,
+  ): Promise<BonusLotRecord> {
+    const row = await this.prisma.bonusLot.update({
+      where: { id },
+      data: patch,
+    });
+    return toBonusLot(row);
+  }
+
+  async findBonusLotByLedgerId(ledgerId: string): Promise<BonusLotRecord | null> {
+    const row = await this.prisma.bonusLot.findUnique({ where: { ledgerId } });
+    return row ? toBonusLot(row) : null;
+  }
+
   async getActiveVisit(userId: string, now: Date): Promise<VisitRecord | null> {
     const row = await this.prisma.visit.findFirst({
       where: { userId, endsAt: { gt: now } },
@@ -227,6 +308,94 @@ export class PrismaStore implements Store {
     return toVisit(row);
   }
 
+  async listActiveVisits(now: Date): Promise<ActiveVisitRow[]> {
+    const rows = await this.prisma.visit.findMany({
+      where: { endsAt: { gt: now } },
+      include: {
+        user: true,
+        checkIns: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+      orderBy: { startedAt: "desc" },
+    });
+    return rows.map((row) => ({
+      visitId: row.id,
+      userId: row.userId,
+      firstName: row.user.firstName,
+      lastName: row.user.lastName,
+      startedAt: row.startedAt,
+      endsAt: row.endsAt,
+      checkInMethod: row.checkIns[0] ? toCheckInMethod(row.checkIns[0].method) : null,
+    }));
+  }
+
+  async revokeActiveVenueCodes(now: Date): Promise<void> {
+    await this.prisma.venueCode.updateMany({
+      where: {
+        revokedAt: null,
+        validFrom: { lte: now },
+        validUntil: { gt: now },
+      },
+      data: { revokedAt: now },
+    });
+  }
+
+  async createVenueCode(input: {
+    pin: string;
+    token: string;
+    validFrom: Date;
+    validUntil: Date;
+    createdBy: string | null;
+    createdAt: Date;
+  }): Promise<VenueCodeRecord> {
+    const row = await this.prisma.venueCode.create({
+      data: {
+        pin: input.pin,
+        token: input.token,
+        validFrom: input.validFrom,
+        validUntil: input.validUntil,
+        createdBy: input.createdBy,
+        createdAt: input.createdAt,
+      },
+    });
+    return toVenueCode(row);
+  }
+
+  async findActiveVenueCode(now: Date): Promise<VenueCodeRecord | null> {
+    const row = await this.prisma.venueCode.findFirst({
+      where: {
+        revokedAt: null,
+        validFrom: { lte: now },
+        validUntil: { gt: now },
+      },
+      orderBy: { validFrom: "desc" },
+    });
+    return row ? toVenueCode(row) : null;
+  }
+
+  async findVenueCodeByToken(token: string): Promise<VenueCodeRecord | null> {
+    const row = await this.prisma.venueCode.findUnique({ where: { token } });
+    return row ? toVenueCode(row) : null;
+  }
+
+  async createCheckInLog(input: {
+    userId: string;
+    venueCodeId: string;
+    visitId: string;
+    method: CheckInMethod;
+    createdAt: Date;
+  }): Promise<CheckInLogRecord> {
+    const row = await this.prisma.checkInLog.create({ data: input });
+    return toCheckInLog(row);
+  }
+
+  async findLatestCheckInForVisit(visitId: string): Promise<CheckInLogRecord | null> {
+    const row = await this.prisma.checkInLog.findFirst({
+      where: { visitId },
+      orderBy: { createdAt: "desc" },
+    });
+    return row ? toCheckInLog(row) : null;
+  }
+
   async listMenu(): Promise<MenuItemRecord[]> {
     const rows = await this.prisma.menuItem.findMany({
       where: { active: true },
@@ -244,6 +413,7 @@ export class PrismaStore implements Store {
           title: item.title,
           description: item.description,
           priceRubles: item.priceRubles,
+          imageFileId: item.imageFileId,
           sort: item.sort,
           active: item.active,
         },
@@ -251,6 +421,7 @@ export class PrismaStore implements Store {
           title: item.title,
           description: item.description,
           priceRubles: item.priceRubles,
+          imageFileId: item.imageFileId,
           sort: item.sort,
           active: item.active,
         },
@@ -262,6 +433,7 @@ export class PrismaStore implements Store {
         title: item.title,
         description: item.description,
         priceRubles: item.priceRubles,
+        imageFileId: item.imageFileId,
         sort: item.sort,
         active: item.active,
       },
@@ -273,7 +445,7 @@ export class PrismaStore implements Store {
     await this.prisma.menuItem.deleteMany({ where: { id } });
   }
 
-  async getPage(slug: "contacts" | "directions"): Promise<ContentPageRecord | null> {
+  async getPage(slug: "contacts" | "directions" | "game_rules"): Promise<ContentPageRecord | null> {
     const row = await this.prisma.contentPage.findUnique({ where: { slug } });
     return row ? toPage(row) : null;
   }
@@ -366,6 +538,7 @@ export class PrismaStore implements Store {
     userId: string;
     title: string;
     weekId: string | null;
+    expiresAt: Date;
   }): Promise<CouponRecord> {
     const row = await this.prisma.coupon.create({ data: input });
     return toCoupon(row);
@@ -373,7 +546,7 @@ export class PrismaStore implements Store {
 
   async listActiveCoupons(userId: string): Promise<CouponRecord[]> {
     const rows = await this.prisma.coupon.findMany({
-      where: { userId, status: "active" },
+      where: { userId, status: "active", expiresAt: { gt: new Date() } },
     });
     return rows.map(toCoupon);
   }
@@ -389,6 +562,14 @@ export class PrismaStore implements Store {
       data: { status: "redeemed", redeemedBy: by, redeemedAt: at },
     });
     return toCoupon(row);
+  }
+
+  async expireCoupons(now: Date): Promise<number> {
+    const result = await this.prisma.coupon.updateMany({
+      where: { status: "active", expiresAt: { lte: now } },
+      data: { status: "expired" },
+    });
+    return result.count;
   }
 }
 
@@ -407,7 +588,8 @@ function toLedgerType(value: string): LedgerType {
     value === "birthday" ||
     value === "weekly_prize" ||
     value === "redeem" ||
-    value === "coupon_redeem"
+    value === "coupon_redeem" ||
+    value === "expire"
   ) {
     return value;
   }
@@ -459,13 +641,14 @@ function toMenuItem(row: MenuItem): MenuItemRecord {
     title: row.title,
     description: row.description,
     priceRubles: row.priceRubles,
+    imageFileId: row.imageFileId,
     sort: row.sort,
     active: row.active,
   };
 }
 
 function toPage(row: ContentPage): ContentPageRecord {
-  if (row.slug !== "contacts" && row.slug !== "directions") {
+  if (row.slug !== "contacts" && row.slug !== "directions" && row.slug !== "game_rules") {
     throw new Error(`unknown page slug: ${row.slug}`);
   }
   return { slug: row.slug, body: row.body, mapUrl: row.mapUrl };
@@ -509,13 +692,68 @@ function toScore(row: GameScore): GameScoreRecord {
   };
 }
 
+function toBonusLot(row: BonusLot): BonusLotRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    ledgerId: row.ledgerId,
+    category: row.category,
+    initial: row.initial,
+    remaining: row.remaining,
+    expiresAt: row.expiresAt,
+    createdAt: row.createdAt,
+    warned7d: row.warned7d,
+    warned3d: row.warned3d,
+    warned1d: row.warned1d,
+  };
+}
+
+function toCouponStatus(value: string): CouponRecord["status"] {
+  if (value === "active" || value === "redeemed" || value === "expired") {
+    return value;
+  }
+  throw new Error(`unknown coupon status: ${value}`);
+}
+
+function toCheckInMethod(value: string): CheckInMethod {
+  if (value === "qr" || value === "pin") {
+    return value;
+  }
+  throw new Error(`unknown check-in method: ${value}`);
+}
+
+function toVenueCode(row: VenueCode): VenueCodeRecord {
+  return {
+    id: row.id,
+    pin: row.pin,
+    token: row.token,
+    validFrom: row.validFrom,
+    validUntil: row.validUntil,
+    revokedAt: row.revokedAt,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+  };
+}
+
+function toCheckInLog(row: CheckInLog): CheckInLogRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    venueCodeId: row.venueCodeId,
+    visitId: row.visitId,
+    method: toCheckInMethod(row.method),
+    createdAt: row.createdAt,
+  };
+}
+
 function toCoupon(row: Coupon): CouponRecord {
   return {
     id: row.id,
     userId: row.userId,
     title: row.title,
     weekId: row.weekId,
-    status: row.status === "redeemed" ? "redeemed" : "active",
+    status: toCouponStatus(row.status),
+    expiresAt: row.expiresAt,
     redeemedBy: row.redeemedBy,
     redeemedAt: row.redeemedAt,
   };

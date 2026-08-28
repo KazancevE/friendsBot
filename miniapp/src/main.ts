@@ -1,6 +1,6 @@
 import { fetchMe } from "./api.ts";
-import { renderCashier } from "./cashier.ts";
 import { renderHub } from "./hub.ts";
+import { renderStaffShell } from "./staff-shell.ts";
 import "./style.css";
 import { readyTelegram } from "./telegram.ts";
 
@@ -18,7 +18,7 @@ const boot = async () => {
     return;
   }
   if (STAFF_ROLES.has(me.data.role)) {
-    renderCashier(root);
+    renderStaffShell({ root, role: me.data.role });
     return;
   }
   await renderHub(root);

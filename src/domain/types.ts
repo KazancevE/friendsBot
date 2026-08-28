@@ -7,7 +7,10 @@ export type LedgerType =
   | "birthday"
   | "weekly_prize"
   | "redeem"
-  | "coupon_redeem";
+  | "coupon_redeem"
+  | "expire";
+
+export type BonusLotCategory = "gift" | "check";
 
 export type PrizePlace = {
   place: number;
@@ -22,6 +25,11 @@ export type Settings = {
   visitHours: number;
   winnersCount: number;
   prizeTable: PrizePlace[];
+  checkBonusTtlDays: number;
+  giftBonusTtlDays: number;
+  couponClaimDaysDefault: number;
+  couponClaimDays: number;
+  expireNotifyMinBonuses: number;
 };
 
 export type UserRecord = {
@@ -57,14 +65,61 @@ export type VisitRecord = {
   endsAt: Date;
 };
 
+export type CheckInMethod = "qr" | "pin";
+
+export type VenueCodeRecord = {
+  id: string;
+  pin: string;
+  token: string;
+  validFrom: Date;
+  validUntil: Date;
+  revokedAt: Date | null;
+  createdBy: string | null;
+  createdAt: Date;
+};
+
+export type CheckInLogRecord = {
+  id: string;
+  userId: string;
+  venueCodeId: string;
+  visitId: string;
+  method: CheckInMethod;
+  createdAt: Date;
+};
+
+export type ActiveVisitRow = {
+  visitId: string;
+  userId: string;
+  firstName: string | null;
+  lastName: string | null;
+  startedAt: Date;
+  endsAt: Date;
+  checkInMethod: CheckInMethod | null;
+};
+
 export type CouponRecord = {
   id: string;
   userId: string;
   title: string;
   weekId: string | null;
-  status: "active" | "redeemed";
+  status: "active" | "redeemed" | "expired";
+  expiresAt: Date;
   redeemedBy: string | null;
   redeemedAt: Date | null;
+};
+
+export type BonusLotRecord = {
+  id: string;
+  userId: string;
+  ledgerId: string | null;
+  category: BonusLotCategory;
+  initial: number;
+  remaining: number;
+  expiresAt: Date;
+  createdAt: Date;
+  warned7d: boolean;
+  warned3d: boolean;
+  warned1d: boolean;
 };
 
 export type GameRecord = {
@@ -94,6 +149,7 @@ export type MenuItemRecord = {
   title: string;
   description: string;
   priceRubles: number | null;
+  imageFileId: string | null;
   sort: number;
   active: boolean;
 };
@@ -107,7 +163,7 @@ export type PromoRecord = {
 };
 
 export type ContentPageRecord = {
-  slug: "contacts" | "directions";
+  slug: "contacts" | "directions" | "game_rules";
   body: string;
   mapUrl: string | null;
 };
