@@ -9,7 +9,7 @@ import {
 } from "./api.ts";
 import { renderMatch3 } from "./match3.ts";
 
-const NO_VISIT = "Игры доступны во время визита в «Друзьях»";
+import { renderCheckIn } from "./check-in.ts";
 const STAFF_ROLES = new Set<Role>(["master", "admin"]);
 
 type RenderHubOptions = {
@@ -129,7 +129,12 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
   const staffViewer = isStaffViewer(role, options.staffMode === true);
 
   if (!staffViewer && !me.data.visitActive) {
-    root.innerHTML = `<p class="muted">${NO_VISIT}</p>`;
+    renderCheckIn({
+      root,
+      onSuccess: () => {
+        void renderHub(root, options);
+      },
+    });
     return;
   }
 

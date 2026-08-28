@@ -65,6 +65,38 @@ export type VisitRecord = {
   endsAt: Date;
 };
 
+export type CheckInMethod = "qr" | "pin";
+
+export type VenueCodeRecord = {
+  id: string;
+  pin: string;
+  token: string;
+  validFrom: Date;
+  validUntil: Date;
+  revokedAt: Date | null;
+  createdBy: string | null;
+  createdAt: Date;
+};
+
+export type CheckInLogRecord = {
+  id: string;
+  userId: string;
+  venueCodeId: string;
+  visitId: string;
+  method: CheckInMethod;
+  createdAt: Date;
+};
+
+export type ActiveVisitRow = {
+  visitId: string;
+  userId: string;
+  firstName: string | null;
+  lastName: string | null;
+  startedAt: Date;
+  endsAt: Date;
+  checkInMethod: CheckInMethod | null;
+};
+
 export type CouponRecord = {
   id: string;
   userId: string;

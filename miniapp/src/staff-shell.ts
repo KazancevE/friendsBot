@@ -1,8 +1,9 @@
 import type { Role } from "./api.ts";
 import { renderCashier } from "./cashier.ts";
 import { renderHub } from "./hub.ts";
+import { renderVenueCode } from "./venue-code.ts";
 
-type StaffTab = "cashier" | "games";
+type StaffTab = "cashier" | "venue" | "games";
 
 type RenderStaffShellParameters = {
   readonly root: HTMLElement;
@@ -19,6 +20,7 @@ export const renderStaffShell = ({
     <div class="staff-shell">
       <nav class="staff-tabs" role="tablist" aria-label="Персонал">
         <button type="button" class="staff-tab" data-tab="cashier" role="tab">Касса</button>
+        <button type="button" class="staff-tab" data-tab="venue" role="tab">Код зала</button>
         <button type="button" class="staff-tab" data-tab="games" role="tab">Игры</button>
       </nav>
       <div class="staff-content"></div>
@@ -45,6 +47,10 @@ export const renderStaffShell = ({
       renderCashier(content);
       return;
     }
+    if (tab === "venue") {
+      renderVenueCode(content);
+      return;
+    }
     void renderHub(content, hubOptions);
   };
 
@@ -52,7 +58,7 @@ export const renderStaffShell = ({
     if (element instanceof HTMLButtonElement) {
       element.addEventListener("click", () => {
         const tab = element.dataset.tab;
-        if (tab === "cashier" || tab === "games") {
+        if (tab === "cashier" || tab === "venue" || tab === "games") {
           setActiveTab(tab);
         }
       });

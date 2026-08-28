@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import type {
   BonusLot,
+  CheckInLog,
   ContentPage,
   Coupon,
   Game,
@@ -11,12 +12,16 @@ import type {
   Prisma,
   Promo,
   User,
+  VenueCode,
   Visit,
 } from "@prisma/client";
 import { DomainError } from "../domain/errors.ts";
 import { DEFAULT_SETTINGS, parsePrizeTable } from "../domain/settings.ts";
 import type {
+  ActiveVisitRow,
   BonusLotRecord,
+  CheckInLogRecord,
+  CheckInMethod,
   ContentPageRecord,
   CouponRecord,
   GameRecord,
@@ -29,6 +34,7 @@ import type {
   Role,
   Settings,
   UserRecord,
+  VenueCodeRecord,
   VisitRecord,
 } from "../domain/types.ts";
 import { moscowYearStart } from "../domain/week.ts";
@@ -300,6 +306,94 @@ export class PrismaStore implements Store {
       data: { endsAt },
     });
     return toVisit(row);
+  }
+
+  async listActiveVisits(now: Date): Promise<ActiveVisitRow[]> {
+    const rows = await this.prisma.visit.findMany({
+      where: { endsAt: { gt: now } },
+      include: {
+        user: true,
+        checkIns: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+      orderBy: { startedAt: "desc" },
+    });
+    return rows.map((row) => ({
+      visitId: row.id,
+      userId: row.userId,
+      firstName: row.user.firstName,
+      lastName: row.user.lastName,
+      startedAt: row.startedAt,
+      endsAt: row.endsAt,
+      checkInMethod: row.checkIns[0] ? toCheckInMethod(row.checkIns[0].method) : null,
+    }));
+  }
+
+  async revokeActiveVenueCodes(now: Date): Promise<void> {
+    await this.prisma.venueCode.updateMany({
+      where: {
+        revokedAt: null,
+        validFrom: { lte: now },
+        validUntil: { gt: now },
+      },
+      data: { revokedAt: now },
+    });
+  }
+
+  async createVenueCode(input: {
+    pin: string;
+    token: string;
+    validFrom: Date;
+    validUntil: Date;
+    createdBy: string | null;
+    createdAt: Date;
+  }): Promise<VenueCodeRecord> {
+    const row = await this.prisma.venueCode.create({
+      data: {
+        pin: input.pin,
+        token: input.token,
+        validFrom: input.validFrom,
+        validUntil: input.validUntil,
+        createdBy: input.createdBy,
+        createdAt: input.createdAt,
+      },
+    });
+    return toVenueCode(row);
+  }
+
+  async findActiveVenueCode(now: Date): Promise<VenueCodeRecord | null> {
+    const row = await this.prisma.venueCode.findFirst({
+      where: {
+        revokedAt: null,
+        validFrom: { lte: now },
+        validUntil: { gt: now },
+      },
+      orderBy: { validFrom: "desc" },
+    });
+    return row ? toVenueCode(row) : null;
+  }
+
+  async findVenueCodeByToken(token: string): Promise<VenueCodeRecord | null> {
+    const row = await this.prisma.venueCode.findUnique({ where: { token } });
+    return row ? toVenueCode(row) : null;
+  }
+
+  async createCheckInLog(input: {
+    userId: string;
+    venueCodeId: string;
+    visitId: string;
+    method: CheckInMethod;
+    createdAt: Date;
+  }): Promise<CheckInLogRecord> {
+    const row = await this.prisma.checkInLog.create({ data: input });
+    return toCheckInLog(row);
+  }
+
+  async findLatestCheckInForVisit(visitId: string): Promise<CheckInLogRecord | null> {
+    const row = await this.prisma.checkInLog.findFirst({
+      where: { visitId },
+      orderBy: { createdAt: "desc" },
+    });
+    return row ? toCheckInLog(row) : null;
   }
 
   async listMenu(): Promise<MenuItemRecord[]> {
@@ -619,6 +713,37 @@ function toCouponStatus(value: string): CouponRecord["status"] {
     return value;
   }
   throw new Error(`unknown coupon status: ${value}`);
+}
+
+function toCheckInMethod(value: string): CheckInMethod {
+  if (value === "qr" || value === "pin") {
+    return value;
+  }
+  throw new Error(`unknown check-in method: ${value}`);
+}
+
+function toVenueCode(row: VenueCode): VenueCodeRecord {
+  return {
+    id: row.id,
+    pin: row.pin,
+    token: row.token,
+    validFrom: row.validFrom,
+    validUntil: row.validUntil,
+    revokedAt: row.revokedAt,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+  };
+}
+
+function toCheckInLog(row: CheckInLog): CheckInLogRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    venueCodeId: row.venueCodeId,
+    visitId: row.visitId,
+    method: toCheckInMethod(row.method),
+    createdAt: row.createdAt,
+  };
 }
 
 function toCoupon(row: Coupon): CouponRecord {

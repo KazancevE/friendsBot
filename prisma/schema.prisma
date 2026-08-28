@@ -35,6 +35,11 @@ enum BonusLotCategory {
   check
 }
 
+enum CheckInMethod {
+  qr
+  pin
+}
+
 model User {
   id               String    @id @default(uuid())
   telegramId       BigInt    @unique
@@ -55,6 +60,8 @@ model User {
   coupons          Coupon[]
   scores           GameScore[]
   awards           WeeklyAward[]
+  checkIns         CheckInLog[]
+  venueCodes       VenueCode[] @relation("VenueCodeCreator")
 }
 
 model Ledger {
@@ -88,13 +95,39 @@ model BonusLot {
 }
 
 model Visit {
-  id        String   @id @default(uuid())
-  user      User     @relation("VisitGuest", fields: [userId], references: [id])
+  id        String       @id @default(uuid())
+  user      User         @relation("VisitGuest", fields: [userId], references: [id])
   userId    String
-  opener    User     @relation("VisitOpener", fields: [openedBy], references: [id])
+  opener    User         @relation("VisitOpener", fields: [openedBy], references: [id])
   openedBy  String
   startedAt DateTime
   endsAt    DateTime
+  checkIns  CheckInLog[]
+}
+
+model VenueCode {
+  id         String        @id @default(uuid())
+  pin        String
+  token      String        @unique
+  validFrom  DateTime
+  validUntil DateTime
+  revokedAt  DateTime?
+  createdBy  String?
+  creator    User?         @relation("VenueCodeCreator", fields: [createdBy], references: [id])
+  createdAt  DateTime      @default(now())
+  checkIns   CheckInLog[]
+}
+
+model CheckInLog {
+  id          String        @id @default(uuid())
+  user        User          @relation(fields: [userId], references: [id])
+  userId      String
+  venueCode   VenueCode     @relation(fields: [venueCodeId], references: [id])
+  venueCodeId String
+  visit       Visit         @relation(fields: [visitId], references: [id])
+  visitId     String
+  method      CheckInMethod
+  createdAt   DateTime      @default(now())
 }
 
 model Setting {

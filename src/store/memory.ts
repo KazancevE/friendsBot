@@ -1,6 +1,8 @@
 import { DEFAULT_SETTINGS } from "../domain/settings.ts";
 import type {
+  ActiveVisitRow,
   BonusLotRecord,
+  CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
   GameRecord,
@@ -12,6 +14,7 @@ import type {
   PromoRecord,
   Settings,
   UserRecord,
+  VenueCodeRecord,
   VisitRecord,
 } from "../domain/types.ts";
 import { moscowCalendarYear } from "../domain/week.ts";
@@ -22,6 +25,8 @@ export class MemoryStore implements Store {
   users = new Map<string, UserRecord>();
   ledger: LedgerRecord[] = [];
   visits = new Map<string, VisitRecord>();
+  venueCodes = new Map<string, VenueCodeRecord>();
+  checkInLogs: CheckInLogRecord[] = [];
   menu = new Map<string, MenuItemRecord>();
   pages = new Map<string, ContentPageRecord>();
   promos = new Map<string, PromoRecord>();
@@ -181,6 +186,82 @@ export class MemoryStore implements Store {
     const next = { ...v, endsAt };
     this.visits.set(id, next);
     return next;
+  }
+
+  async listActiveVisits(now: Date): Promise<ActiveVisitRow[]> {
+    const active = [...this.visits.values()].filter((visit) => now < visit.endsAt);
+    return active.map((visit) => {
+      const user = this.users.get(visit.userId);
+      const latest = [...this.checkInLogs]
+        .filter((log) => log.visitId === visit.id)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      return {
+        visitId: visit.id,
+        userId: visit.userId,
+        firstName: user?.firstName ?? null,
+        lastName: user?.lastName ?? null,
+        startedAt: visit.startedAt,
+        endsAt: visit.endsAt,
+        checkInMethod: latest?.method ?? null,
+      };
+    });
+  }
+
+  async revokeActiveVenueCodes(now: Date) {
+    for (const [id, code] of this.venueCodes) {
+      if (code.revokedAt === null && code.validFrom <= now && now < code.validUntil) {
+        this.venueCodes.set(id, { ...code, revokedAt: now });
+      }
+    }
+  }
+
+  async createVenueCode(input: {
+    pin: string;
+    token: string;
+    validFrom: Date;
+    validUntil: Date;
+    createdBy: string | null;
+    createdAt: Date;
+  }) {
+    const row: VenueCodeRecord = {
+      id: crypto.randomUUID(),
+      revokedAt: null,
+      ...input,
+    };
+    this.venueCodes.set(row.id, row);
+    return { ...row };
+  }
+
+  async findActiveVenueCode(now: Date) {
+    return (
+      [...this.venueCodes.values()].find(
+        (code) => code.revokedAt === null && code.validFrom <= now && now < code.validUntil,
+      ) ?? null
+    );
+  }
+
+  async findVenueCodeByToken(token: string) {
+    return [...this.venueCodes.values()].find((code) => code.token === token) ?? null;
+  }
+
+  async createCheckInLog(input: {
+    userId: string;
+    venueCodeId: string;
+    visitId: string;
+    method: "qr" | "pin";
+    createdAt: Date;
+  }) {
+    const row: CheckInLogRecord = { id: crypto.randomUUID(), ...input };
+    this.checkInLogs.push(row);
+    return row;
+  }
+
+  async findLatestCheckInForVisit(visitId: string) {
+    return (
+      [...this.checkInLogs]
+        .filter((log) => log.visitId === visitId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null
+    );
   }
 
   async listMenu() {

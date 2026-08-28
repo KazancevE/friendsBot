@@ -34,6 +34,7 @@ import {
   staffVisitConversation,
   wireStaffHandlers,
 } from "./staff.ts";
+import { wireVenueCodeHandlers } from "./venue-code.ts";
 
 export function createBot(
   token: string,
@@ -79,6 +80,7 @@ export function createBot(
   bot.use(requireRegisteredUser);
   wireGuestHandlers(bot);
   wireStaffHandlers(bot);
+  wireVenueCodeHandlers(bot);
   wireAdminHandlers(bot);
   return bot;
 }

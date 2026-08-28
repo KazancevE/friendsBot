@@ -335,3 +335,96 @@ const isCouponRedeemResult = (value: unknown): value is { readonly id: string; r
 export const redeemCoupon = ({ couponId }: RedeemCouponParameters) => {
   return postJson("/api/cashier/coupon/redeem", { couponId }, isCouponRedeemResult);
 };
+
+export type CheckInResult = {
+  readonly visitActive: boolean;
+  readonly endsAt: string;
+  readonly message: string;
+};
+
+const isCheckInResult = (value: unknown): value is CheckInResult => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.visitActive === "boolean" &&
+    typeof value.endsAt === "string" &&
+    typeof value.message === "string"
+  );
+};
+
+type SubmitCheckInParameters =
+  | { readonly method: "qr"; readonly token: string }
+  | { readonly method: "pin"; readonly pin: string };
+
+export const submitCheckIn = (input: SubmitCheckInParameters) => {
+  return postJson("/api/check-in", input, isCheckInResult);
+};
+
+export type VenueCodeInfo = {
+  readonly pin: string;
+  readonly qrPayload: string;
+  readonly validFrom: string;
+  readonly validUntil: string;
+};
+
+const isVenueCodeInfo = (value: unknown): value is VenueCodeInfo => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.pin === "string" &&
+    typeof value.qrPayload === "string" &&
+    typeof value.validFrom === "string" &&
+    typeof value.validUntil === "string"
+  );
+};
+
+export const fetchVenueCode = () => {
+  return postJson("/api/staff/venue-code", {}, isVenueCodeInfo);
+};
+
+export const regenerateVenueCode = () => {
+  return postJson("/api/staff/venue-code/regenerate", {}, isVenueCodeInfo);
+};
+
+export type ActiveVisitGuest = {
+  readonly visitId: string;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly startedAt: string;
+  readonly endsAt: string;
+  readonly checkInMethod: "qr" | "pin" | null;
+};
+
+export type ActiveVisits = {
+  readonly count: number;
+  readonly guests: ReadonlyArray<ActiveVisitGuest>;
+};
+
+const isActiveVisitGuest = (value: unknown): value is ActiveVisitGuest => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const methodOk =
+    value.checkInMethod === null || value.checkInMethod === "qr" || value.checkInMethod === "pin";
+  return (
+    typeof value.visitId === "string" &&
+    (value.firstName === null || typeof value.firstName === "string") &&
+    (value.lastName === null || typeof value.lastName === "string") &&
+    typeof value.startedAt === "string" &&
+    typeof value.endsAt === "string" &&
+    methodOk
+  );
+};
+
+const isActiveVisits = (value: unknown): value is ActiveVisits => {
+  if (!isRecord(value) || !Array.isArray(value.guests)) {
+    return false;
+  }
+  return typeof value.count === "number" && value.guests.every(isActiveVisitGuest);
+};
+
+export const fetchActiveVisits = () => {
+  return postJson("/api/staff/active-visits", {}, isActiveVisits);
+};

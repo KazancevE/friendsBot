@@ -1,5 +1,7 @@
 import type {
+  ActiveVisitRow,
   BonusLotRecord,
+  CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
   GameRecord,
@@ -12,6 +14,7 @@ import type {
   Role,
   Settings,
   UserRecord,
+  VenueCodeRecord,
   VisitRecord,
 } from "../domain/types.ts";
 
@@ -74,6 +77,27 @@ export interface Store {
     endsAt: Date;
   }): Promise<VisitRecord>;
   updateVisitEndsAt(id: string, endsAt: Date): Promise<VisitRecord>;
+  listActiveVisits(now: Date): Promise<ActiveVisitRow[]>;
+
+  revokeActiveVenueCodes(now: Date): Promise<void>;
+  createVenueCode(input: {
+    pin: string;
+    token: string;
+    validFrom: Date;
+    validUntil: Date;
+    createdBy: string | null;
+    createdAt: Date;
+  }): Promise<VenueCodeRecord>;
+  findActiveVenueCode(now: Date): Promise<VenueCodeRecord | null>;
+  findVenueCodeByToken(token: string): Promise<VenueCodeRecord | null>;
+  createCheckInLog(input: {
+    userId: string;
+    venueCodeId: string;
+    visitId: string;
+    method: "qr" | "pin";
+    createdAt: Date;
+  }): Promise<CheckInLogRecord>;
+  findLatestCheckInForVisit(visitId: string): Promise<CheckInLogRecord | null>;
 
   listMenu(): Promise<MenuItemRecord[]>;
   upsertMenuItem(item: Omit<MenuItemRecord, "id"> & { id?: string }): Promise<MenuItemRecord>;

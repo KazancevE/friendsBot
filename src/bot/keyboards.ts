@@ -47,7 +47,7 @@ export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
     keyboard.row().text("Отключить рассылку");
   }
   if (role === "master" || role === "admin") {
-    keyboard.row().text("Найти гостя").row().webApp("Касса QR", miniAppUrl(publicUrl));
+    keyboard.row().text("Найти гостя").text("Код зала").row().webApp("Касса QR", miniAppUrl(publicUrl));
   }
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");
