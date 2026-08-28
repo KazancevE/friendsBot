@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import { expect, test } from "vitest";
-import { getGameRules, getLeaderboard, submitScore, submitScoreOrPractice } from "../../src/domain/games.ts";
+import { getGameRules, getLeaderboard, getOverallLeaderboard, submitScore, submitScoreOrPractice } from "../../src/domain/games.ts";
 import { applyCheck } from "../../src/domain/ledger.ts";
 import { registerGuest } from "../../src/domain/users.ts";
 import { openOrExtendVisit } from "../../src/domain/visits.ts";
@@ -113,6 +113,24 @@ test("staff getLeaderboard includes displayName for top entries", async () => {
   expect(board.top).toEqual([
     expect.objectContaining({ place: 1, points: 120, displayName: "Г О" }),
   ]);
+});
+
+test("getOverallLeaderboard sums points across games", async () => {
+  const { store, user, staff } = await seed();
+  await applyCheck(store, {
+    guestId: user.id,
+    actorId: staff.id,
+    checkRubles: 100,
+    now,
+  });
+  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now });
+  await submitScore(store, { userId: user.id, slug: "blockblast", points: 80, now });
+  const board = await getOverallLeaderboard(store, {
+    userId: user.id,
+    now,
+    viewerRole: "guest",
+  });
+  expect(board.me).toEqual({ place: 1, points: 200 });
 });
 
 test("getGameRules returns settings and body", async () => {

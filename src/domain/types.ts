@@ -144,6 +144,12 @@ export type GameScoreRecord = {
   updatedAt: Date;
 };
 
+export type AggregatedScoreRecord = {
+  userId: string;
+  points: number;
+  updatedAt: Date;
+};
+
 export type MenuItemRecord = {
   id: string;
   title: string;

@@ -5,6 +5,7 @@ import type {
   ContentPageRecord,
   CouponRecord,
   GameRecord,
+  AggregatedScoreRecord,
   GameScoreRecord,
   GameWeekRecord,
   LedgerRecord,
@@ -114,9 +115,10 @@ export interface Store {
   getOrCreateOpenWeek(gameId: string, weekStart: Date): Promise<GameWeekRecord>;
   addScore(weekId: string, userId: string, delta: number, at: Date): Promise<GameScoreRecord>;
   listWeekScores(weekId: string): Promise<GameScoreRecord[]>;
+  listAggregatedWeekScores(weekStart: Date): Promise<AggregatedScoreRecord[]>;
   closeWeek(weekId: string, at: Date): Promise<void>;
-  hasWeeklyAward(weekId: string, userId: string): Promise<boolean>;
-  addWeeklyAward(weekId: string, userId: string, place: number): Promise<void>;
+  hasWeeklyAward(weekStart: Date, userId: string): Promise<boolean>;
+  addWeeklyAward(weekStart: Date, userId: string, place: number): Promise<void>;
 
   createCoupon(input: {
     userId: string;

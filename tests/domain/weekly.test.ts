@@ -52,14 +52,7 @@ test("awards top N prizes, coupon, and is idempotent", async () => {
   await submitScore(store, { userId: second.id, slug: "match3", points: 200, now: duringWeek });
   await submitScore(store, { userId: third.id, slug: "match3", points: 50, now: duringWeek });
 
-  const game = await store.findGameBySlug("match3");
-  if (game === null) {
-    throw new Error("match3 missing");
-  }
-  const week = await store.getOrCreateOpenWeek(
-    game.id,
-    weekStartMoscow(DateTime.fromJSDate(duringWeek)).toJSDate(),
-  );
+  const weekStart = weekStartMoscow(DateTime.fromJSDate(duringWeek)).toJSDate();
 
   await closeOpenWeeks(store, mondayAfter);
 
@@ -69,8 +62,8 @@ test("awards top N prizes, coupon, and is idempotent", async () => {
   const coupons = await store.listActiveCoupons(first.id);
   expect(coupons.map((coupon) => coupon.title)).toEqual(["Кальян"]);
   expect(await store.listActiveCoupons(second.id)).toEqual([]);
-  expect(await store.hasWeeklyAward(week.id, first.id)).toBe(true);
-  expect(await store.hasWeeklyAward(week.id, second.id)).toBe(true);
+  expect(await store.hasWeeklyAward(weekStart, first.id)).toBe(true);
+  expect(await store.hasWeeklyAward(weekStart, second.id)).toBe(true);
 
   await closeOpenWeeks(store, mondayAfter);
   expect((await store.findUserById(first.id))?.balance).toBe(1500);
@@ -131,10 +124,8 @@ test("skips staff in week rankings when awarding prizes", async () => {
   if (game === null) {
     throw new Error("match3 missing");
   }
-  const week = await store.getOrCreateOpenWeek(
-    game.id,
-    weekStartMoscow(DateTime.fromJSDate(duringWeek)).toJSDate(),
-  );
+  const weekStart = weekStartMoscow(DateTime.fromJSDate(duringWeek)).toJSDate();
+  const week = await store.getOrCreateOpenWeek(game.id, weekStart);
   await store.addScore(week.id, staff.id, 999, duringWeek);
   await openVisit(store, first.id, staff.id, duringWeek);
   await openVisit(store, second.id, staff.id, duringWeek);
@@ -145,7 +136,36 @@ test("skips staff in week rankings when awarding prizes", async () => {
 
   expect((await store.findUserById(first.id))?.balance).toBe(1500);
   expect((await store.findUserById(second.id))?.balance).toBe(1000);
-  expect(await store.hasWeeklyAward(week.id, staff.id)).toBe(false);
-  expect(await store.hasWeeklyAward(week.id, first.id)).toBe(true);
-  expect(await store.hasWeeklyAward(week.id, second.id)).toBe(true);
+  expect(await store.hasWeeklyAward(weekStart, staff.id)).toBe(false);
+  expect(await store.hasWeeklyAward(weekStart, first.id)).toBe(true);
+  expect(await store.hasWeeklyAward(weekStart, second.id)).toBe(true);
+});
+
+test("awards overall ranking across multiple games once per week", async () => {
+  const store = new MemoryStore();
+  await store.updateSettings({
+    winnersCount: 1,
+    prizeTable: [{ place: 1, bonuses: 1000, couponTitle: null }],
+  });
+  const leader = await seedGuest(store, 31n, "79990000031");
+  const specialist = await seedGuest(store, 32n, "79990000032");
+  const staff = await store.createUser({
+    telegramId: 96n,
+    role: "master",
+    firstName: "Мастер",
+    lastName: "Зала",
+    birthday: null,
+    phone: null,
+    qrToken: "stafftoken4",
+  });
+  await openVisit(store, leader.id, staff.id, duringWeek);
+  await openVisit(store, specialist.id, staff.id, duringWeek);
+  await submitScore(store, { userId: leader.id, slug: "match3", points: 200, now: duringWeek });
+  await submitScore(store, { userId: leader.id, slug: "blockblast", points: 150, now: duringWeek });
+  await submitScore(store, { userId: specialist.id, slug: "match3", points: 300, now: duringWeek });
+
+  await closeOpenWeeks(store, mondayAfter);
+
+  expect((await store.findUserById(leader.id))?.balance).toBe(1500);
+  expect((await store.findUserById(specialist.id))?.balance).toBe(500);
 });

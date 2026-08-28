@@ -3,6 +3,7 @@ import {
   fetchGames,
   fetchLeaderboard,
   fetchMe,
+  fetchOverallLeaderboard,
   type GameCatalogEntry,
   type GameRules,
   type Leaderboard,
@@ -35,6 +36,7 @@ type GameBoard = {
 
 type HubViewModel = {
   readonly me: Me;
+  readonly overallBoard: Leaderboard;
   readonly gameBoards: ReadonlyArray<GameBoard>;
   readonly rules: GameRules;
   readonly hubOptions: RenderHubOptions;
@@ -69,18 +71,29 @@ const isStaffViewer = (role: Role, staffMode: boolean) => {
   return staffMode || STAFF_ROLES.has(role);
 };
 
-const bestPlaceAmongGames = (gameBoards: ReadonlyArray<GameBoard>) => {
-  let best: { readonly place: number; readonly title: string } | null = null;
-  for (const entry of gameBoards) {
-    const place = entry.board.me.place;
-    if (place === null) {
-      continue;
-    }
-    if (best === null || place < best.place) {
-      best = { place, title: entry.game.title };
-    }
-  }
-  return best;
+const renderStatusRow = (me: Me, overallBoard: Leaderboard, staffViewer: boolean) => {
+  const visitLabel = staffViewer
+    ? "Режим персонала"
+    : me.visitActive
+      ? "🟢 Вы в зале"
+      : "Визит не активен";
+  const overallLabel = `Общий зачёт: ${formatPlaceShort(overallBoard.me.place)} · ${overallBoard.me.points} очков`;
+
+  return `
+    <section class="hub-status panel">
+      <div class="hub-status-row">
+        <span>${visitLabel}</span>
+        <span class="hub-status-accent">${overallLabel}</span>
+      </div>
+      ${
+        staffViewer
+          ? ""
+          : `<div class="hub-status-row hub-status-row--secondary">
+        <span>Баланс: <strong class="hub-status-accent">${me.balance}</strong> бонусов</span>
+      </div>`
+      }
+    </section>
+  `;
 };
 
 const renderLeaderboardItem = (row: Leaderboard["top"][number], staffViewer: boolean) => {
@@ -101,35 +114,6 @@ const renderHero = (rules: GameRules, now: Date) => {
         <span>⏱ До итогов: ${escapeHtml(countdown)}</span>
         <span>🏆 ${rules.winnersCount} призовых мест</span>
       </div>
-    </section>
-  `;
-};
-
-const renderStatusRow = (me: Me, gameBoards: ReadonlyArray<GameBoard>, staffViewer: boolean) => {
-  const visitLabel = staffViewer
-    ? "Режим персонала"
-    : me.visitActive
-      ? "🟢 Вы в зале"
-      : "Визит не активен";
-  const best = bestPlaceAmongGames(gameBoards);
-  const bestLabel =
-    best === null
-      ? "Лучшее место: —"
-      : `Лучшее: ${formatPlaceShort(best.place)} в «${escapeHtml(best.title)}»`;
-
-  return `
-    <section class="hub-status panel">
-      <div class="hub-status-row">
-        <span>${visitLabel}</span>
-        <span class="hub-status-accent">${bestLabel}</span>
-      </div>
-      ${
-        staffViewer
-          ? ""
-          : `<div class="hub-status-row hub-status-row--secondary">
-        <span>Баланс: <strong class="hub-status-accent">${me.balance}</strong> бонусов</span>
-      </div>`
-      }
     </section>
   `;
 };
@@ -185,9 +169,15 @@ const renderRulesSheetContent = (rules: GameRules) => {
 };
 
 const renderLeaderboardsSheetContent = (
+  overallBoard: Leaderboard,
   gameBoards: ReadonlyArray<GameBoard>,
   staffViewer: boolean,
 ) => {
+  const overallTop =
+    overallBoard.top.length === 0
+      ? "<p class=\"muted\">Пока нет результатов</p>"
+      : `<ol class="leaderboard">${overallBoard.top.map((row) => renderLeaderboardItem(row, staffViewer)).join("")}</ol>`;
+
   const sections = gameBoards
     .map(({ game, board }) => {
       const top =
@@ -206,6 +196,11 @@ const renderLeaderboardsSheetContent = (
 
   return `
     <h2 id="hub-sheet-title">Все рейтинги</h2>
+    <section class="hub-sheet-game hub-sheet-game--overall">
+      <h3>Общий зачёт</h3>
+      <p class="hub-sheet-me">Ваше место: ${formatPlaceShort(overallBoard.me.place)} · ${overallBoard.me.points} очков</p>
+      ${overallTop}
+    </section>
     ${sections}
   `;
 };
@@ -297,7 +292,10 @@ const bindSheetControls = (root: HTMLElement, viewModel: HubViewModel) => {
         return;
       }
       if (sheet === "leaderboards") {
-        openSheet(root, renderLeaderboardsSheetContent(viewModel.gameBoards, viewModel.staffViewer));
+        openSheet(
+          root,
+          renderLeaderboardsSheetContent(viewModel.overallBoard, viewModel.gameBoards, viewModel.staffViewer),
+        );
       }
     });
   }
@@ -388,7 +386,7 @@ const bindGameCards = (root: HTMLElement, viewModel: HubViewModel) => {
 };
 
 const renderBoard = (root: HTMLElement, viewModel: HubViewModel) => {
-  const { gameBoards, rules, hubOptions, staffViewer, me } = viewModel;
+  const { gameBoards, overallBoard, rules, hubOptions, staffViewer, me } = viewModel;
   const now = new Date();
   const staffBanner = staffViewer
     ? `<p class="staff-banner">Режим персонала — очки не участвуют в розыгрыше</p>`
@@ -400,7 +398,7 @@ const renderBoard = (root: HTMLElement, viewModel: HubViewModel) => {
         <h1>Игры</h1>
       </header>
       ${renderHero(rules, now)}
-      ${renderStatusRow(me, gameBoards, staffViewer)}
+      ${renderStatusRow(me, overallBoard, staffViewer)}
       ${staffBanner}
       ${renderHubLinks()}
       ${renderGameGrid(gameBoards)}
@@ -436,13 +434,21 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
     return;
   }
 
-  const [games, rules] = await Promise.all([fetchGames(), fetchGameRules()]);
+  const [games, rules, overallBoard] = await Promise.all([
+    fetchGames(),
+    fetchGameRules(),
+    fetchOverallLeaderboard(),
+  ]);
   if (games.kind === "error") {
     root.textContent = games.message;
     return;
   }
   if (rules.kind === "error") {
     root.textContent = rules.message;
+    return;
+  }
+  if (overallBoard.kind === "error") {
+    root.textContent = overallBoard.message;
     return;
   }
 
@@ -468,6 +474,7 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
 
   renderBoard(root, {
     me: me.data,
+    overallBoard: overallBoard.data,
     gameBoards,
     rules: rules.data,
     hubOptions: options,

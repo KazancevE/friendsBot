@@ -19,6 +19,7 @@ import { DomainError } from "../domain/errors.ts";
 import { DEFAULT_SETTINGS, parsePrizeTable } from "../domain/settings.ts";
 import type {
   ActiveVisitRow,
+  AggregatedScoreRecord,
   BonusLotRecord,
   CheckInLogRecord,
   CheckInMethod,
@@ -514,6 +515,29 @@ export class PrismaStore implements Store {
     return rows.map(toScore);
   }
 
+  async listAggregatedWeekScores(weekStart: Date): Promise<AggregatedScoreRecord[]> {
+    const rows = await this.prisma.gameScore.findMany({
+      where: { week: { weekStart } },
+    });
+    const byUser = new Map<string, { points: number; updatedAt: Date }>();
+    for (const row of rows) {
+      const current = byUser.get(row.userId);
+      if (current === undefined) {
+        byUser.set(row.userId, { points: row.points, updatedAt: row.updatedAt });
+        continue;
+      }
+      byUser.set(row.userId, {
+        points: current.points + row.points,
+        updatedAt: row.updatedAt > current.updatedAt ? row.updatedAt : current.updatedAt,
+      });
+    }
+    return [...byUser.entries()].map(([userId, aggregated]) => ({
+      userId,
+      points: aggregated.points,
+      updatedAt: aggregated.updatedAt,
+    }));
+  }
+
   async closeWeek(weekId: string, at: Date): Promise<void> {
     await this.prisma.gameWeek.update({
       where: { id: weekId },
@@ -521,16 +545,16 @@ export class PrismaStore implements Store {
     });
   }
 
-  async hasWeeklyAward(weekId: string, userId: string): Promise<boolean> {
+  async hasWeeklyAward(weekStart: Date, userId: string): Promise<boolean> {
     const row = await this.prisma.weeklyAward.findUnique({
-      where: { weekId_userId: { weekId, userId } },
+      where: { weekStart_userId: { weekStart, userId } },
     });
     return row !== null;
   }
 
-  async addWeeklyAward(weekId: string, userId: string, place: number): Promise<void> {
+  async addWeeklyAward(weekStart: Date, userId: string, place: number): Promise<void> {
     await this.prisma.weeklyAward.create({
-      data: { weekId, userId, place },
+      data: { weekStart, userId, place },
     });
   }
 

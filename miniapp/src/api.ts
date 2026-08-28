@@ -206,6 +206,10 @@ export const fetchLeaderboard = (slug: string) => {
   return getJson(`/api/games/leaderboard?${params.toString()}`, isLeaderboard);
 };
 
+export const fetchOverallLeaderboard = () => {
+  return getJson("/api/tournament/leaderboard", isLeaderboard);
+};
+
 export type PrizePlace = {
   readonly place: number;
   readonly bonuses: number;

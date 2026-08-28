@@ -335,6 +335,65 @@ export const isGameOver = (state: GameState) => {
   return !hasValidMove(state);
 };
 
+const countEmptyInRow = (board: Board, row: number) => {
+  let emptyCount = 0;
+  for (let col = 0; col < BOARD_SIZE; col += 1) {
+    if (board[row]?.[col] === EMPTY) {
+      emptyCount += 1;
+    }
+  }
+  return emptyCount;
+};
+
+const countEmptyInCol = (board: Board, col: number) => {
+  let emptyCount = 0;
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    if (board[row]?.[col] === EMPTY) {
+      emptyCount += 1;
+    }
+  }
+  return emptyCount;
+};
+
+export const nearFullCells = (board: Board): ReadonlyArray<Cell> => {
+  const highlighted = new Set<string>();
+
+  const markEmptyInRow = (row: number) => {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      if (board[row]?.[col] === EMPTY) {
+        highlighted.add(`${row},${col}`);
+      }
+    }
+  };
+
+  const markEmptyInCol = (col: number) => {
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      if (board[row]?.[col] === EMPTY) {
+        highlighted.add(`${row},${col}`);
+      }
+    }
+  };
+
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    const emptyCount = countEmptyInRow(board, row);
+    if (emptyCount >= 1 && emptyCount <= 2) {
+      markEmptyInRow(row);
+    }
+  }
+
+  for (let col = 0; col < BOARD_SIZE; col += 1) {
+    const emptyCount = countEmptyInCol(board, col);
+    if (emptyCount >= 1 && emptyCount <= 2) {
+      markEmptyInCol(col);
+    }
+  }
+
+  return Array.from(highlighted).map((key) => {
+    const [rowText, colText] = key.split(",");
+    return { row: Number(rowText), col: Number(colText) };
+  });
+};
+
 export const pieceAnchorCells = (piece: Piece, row: number, col: number): ReadonlyArray<Cell> => {
   return piece.cells.map((cell) => ({
     row: row + cell.dr,
