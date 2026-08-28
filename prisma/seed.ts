@@ -52,6 +52,17 @@ async function main() {
     },
     update: {},
   });
+
+  await prisma.game.upsert({
+    where: { slug: "blockblast" },
+    create: {
+      slug: "blockblast",
+      title: "Блоки",
+      active: true,
+      maxScorePerSession: 50000,
+    },
+    update: {},
+  });
 }
 
 main()
