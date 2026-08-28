@@ -64,6 +64,7 @@ test("lookup returns coupons as id and title", async () => {
     userId: guest.id,
     title: "Кальян в подарок",
     weekId: null,
+    expiresAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
   });
   const initData = buildInitData({ id: Number(master.telegramId) }, BOT_TOKEN);
   const res = await app.request("/api/cashier/lookup", {

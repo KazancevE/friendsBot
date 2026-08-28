@@ -24,7 +24,7 @@ const app = createHttpApp({
   store,
   botToken: config.botToken,
 });
-startScheduler(store);
+startScheduler(store, bot.api);
 
 const publicUrl = config.publicUrl.replace(/\/$/, "");
 

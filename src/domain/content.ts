@@ -11,13 +11,25 @@ async function requireAdmin(store: Store, actorId: string) {
 
 export async function addMenuItem(
   store: Store,
-  input: { actorId: string; title: string; description: string; priceRubles: number | null },
+  input: {
+    actorId: string;
+    title: string;
+    description: string;
+    priceRubles: number | null;
+    imageFileId?: string | null;
+  },
 ) {
   await requireAdmin(store, input.actorId);
+  const title = input.title.trim();
+  const imageFileId = input.imageFileId ?? null;
+  if (title.length === 0 && imageFileId === null) {
+    throw new DomainError("invalid", "Нужно название или фото");
+  }
   return store.upsertMenuItem({
-    title: input.title.trim(),
+    title,
     description: input.description,
     priceRubles: input.priceRubles,
+    imageFileId,
     sort: 0,
     active: true,
   });

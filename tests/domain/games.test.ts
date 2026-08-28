@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import { expect, test } from "vitest";
-import { submitScore } from "../../src/domain/games.ts";
+import { getGameRules, getLeaderboard, submitScore, submitScoreOrPractice } from "../../src/domain/games.ts";
 import { applyCheck } from "../../src/domain/ledger.ts";
 import { registerGuest } from "../../src/domain/users.ts";
 import { openOrExtendVisit } from "../../src/domain/visits.ts";
@@ -33,11 +33,11 @@ async function seed() {
 test("rejects score without visit", async () => {
   const { store, user } = await seed();
   await expect(
-    submitScore(store, { userId: user.id, slug: "match3", points: 100, now }),
+    submitScoreOrPractice(store, { userId: user.id, slug: "match3", points: 100, now }),
   ).rejects.toMatchObject({ code: "no_visit" });
 });
 
-test("master with an open visit cannot submitScore", async () => {
+test("master practice score succeeds without persisting", async () => {
   const { store, staff } = await seed();
   await openOrExtendVisit(store, {
     userId: staff.id,
@@ -45,9 +45,19 @@ test("master with an open visit cannot submitScore", async () => {
     hours: 4,
     now,
   });
-  await expect(
-    submitScore(store, { userId: staff.id, slug: "match3", points: 100, now }),
-  ).rejects.toMatchObject({ code: "forbidden" });
+  const result = await submitScoreOrPractice(store, {
+    userId: staff.id,
+    slug: "match3",
+    points: 100,
+    now,
+  });
+  expect(result).toEqual({ points: 100, counted: false });
+  const game = await store.findGameBySlug("match3");
+  const week = await store.getOrCreateOpenWeek(
+    game!.id,
+    weekStartMoscow(DateTime.fromJSDate(now)).toJSDate(),
+  );
+  expect(await store.listWeekScores(week.id)).toEqual([]);
 });
 
 test("rejects score above cap after visit opened", async () => {
@@ -59,7 +69,7 @@ test("rejects score above cap after visit opened", async () => {
     now,
   });
   await expect(
-    submitScore(store, { userId: user.id, slug: "match3", points: 50001, now }),
+    submitScoreOrPractice(store, { userId: user.id, slug: "match3", points: 50001, now }),
   ).rejects.toMatchObject({ code: "score_cap" });
 });
 
@@ -83,4 +93,43 @@ test("adds 120 points and does not change balance", async () => {
   expect(scores).toEqual([
     expect.objectContaining({ userId: user.id, points: 120 }),
   ]);
+});
+
+test("staff getLeaderboard includes displayName for top entries", async () => {
+  const { store, user, staff } = await seed();
+  await applyCheck(store, {
+    guestId: user.id,
+    actorId: staff.id,
+    checkRubles: 100,
+    now,
+  });
+  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now });
+  const board = await getLeaderboard(store, {
+    userId: staff.id,
+    slug: "match3",
+    now,
+    viewerRole: "master",
+  });
+  expect(board.top).toEqual([
+    expect.objectContaining({ place: 1, points: 120, displayName: "Г О" }),
+  ]);
+});
+
+test("getGameRules returns settings and body", async () => {
+  const store = new MemoryStore();
+  await store.updateSettings({
+    winnersCount: 2,
+    prizeTable: [{ place: 1, bonuses: 1000, couponTitle: "Кальян" }],
+  });
+  await store.upsertPage({
+    slug: "game_rules",
+    body: "Правила недельного рейтинга",
+    mapUrl: null,
+  });
+  const rules = await getGameRules(store);
+  expect(rules).toEqual({
+    winnersCount: 2,
+    prizeTable: [{ place: 1, bonuses: 1000, couponTitle: "Кальян" }],
+    body: "Правила недельного рейтинга",
+  });
 });

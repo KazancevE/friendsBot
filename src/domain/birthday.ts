@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import { createLotForCredit } from "./bonus-lots.ts";
 import type { Store } from "../store/types.ts";
 import { MOSCOW, moscowCalendarYear } from "./week.ts";
 
@@ -44,13 +45,21 @@ export async function grantDueBirthdays(store: Store, now: Date) {
         return;
       }
       await tx.updateUser(current.id, { balance: current.balance + settings.birthdayBonus });
-      await tx.addLedger({
+      const ledger = await tx.addLedger({
         userId: current.id,
         type: "birthday",
         amount: settings.birthdayBonus,
         actorId: null,
         comment: "День рождения",
         checkAmount: null,
+      });
+      await createLotForCredit(tx, {
+        userId: current.id,
+        ledgerId: ledger.id,
+        type: "birthday",
+        amount: settings.birthdayBonus,
+        createdAt: ledger.createdAt,
+        settings,
       });
     });
     granted += 1;
