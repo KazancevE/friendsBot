@@ -10,20 +10,26 @@ Telegram-бот кальянной «Друзья»: бонусы, касса, M
 |---|---|
 | `BOT_TOKEN` | токен бота от BotFather |
 | `TELEGRAM_ADMIN_ID` | Telegram ID первого админа (роль `admin` всегда) |
-| `DATABASE_URL` | Postgres, например `postgresql://friends:friends@localhost:5432/friends` |
 | `PUBLIC_URL` | публичный HTTPS URL сервиса, без webhook-пути |
 | `PORT` | порт HTTP, по умолчанию `3000` |
+| `POSTGRES_USER` | пользователь Postgres (docker compose) |
+| `POSTGRES_PASSWORD` | пароль Postgres — только в `.env`, не в git |
+| `POSTGRES_DB` | имя базы Postgres |
+| `DATABASE_URL` | строка подключения; в compose: `@postgres:5432`, локально: `@localhost:5432` |
 
-Пример: `.env.example`. Для `docker compose` достаточно `BOT_TOKEN`, `TELEGRAM_ADMIN_ID` и `PUBLIC_URL` — `DATABASE_URL` подставится из compose.
+Пример: `.env.example`. Файл `.env` в git не попадает — все секреты только там.
 
 ## Docker Compose (рекомендуется)
 
 Postgres и приложение одной командой:
 
 ```sh
-cp .env.example .env   # заполните BOT_TOKEN, TELEGRAM_ADMIN_ID, PUBLIC_URL
+cp .env.example .env   # заполните все поля, включая POSTGRES_PASSWORD и DATABASE_URL
+chmod 600 .env
 docker compose up -d --build
 ```
+
+`POSTGRES_PASSWORD` в `.env` должен совпадать с паролем в `DATABASE_URL`. Если volume `pgdata` уже существует, пароль должен быть **тот же**, что при первом запуске Postgres (иначе P1000).
 
 Сид один раз на пустую базу:
 
