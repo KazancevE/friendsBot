@@ -181,3 +181,239 @@ video {
   padding-left: 1.2rem;
   color: var(--smoke);
 }
+
+.hub-header h1 {
+  margin-bottom: 0.75rem;
+}
+
+.hub-hero {
+  margin-bottom: 0.65rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ember) 22%, var(--bg-panel)), var(--bg-panel));
+  border-color: color-mix(in srgb, var(--ember) 35%, var(--coal));
+}
+
+.hub-hero-kicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+  color: var(--smoke);
+}
+
+.hub-hero-lead {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hub-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  font-size: 0.88rem;
+  color: var(--ash);
+}
+
+.hub-status {
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.65rem;
+}
+
+.hub-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.92rem;
+  color: var(--smoke);
+}
+
+.hub-status-row + .hub-status-row {
+  margin-top: 0.45rem;
+}
+
+.hub-status-row--secondary {
+  color: var(--ash);
+}
+
+.hub-status-accent {
+  color: var(--ember);
+}
+
+.hub-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.hub-link-btn {
+  flex: 1;
+  min-width: 8.5rem;
+  margin-top: 0;
+  background: transparent;
+  color: var(--ember);
+  border: 1px solid var(--coal);
+  font-size: 0.9rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.hub-section-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+  color: var(--ash);
+  font-weight: 600;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.game-card-compact {
+  margin-bottom: 0;
+  padding: 0.75rem;
+  min-height: 8.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.game-card-compact:active {
+  border-color: color-mix(in srgb, var(--ember) 55%, var(--coal));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ember) 25%, transparent);
+}
+
+.game-card-icon {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.game-card-title {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.game-card-stats {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ash);
+}
+
+.game-card-place {
+  color: var(--ember);
+}
+
+.game-card-play {
+  margin-top: auto;
+  font-size: 0.88rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.hub-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(0 0 0 / 55%);
+  padding: 0 0.75rem 1rem;
+}
+
+.hub-sheet-backdrop[hidden] {
+  display: none;
+}
+
+body.hub-sheet-open {
+  overflow: hidden;
+}
+
+.hub-sheet {
+  position: relative;
+  width: min(100%, 28rem);
+  max-height: min(78vh, 32rem);
+  overflow: auto;
+  margin-bottom: 0;
+  padding-top: 2.25rem;
+}
+
+.hub-sheet-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  margin-top: 0;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  line-height: 1;
+  font-size: 1.35rem;
+  background: var(--coal);
+  color: var(--smoke);
+}
+
+.hub-sheet-body h2 {
+  margin-top: 0;
+}
+
+.hub-sheet-body h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.hub-sheet-note {
+  margin-bottom: 0.65rem;
+}
+
+.hub-sheet-game + .hub-sheet-game {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--coal);
+}
+
+.hub-sheet-me {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--ash);
+}
+
+.game-detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.game-detail-header h1 {
+  margin: 0;
+}
+
+.game-detail-sub {
+  margin: 0.15rem 0 0;
+}
+
+.game-detail-back {
+  margin-top: 0;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  font-size: 1.1rem;
+  background: var(--bg-panel);
+  color: var(--smoke);
+  border: 1px solid var(--coal);
+}
+
+.game-detail-stats p {
+  margin: 0;
+}
+
+.game-detail-stats p + p {
+  margin-top: 0.35rem;
+}
+
+.game-detail-play {
+  width: 100%;
+}
