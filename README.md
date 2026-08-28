@@ -10,8 +10,9 @@ Telegram-бот кальянной «Друзья»: бонусы, касса, M
 |---|---|
 | `BOT_TOKEN` | токен бота от BotFather |
 | `TELEGRAM_ADMIN_ID` | Telegram ID первого админа (роль `admin` всегда) |
-| `PUBLIC_URL` | публичный HTTPS URL сервиса, без webhook-пути |
-| `PORT` | порт HTTP, по умолчанию `3000` |
+| `PUBLIC_URL` | публичный HTTPS URL сервиса, без webhook-пути (`https://` + `CADDY_DOMAIN`) |
+| `CADDY_DOMAIN` | домен для Caddy и Let's Encrypt, без `https://` |
+| `PORT` | порт HTTP приложения внутри compose, по умолчанию `3000` |
 | `POSTGRES_USER` | пользователь Postgres (docker compose) |
 | `POSTGRES_PASSWORD` | пароль Postgres — только в `.env`, не в git |
 | `POSTGRES_DB` | имя базы Postgres |
@@ -21,15 +22,17 @@ Telegram-бот кальянной «Друзья»: бонусы, касса, M
 
 ## Docker Compose (рекомендуется)
 
-Postgres и приложение одной командой:
+Postgres, приложение и Caddy (HTTPS) одной командой:
 
 ```sh
-cp .env.example .env   # заполните все поля, включая POSTGRES_PASSWORD и DATABASE_URL
+cp .env.example .env   # заполните все поля
 chmod 600 .env
 docker compose up -d --build
 ```
 
 `POSTGRES_PASSWORD` в `.env` должен совпадать с паролем в `DATABASE_URL`. Если volume `pgdata` уже существует, пароль должен быть **тот же**, что при первом запуске Postgres (иначе P1000).
+
+`CADDY_DOMAIN` — домен без схемы, например `bot.example.com`. `PUBLIC_URL` — тот же хост с `https://`.
 
 Сид один раз на пустую базу:
 
@@ -37,13 +40,19 @@ docker compose up -d --build
 docker compose run --rm app npx prisma db seed
 ```
 
-Проверка: `http://localhost:3000/health` → `{"ok":true}`.
+Проверка:
 
-Логи: `docker compose logs -f app`. Остановка: `docker compose down` (данные БД сохраняются в volume `pgdata`).
+```sh
+curl -s https://ваш-домен/health   # → {"ok":true}
+docker compose logs -f app
+docker compose restart app         # перерегистрирует webhook после смены PUBLIC_URL
+```
+
+Логи: `docker compose logs -f app caddy`. Остановка: `docker compose down` (данные БД в volume `pgdata`, сертификаты Caddy в `caddy_data`).
+
+Caddy проксирует `443` → `app:3000`. Telegram webhook и Mini App ходят на `PUBLIC_URL`.
 
 При старте контейнер `app` выполняет `prisma migrate deploy`, затем запускает бот. Mini App собирается на этапе `docker compose build`.
-
-**Telegram:** webhook и Mini App требуют публичный HTTPS в `PUBLIC_URL`. Для локальной разработки нужен туннель (ngrok, cloudflared) или деплой на сервер с доменом.
 
 ## Postgres (только БД, без compose)
 

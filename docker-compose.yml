@@ -22,10 +22,28 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${PORT:-3000}:${PORT:-3000}"
+    expose:
+      - "${PORT:-3000}"
     env_file:
       - .env
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+      PORT: ${PORT:-3000}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
