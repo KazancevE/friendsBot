@@ -339,15 +339,42 @@ export class MemoryStore implements Store {
   async listWeekScores(weekId: string) {
     return [...this.scores.values()].filter((s) => s.weekId === weekId);
   }
+  async listAggregatedWeekScores(weekStart: Date) {
+    const weekIds = new Set(
+      [...this.weeks.values()]
+        .filter((week) => week.weekStart.getTime() === weekStart.getTime())
+        .map((week) => week.id),
+    );
+    const byUser = new Map<string, { points: number; updatedAt: Date }>();
+    for (const score of this.scores.values()) {
+      if (!weekIds.has(score.weekId)) {
+        continue;
+      }
+      const current = byUser.get(score.userId);
+      if (current === undefined) {
+        byUser.set(score.userId, { points: score.points, updatedAt: score.updatedAt });
+        continue;
+      }
+      byUser.set(score.userId, {
+        points: current.points + score.points,
+        updatedAt: score.updatedAt > current.updatedAt ? score.updatedAt : current.updatedAt,
+      });
+    }
+    return [...byUser.entries()].map(([userId, row]) => ({
+      userId,
+      points: row.points,
+      updatedAt: row.updatedAt,
+    }));
+  }
   async closeWeek(weekId: string, at: Date) {
     const w = this.weeks.get(weekId)!;
     this.weeks.set(weekId, { ...w, closedAt: at });
   }
-  async hasWeeklyAward(weekId: string, userId: string) {
-    return this.awards.has(`${weekId}:${userId}`);
+  async hasWeeklyAward(weekStart: Date, userId: string) {
+    return this.awards.has(`${weekStart.getTime()}:${userId}`);
   }
-  async addWeeklyAward(weekId: string, userId: string, _place: number) {
-    this.awards.add(`${weekId}:${userId}`);
+  async addWeeklyAward(weekStart: Date, userId: string, _place: number) {
+    this.awards.add(`${weekStart.getTime()}:${userId}`);
   }
 
   async createCoupon(input: {

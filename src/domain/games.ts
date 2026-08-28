@@ -1,13 +1,14 @@
 import { DateTime } from "luxon";
 import type { Store } from "../store/types.ts";
 import { DomainError } from "./errors.ts";
-import type { GameScoreRecord, Role } from "./types.ts";
+import type { Role } from "./types.ts";
+import { rankScores } from "./score-ranking.ts";
 import { weekStartMoscow } from "./week.ts";
 
 const LEADERBOARD_TOP = 10;
 
 const DEFAULT_GAME_RULES_BODY =
-  "Каждую неделю мы подводим итоги игр в «Друзьях». Очки начисляются только во время визита. В конце недели лучшие гости получают бонусы и купоны по таблице призов. Играйте честно и возвращайтесь снова!";
+  "Каждую неделю мы подводим итоги игр в «Друзьях». Очки из всех игр складываются в общий зачёт — призы получают лучшие по сумме. В каждой игре есть отдельный рейтинг, чтобы видеть свои успехи. Очки начисляются только во время визита. В конце недели лучшие гости получают бонусы и купоны по таблице призов. Играйте честно и возвращайтесь снова!";
 
 type SubmitScoreParameters = {
   readonly userId: string;
@@ -73,14 +74,7 @@ export const submitScore = async (store: Store, input: SubmitScoreParameters) =>
   return score;
 };
 
-const rankScores = (scores: ReadonlyArray<GameScoreRecord>) => {
-  return [...scores].sort((left, right) => {
-    if (right.points !== left.points) {
-      return right.points - left.points;
-    }
-    return left.updatedAt.getTime() - right.updatedAt.getTime();
-  });
-};
+const rankScoresForLeaderboard = rankScores;
 
 const formatDisplayName = (firstName: string | null, lastName: string | null) => {
   if (firstName === null || firstName.length === 0) {
@@ -99,14 +93,18 @@ type GetLeaderboardParameters = {
   readonly viewerRole: Role;
 };
 
-export const getLeaderboard = async (store: Store, input: GetLeaderboardParameters) => {
-  const game = await store.findGameBySlug(input.slug);
-  if (game === null) {
-    throw new DomainError("not_found", "Игра не найдена");
-  }
-  const weekStart = weekStartMoscow(DateTime.fromJSDate(input.now)).toJSDate();
-  const week = await store.getOrCreateOpenWeek(game.id, weekStart);
-  const ranked = rankScores(await store.listWeekScores(week.id));
+type LeaderboardParameters = {
+  readonly userId: string;
+  readonly now: Date;
+  readonly viewerRole: Role;
+};
+
+const buildLeaderboard = async (
+  store: Store,
+  scores: ReadonlyArray<{ userId: string; points: number; updatedAt: Date }>,
+  input: LeaderboardParameters,
+) => {
+  const ranked = rankScoresForLeaderboard(scores);
   const showNames = input.viewerRole === "master" || input.viewerRole === "admin";
   const top = await Promise.all(
     ranked.slice(0, LEADERBOARD_TOP).map(async (score, index) => {
@@ -132,6 +130,22 @@ export const getLeaderboard = async (store: Store, input: GetLeaderboardParamete
       ? { place: null, points: 0 }
       : { place: meIndex + 1, points: meScore.points };
   return { me, top };
+};
+
+export const getOverallLeaderboard = async (store: Store, input: LeaderboardParameters) => {
+  const weekStart = weekStartMoscow(DateTime.fromJSDate(input.now)).toJSDate();
+  const scores = await store.listAggregatedWeekScores(weekStart);
+  return buildLeaderboard(store, scores, input);
+};
+
+export const getLeaderboard = async (store: Store, input: GetLeaderboardParameters) => {
+  const game = await store.findGameBySlug(input.slug);
+  if (game === null) {
+    throw new DomainError("not_found", "Игра не найдена");
+  }
+  const weekStart = weekStartMoscow(DateTime.fromJSDate(input.now)).toJSDate();
+  const week = await store.getOrCreateOpenWeek(game.id, weekStart);
+  return buildLeaderboard(store, await store.listWeekScores(week.id), input);
 };
 
 export const listGames = async (store: Store) => {

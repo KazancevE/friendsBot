@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { DomainError } from "../domain/errors.ts";
-import { getGameRules, getLeaderboard, listGames, submitScoreOrPractice } from "../domain/games.ts";
+import { getGameRules, getLeaderboard, getOverallLeaderboard, listGames, submitScoreOrPractice } from "../domain/games.ts";
 import type { Store } from "../store/types.ts";
 import { resolveActor } from "./auth.ts";
 
@@ -103,6 +103,17 @@ export const createGameRoutes = ({ store, botToken }: CreateGameRoutesParameters
     const board = await getLeaderboard(store, {
       userId: user.id,
       slug,
+      now: new Date(),
+      viewerRole: user.role,
+    });
+    return c.json(board);
+  });
+
+  app.get("/api/tournament/leaderboard", async (c) => {
+    const initData = readInitData(c.req.header("X-Telegram-Init-Data"), {});
+    const user = await requireRegistered({ store, initData, botToken });
+    const board = await getOverallLeaderboard(store, {
+      userId: user.id,
       now: new Date(),
       viewerRole: user.role,
     });

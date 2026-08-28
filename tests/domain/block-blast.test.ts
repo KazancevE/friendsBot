@@ -8,6 +8,7 @@ import {
   createPiece,
   hasValidMove,
   isGameOver,
+  nearFullCells,
   scoreMove,
 } from "../../src/domain/block-blast.ts";
 
@@ -106,4 +107,24 @@ test("createGameState starts with empty board and three pieces", () => {
   expect(state.board.flat().every((cell) => cell === -1)).toBe(true);
   expect(state.tray).toHaveLength(3);
   expect(state.tray.every((piece) => piece !== null)).toBe(true);
+});
+
+test("nearFullCells highlights empty cells in rows and columns with 1-2 gaps", () => {
+  const board = createEmptyBoard().map((row, rowIndex) =>
+    row.map((cell, colIndex) => {
+      if (rowIndex === 0 && colIndex < 7) {
+        return 0;
+      }
+      if (colIndex === 1 && rowIndex < 6) {
+        return 1;
+      }
+      return cell;
+    }),
+  );
+
+  const cells = nearFullCells(board);
+  expect(cells).toContainEqual({ row: 0, col: 7 });
+  expect(cells).toContainEqual({ row: 6, col: 1 });
+  expect(cells).toContainEqual({ row: 7, col: 1 });
+  expect(cells).not.toContainEqual({ row: 3, col: 3 });
 });

@@ -2,15 +2,19 @@ import {
   applyPlacement,
   createGameState,
   isGameOver,
+  pieceAnchorCells,
   type GameState,
 } from "../../src/domain/block-blast.ts";
-import { submitGameScore } from "./api.ts";
+import { fetchLeaderboard, submitGameScore } from "./api.ts";
 import { createBlockBlastBoard } from "./block-blast-board.ts";
 import { bindBlockBlastGestures } from "./block-blast-gestures.ts";
 import { hapticImpact } from "./telegram.ts";
 import "./block-blast.css";
 
 const BLOCK_BLAST_SLUG = "blockblast";
+const RANK_GOOD = 200;
+const RANK_GREAT = 500;
+const CONFETTI_MIN_SCORE = 500;
 
 type RenderBlockBlastParameters = {
   readonly root: HTMLElement;
@@ -18,13 +22,96 @@ type RenderBlockBlastParameters = {
 };
 
 const rankForScore = (points: number) => {
-  if (points >= 500) {
+  if (points >= RANK_GREAT) {
     return "Отлично!";
   }
-  if (points >= 200) {
+  if (points >= RANK_GOOD) {
     return "Неплохо!";
   }
   return "Попробуйте ещё";
+};
+
+type RankProgress = {
+  readonly label: string;
+  readonly percent: number;
+};
+
+const rankProgressFor = (points: number): RankProgress => {
+  if (points >= RANK_GREAT) {
+    return { label: "Максимальный ранг!", percent: 100 };
+  }
+  if (points >= RANK_GOOD) {
+    return {
+      label: `До «Отлично!»: ${RANK_GREAT - points}`,
+      percent: Math.round(((points - RANK_GOOD) / (RANK_GREAT - RANK_GOOD)) * 100),
+    };
+  }
+  return {
+    label: `До «Неплохо!»: ${RANK_GOOD - points}`,
+    percent: Math.round((points / RANK_GOOD) * 100),
+  };
+};
+
+const formatWeeklyPlace = (place: number | null) => {
+  if (place === null) {
+    return "Вы пока вне топа недели";
+  }
+  return `Место в рейтинге: #${place}`;
+};
+
+const spawnConfetti = (root: HTMLElement) => {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return;
+  }
+  const layer = document.createElement("div");
+  layer.className = "bb-confetti";
+  layer.setAttribute("aria-hidden", "true");
+  const colors = ["#d4784a", "#f0a060", "#ffd080", "#68b878", "#5a9ad8", "#a888d8"];
+  for (let index = 0; index < 40; index += 1) {
+    const piece = document.createElement("span");
+    piece.className = "bb-confetti-piece";
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = colors[index % colors.length] ?? colors[0]!;
+    piece.style.animationDelay = `${Math.random() * 400}ms`;
+    piece.style.animationDuration = `${800 + Math.random() * 600}ms`;
+    layer.append(piece);
+  }
+  root.append(layer);
+  window.setTimeout(() => {
+    layer.remove();
+  }, 2200);
+};
+
+const comboMessage = (linesCleared: number) => {
+  if (linesCleared >= 4) {
+    return `Невероятно! x${linesCleared}`;
+  }
+  if (linesCleared >= 3) {
+    return `Отлично! x${linesCleared}`;
+  }
+  return `Комбо x${linesCleared}!`;
+};
+
+const comboTierClass = (linesCleared: number) => {
+  if (linesCleared >= 4) {
+    return "bb-combo--mega";
+  }
+  if (linesCleared >= 3) {
+    return "bb-combo--great";
+  }
+  return "bb-combo--good";
+};
+
+const hapticForClear = (linesCleared: number) => {
+  if (linesCleared >= 3) {
+    hapticImpact("heavy");
+    return;
+  }
+  if (linesCleared >= 2) {
+    hapticImpact("medium");
+    return;
+  }
+  hapticImpact("light");
 };
 
 const animateCountUp = (
@@ -56,6 +143,8 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
   let busy = false;
 
   let scoreElement: HTMLElement | undefined;
+  let rankLabelElement: HTMLElement | undefined;
+  let rankFillElement: HTMLElement | undefined;
   let comboElement: HTMLElement | undefined;
   let statusElement: HTMLElement | undefined;
   let boardHost: HTMLElement | undefined;
@@ -73,8 +162,14 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
       return;
     }
     comboElement.hidden = false;
-    comboElement.textContent = `Комбо x${linesCleared}!`;
-    comboElement.classList.remove("bb-combo-pop");
+    comboElement.textContent = comboMessage(linesCleared);
+    comboElement.classList.remove(
+      "bb-combo-pop",
+      "bb-combo--good",
+      "bb-combo--great",
+      "bb-combo--mega",
+    );
+    comboElement.classList.add(comboTierClass(linesCleared));
     void comboElement.offsetWidth;
     comboElement.classList.add("bb-combo-pop");
     window.setTimeout(() => {
@@ -84,11 +179,22 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
     }, 900);
   };
 
+  const updateRankProgress = () => {
+    const progress = rankProgressFor(score);
+    if (rankLabelElement !== undefined) {
+      rankLabelElement.textContent = progress.label;
+    }
+    if (rankFillElement !== undefined) {
+      rankFillElement.style.width = `${progress.percent}%`;
+    }
+  };
+
   const updateHud = (scoreBump = false) => {
     if (scoreElement === undefined) {
       return;
     }
     scoreElement.textContent = String(score);
+    updateRankProgress();
     if (scoreBump) {
       scoreElement.classList.remove("bb-score-bump");
       void scoreElement.offsetWidth;
@@ -107,12 +213,17 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
   const finishGame = async () => {
     finished = true;
     boardApi.setBusy(true);
+    hapticImpact("medium");
     const rank = rankForScore(score);
+    const previousLeaderboard = await fetchLeaderboard(BLOCK_BLAST_SLUG);
+    const previousBest =
+      previousLeaderboard.kind === "ok" ? previousLeaderboard.data.me.points : 0;
 
     if (score < 1) {
       root.insertAdjacentHTML(
         "beforeend",
-        `<div class="bb-done panel">
+        `<div class="bb-done panel bb-done--empty">
+          <p class="bb-rank">Партия окончена</p>
           <p class="muted">Нет очков для отправки</p>
           <div class="bb-done-actions">
             <button type="button" data-restart>Играть снова</button>
@@ -133,6 +244,9 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
 
     const done = document.createElement("div");
     done.className = "bb-done panel";
+    if (score >= RANK_GREAT) {
+      done.classList.add("bb-done--celebrate");
+    }
     const rankLine = document.createElement("p");
     rankLine.className = "bb-rank";
     rankLine.textContent = rank;
@@ -161,6 +275,10 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
     status.replaceWith(display);
     await animateCountUp(display, 0, score, 400);
 
+    if (score >= CONFETTI_MIN_SCORE) {
+      spawnConfetti(root);
+    }
+
     const result = await submitGameScore({ slug: BLOCK_BLAST_SLUG, points: score });
     const resultLine = document.createElement("p");
     resultLine.className = "status";
@@ -173,6 +291,29 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
       resultLine.textContent = `Очки отправлены: ${score}`;
     }
     display.insertAdjacentElement("afterend", resultLine);
+
+    const nextLeaderboard = await fetchLeaderboard(BLOCK_BLAST_SLUG);
+    let detailsAnchor: HTMLElement = resultLine;
+    if (nextLeaderboard.kind === "ok") {
+      const counted = result.kind === "ok" && result.data.counted;
+      if (counted && score > previousBest) {
+        const recordLine = document.createElement("p");
+        recordLine.className = "bb-record";
+        recordLine.textContent = "Новый рекорд!";
+        detailsAnchor.insertAdjacentElement("afterend", recordLine);
+        detailsAnchor = recordLine;
+      }
+      const placeLine = document.createElement("p");
+      placeLine.className = "bb-place";
+      placeLine.textContent = formatWeeklyPlace(nextLeaderboard.data.me.place);
+      detailsAnchor.insertAdjacentElement("afterend", placeLine);
+    } else if (previousBest > 0) {
+      const bestLine = document.createElement("p");
+      bestLine.className = "bb-place";
+      bestLine.textContent = `Ваш рекорд недели: ${Math.max(previousBest, score)}`;
+      detailsAnchor.insertAdjacentElement("afterend", bestLine);
+    }
+
     actions.hidden = false;
 
     restart.addEventListener("click", () => {
@@ -207,12 +348,19 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
         return;
       }
 
-      hapticImpact(result.linesCleared >= 2 ? "medium" : "light");
+      hapticForClear(result.linesCleared);
       showCombo(result.linesCleared);
 
+      const placedCells = pieceAnchorCells(piece, row, col);
+      boardApi.syncBoard(result.placedBoard);
+      await boardApi.animatePlacement(placedCells);
+
       if (result.clearedCells.length > 0) {
-        boardApi.sync({ board: result.placedBoard, tray: state.tray });
-        await boardApi.animateLineClear(result.clearedCells);
+        await boardApi.animateLineClear(
+          result.clearedCells,
+          result.scoreDelta,
+          result.linesCleared,
+        );
       }
 
       state = result.state;
@@ -222,7 +370,8 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
 
       if (isGameOver(state)) {
         setStatus("Больше некуда поставить — партия окончена");
-        void finishGame();
+        await boardApi.animateGameOver();
+        await finishGame();
       }
     } finally {
       busy = false;
@@ -244,6 +393,12 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
           <span class="bb-stat-label">Очки</span>
           <span class="bb-stat-value" data-score aria-live="polite">0</span>
         </div>
+        <div class="bb-rank-progress">
+          <span class="bb-rank-progress-label" data-rank-label>До «Неплохо!»: 200</span>
+          <div class="bb-rank-progress-track">
+            <div class="bb-rank-progress-fill" data-rank-fill></div>
+          </div>
+        </div>
       </div>
       <div class="bb-combo" data-combo hidden></div>
       <div class="bb-board-host" data-board-host></div>
@@ -251,6 +406,8 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
     `;
 
     scoreElement = root.querySelector("[data-score]") ?? undefined;
+    rankLabelElement = root.querySelector("[data-rank-label]") ?? undefined;
+    rankFillElement = root.querySelector("[data-rank-fill]") ?? undefined;
     comboElement = root.querySelector("[data-combo]") ?? undefined;
     statusElement = root.querySelector("[data-status]") ?? undefined;
     boardHost = root.querySelector("[data-board-host]") ?? undefined;

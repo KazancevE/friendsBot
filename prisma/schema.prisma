@@ -176,7 +176,6 @@ model GameWeek {
   closedAt  DateTime?
   scores    GameScore[]
   coupons   Coupon[]
-  awards    WeeklyAward[]
   @@unique([gameId, weekStart])
 }
 
@@ -204,10 +203,9 @@ model Coupon {
 }
 
 model WeeklyAward {
-  week   GameWeek @relation(fields: [weekId], references: [id])
-  weekId String
-  user   User     @relation(fields: [userId], references: [id])
-  userId String
-  place  Int
-  @@id([weekId, userId])
+  weekStart DateTime
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  place     Int
+  @@id([weekStart, userId])
 }

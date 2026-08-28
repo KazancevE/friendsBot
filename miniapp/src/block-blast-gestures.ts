@@ -1,6 +1,6 @@
 import type { GameState, Piece } from "../../src/domain/block-blast.ts";
 import { canPlace, pieceAnchorCells } from "../../src/domain/block-blast.ts";
-import type { BlockBlastBoard } from "./block-blast-board.ts";
+import { createDragGhostElement, type BlockBlastBoard } from "./block-blast-board.ts";
 
 type BindBlockBlastGesturesParameters = {
   readonly boardApi: BlockBlastBoard;
@@ -69,7 +69,7 @@ export const bindBlockBlastGestures = ({
     const state = getState();
     const cells = pieceAnchorCells(piece, row, col);
     const valid = canPlace({ board: state.board, piece, row, col });
-    boardApi.setGhost(cells, valid);
+    boardApi.setGhost(cells, valid, piece.tile);
   };
 
   const onTrayPointerDown = (event: PointerEvent) => {
@@ -99,9 +99,7 @@ export const bindBlockBlastGestures = ({
     pointerStartX = event.clientX;
     pointerStartY = event.clientY;
     clearDragGhost();
-    dragGhost = document.createElement("div");
-    dragGhost.className = "bb-drag-ghost";
-    dragGhost.textContent = "▣";
+    dragGhost = createDragGhostElement(piece);
     dragGhost.style.left = `${event.clientX}px`;
     dragGhost.style.top = `${event.clientY}px`;
     document.body.append(dragGhost);
