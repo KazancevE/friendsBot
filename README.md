@@ -14,28 +14,40 @@ Telegram-бот кальянной «Друзья»: бонусы, касса, M
 | `PUBLIC_URL` | публичный HTTPS URL сервиса, без webhook-пути |
 | `PORT` | порт HTTP, по умолчанию `3000` |
 
-Пример: `.env.example`.
+Пример: `.env.example`. Для `docker compose` достаточно `BOT_TOKEN`, `TELEGRAM_ADMIN_ID` и `PUBLIC_URL` — `DATABASE_URL` подставится из compose.
 
-## Postgres
+## Docker Compose (рекомендуется)
 
-```yaml
-services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: friends
-      POSTGRES_PASSWORD: friends
-      POSTGRES_DB: friends
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+Postgres и приложение одной командой:
 
-volumes:
-  pgdata:
+```sh
+cp .env.example .env   # заполните BOT_TOKEN, TELEGRAM_ADMIN_ID, PUBLIC_URL
+docker compose up -d --build
 ```
 
-Запуск: `docker compose up -d`.
+Сид один раз на пустую базу:
+
+```sh
+docker compose run --rm app npx prisma db seed
+```
+
+Проверка: `http://localhost:3000/health` → `{"ok":true}`.
+
+Логи: `docker compose logs -f app`. Остановка: `docker compose down` (данные БД сохраняются в volume `pgdata`).
+
+При старте контейнер `app` выполняет `prisma migrate deploy`, затем запускает бот. Mini App собирается на этапе `docker compose build`.
+
+**Telegram:** webhook и Mini App требуют публичный HTTPS в `PUBLIC_URL`. Для локальной разработки нужен туннель (ngrok, cloudflared) или деплой на сервер с доменом.
+
+## Postgres (только БД, без compose)
+
+Если приложение запускаете отдельно (`npm run start`), поднимите Postgres:
+
+```sh
+docker compose up -d postgres
+```
+
+Или свой инстанс; строка подключения — в `DATABASE_URL` (для локального npm: `@localhost:5432`).
 
 ## Миграции и сид
 
@@ -71,7 +83,7 @@ npm run start
 
 Локально без webhook: `npx tsx src/dev-polling.ts`.
 
-Планировщик в том же процессе: день рождения каждую ночь 02:00 МСК, закрытие недели в понедельник 00:00 МСК.
+Планировщик в том же процессе: день рождения каждую ночь 02:00 МСК, закрытие недели в понедельник 00:00 МСК, ротация кода зала каждые 2 часа МСK.
 
 ## Timeweb Cloud Apps
 
@@ -103,11 +115,13 @@ npm run start
 
 Проверка: `https://ваш-домен.twc1.net/health` → `{"ok":true}`.
 
-## Docker
+## Docker (образ без compose)
 
 ```sh
 docker build -t friends-bot .
 docker run --env-file .env -p 3000:3000 friends-bot
 ```
 
-Образ на старте делает `prisma migrate deploy` и запускает `tsx src/index.ts`. Сид выполните один раз отдельно: `docker run --env-file .env friends-bot npx prisma db seed`.
+Образ на старте делает `prisma migrate deploy` и запускает `tsx src/index.ts`. Сид один раз: `docker run --rm --env-file .env friends-bot npx prisma db seed`.
+
+Для Postgres + app вместе используйте `docker compose up -d --build` (см. выше).

@@ -1,0 +1,80 @@
+<h2>Экран «Профиль» — что показывать?</h2>
+<p class="subtitle">Сейчас «Профиль» сразу запускает редактирование. Нужно сначала показать данные, а кнопку «Редактировать» — inline под сообщением (как у «Контакты» / «Как доехать» у админа).</p>
+
+<div class="cards">
+  <div class="card" data-choice="basic" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0;border:none;box-shadow:none">
+        <div class="mockup-body" style="padding:12px;font-family:system-ui;font-size:13px;line-height:1.5">
+          <div style="background:#fff;border-radius:12px;padding:12px;max-width:280px;box-shadow:0 1px 3px rgba(0,0,0,.12)">
+            <div style="font-weight:600;margin-bottom:8px">👤 Ваш профиль</div>
+            <div>Имя: Иван</div>
+            <div>Фамилия: Петров</div>
+            <div>Дата рождения: 01.02.1990</div>
+            <div>Телефон: +7 999 123-45-67</div>
+            <div>Купоны: Скидка 10%, Бесплатный чай</div>
+            <div style="margin-top:10px">
+              <span style="display:inline-block;background:#e8f4fc;color:#2AABEE;border-radius:6px;padding:6px 14px;font-size:12px">Редактировать</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Базовый профиль</h3>
+      <p>Имя, фамилия, дата рождения, телефон, активные купоны. Баланс и QR — в отдельной кнопке «Баланс и QR».</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="extended" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0;border:none;box-shadow:none">
+        <div class="mockup-body" style="padding:12px;font-family:system-ui;font-size:13px;line-height:1.5">
+          <div style="background:#fff;border-radius:12px;padding:12px;max-width:280px;box-shadow:0 1px 3px rgba(0,0,0,.12)">
+            <div style="font-weight:600;margin-bottom:8px">👤 Ваш профиль</div>
+            <div>Имя: Иван</div>
+            <div>Фамилия: Петров</div>
+            <div>Дата рождения: 01.02.1990</div>
+            <div>Телефон: +7 999 123-45-67</div>
+            <div>Баланс: 350 бонусов</div>
+            <div>Купоны: Скидка 10%, Бесплатный чай</div>
+            <div style="margin-top:10px">
+              <span style="display:inline-block;background:#e8f4fc;color:#2AABEE;border-radius:6px;padding:6px 14px;font-size:12px">Редактировать</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — С балансом</h3>
+      <p>То же, что A, плюс текущий баланс бонусов. Удобно, если гость редко заходит в «Баланс и QR».</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="compact" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0;border:none;box-shadow:none">
+        <div class="mockup-body" style="padding:12px;font-family:system-ui;font-size:13px;line-height:1.5">
+          <div style="background:#fff;border-radius:12px;padding:12px;max-width:280px;box-shadow:0 1px 3px rgba(0,0,0,.12)">
+            <div style="font-weight:600;margin-bottom:8px">👤 Ваш профиль</div>
+            <div>ФИО: Иван Петров</div>
+            <div>Дата рождения: 01.02.1990</div>
+            <div>Телефон: +7 999 123-45-67</div>
+            <div style="margin-top:10px">
+              <span style="display:inline-block;background:#e8f4fc;color:#2AABEE;border-radius:6px;padding:6px 14px;font-size:12px">Редактировать</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Компактный</h3>
+      <p>ФИО одной строкой, без купонов. Минимум текста — купоны и баланс остаются в своих разделах.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>После нажатия «Редактировать»</h3>
+  <p class="subtitle">Тот же wizard, что сейчас: имя → фамилия → дата рождения → телефон (или «пропустить»). Можно отменить кнопкой «Отмена».</p>
+</div>

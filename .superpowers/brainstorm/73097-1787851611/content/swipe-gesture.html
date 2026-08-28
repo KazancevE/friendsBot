@@ -1,0 +1,51 @@
+<h2>Как должен работать свайп?</h2>
+<p class="subtitle">Сейчас: тап по первой фишке, потом тап по соседней. Что добавить?</p>
+
+<div class="cards">
+  <div class="card" data-choice="drag" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding:1rem;font-family:system-ui;background:#1a1210;border-radius:8px;color:#f3ece6">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:140px;margin:0 auto">
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center">🔥</div>
+          <div style="aspect-ratio:1;background:#4a3228;border-radius:6px;display:flex;align-items:center;justify-content:center;outline:2px solid #d4784a;transform:translateX(12px)">💧</div>
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center;opacity:0.5">🫧</div>
+        </div>
+        <p style="text-align:center;margin:0.75rem 0 0;font-size:0.75rem;color:#8a7a72">палец тянет фишку →</p>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Drag & drop</h3>
+      <p>Зажал фишку и перетащил на соседнюю. Отпустил — свап (если матч).</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="flick" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding:1rem;font-family:system-ui;background:#1a1210;border-radius:8px;color:#f3ece6">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:140px;margin:0 auto">
+          <div style="aspect-ratio:1;background:#4a3228;border-radius:6px;display:flex;align-items:center;justify-content:center;outline:2px solid #d4784a">🔥</div>
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center">💧</div>
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center">🫧</div>
+        </div>
+        <p style="text-align:center;margin:0.75rem 0 0;font-size:0.75rem;color:#8a7a72">короткий свайп в сторону ↑↓←→</p>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Flick</h3>
+      <p>Свайпнул по фишке в сторону соседа — мгновенный свап без перетаскивания.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="both" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding:1rem;font-family:system-ui;background:#1a1210;border-radius:8px;color:#f3ece6;text-align:center">
+        <div style="font-size:1.5rem;margin-bottom:0.5rem">👆 + ↔️</div>
+        <p style="margin:0;font-size:0.75rem;color:#8a7a72">тап-тап и свайп вместе</p>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Оба</h3>
+      <p>Свайп (A или B) + старый тап по двум фишкам. Удобно и пальцем, и мышью.</p>
+    </div>
+  </div>
+</div>

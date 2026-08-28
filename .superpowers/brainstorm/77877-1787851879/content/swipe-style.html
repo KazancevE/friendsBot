@@ -1,0 +1,38 @@
+<h2>Какой именно свайп вместе с тап-тап?</h2>
+<p class="subtitle">Выбрал «оба». Какой жест пальцем оставляем?</p>
+
+<div class="cards">
+  <div class="card" data-choice="drag" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding:1rem;font-family:system-ui;background:#1a1210;border-radius:8px;color:#f3ece6">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:140px;margin:0 auto">
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center">🔥</div>
+          <div style="aspect-ratio:1;background:#4a3228;border-radius:6px;display:flex;align-items:center;justify-content:center;outline:2px solid #d4784a;transform:translateX(12px)">💧</div>
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center;opacity:0.5">🫧</div>
+        </div>
+        <p style="text-align:center;margin:0.75rem 0 0;font-size:0.75rem;color:#8a7a72">тянешь фишку до соседа</p>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Drag</h3>
+      <p>Фишка едет за пальцем. Отпустил на соседе — свап. Ближе к Candy Crush.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="flick" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding:1rem;font-family:system-ui;background:#1a1210;border-radius:8px;color:#f3ece6">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:140px;margin:0 auto">
+          <div style="aspect-ratio:1;background:#4a3228;border-radius:6px;display:flex;align-items:center;justify-content:center;outline:2px solid #d4784a">🔥</div>
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center">💧</div>
+          <div style="aspect-ratio:1;background:#3a2a24;border-radius:6px;display:flex;align-items:center;justify-content:center">🫧</div>
+        </div>
+        <p style="text-align:center;margin:0.75rem 0 0;font-size:0.75rem;color:#8a7a72">короткий жест ↑↓←→</p>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Flick</h3>
+      <p>Короткий свайп в сторону — свап сразу. Быстрее на маленьком экране Telegram.</p>
+    </div>
+  </div>
+</div>
