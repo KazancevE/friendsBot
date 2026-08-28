@@ -1,12 +1,15 @@
 import {
   fetchGameRules,
+  fetchGames,
   fetchLeaderboard,
   fetchMe,
+  type GameCatalogEntry,
   type GameRules,
   type Leaderboard,
   type PrizePlace,
   type Role,
 } from "./api.ts";
+import { renderBlockBlast } from "./block-blast.ts";
 import { renderMatch3 } from "./match3.ts";
 
 import { renderCheckIn } from "./check-in.ts";
@@ -15,6 +18,11 @@ const STAFF_ROLES = new Set<Role>(["master", "admin"]);
 type RenderHubOptions = {
   readonly role?: Role;
   readonly staffMode?: boolean;
+};
+
+type GameBoard = {
+  readonly game: GameCatalogEntry;
+  readonly board: Leaderboard;
 };
 
 const escapeHtml = (text: string) => {
@@ -67,20 +75,55 @@ const renderRulesSection = (rules: GameRules) => {
   `;
 };
 
-const renderBoard = (
-  root: HTMLElement,
-  board: Leaderboard,
-  rules: GameRules,
-  hubOptions: RenderHubOptions,
+const renderGameCard = (
+  { game, board }: GameBoard,
   staffViewer: boolean,
 ) => {
   const top =
     board.top.length === 0
       ? "<p class=\"muted\">Пока нет результатов</p>"
-      : `<ol class="leaderboard">${board.top
+      : `<ol class="game-card-top">${board.top
+          .slice(0, 5)
           .map((row) => renderLeaderboardItem(row, staffViewer))
           .join("")}</ol>`;
 
+  return `
+    <section class="panel game-card" data-game-card="${escapeHtml(game.slug)}">
+      <h2>${escapeHtml(game.title)}</h2>
+      <p>Ваше место: ${formatPlace(board.me.place)}</p>
+      <p>Очки недели: ${board.me.points}</p>
+      ${top}
+      <div class="game-card-actions">
+        <button type="button" data-play="${escapeHtml(game.slug)}">Играть</button>
+      </div>
+    </section>
+  `;
+};
+
+const launchGame = (
+  slug: string,
+  root: HTMLElement,
+  hubOptions: RenderHubOptions,
+) => {
+  const onBack = () => {
+    void renderHub(root, hubOptions);
+  };
+  if (slug === "match3") {
+    renderMatch3({ root, onBack });
+    return;
+  }
+  if (slug === "blockblast") {
+    renderBlockBlast({ root, onBack });
+  }
+};
+
+const renderBoard = (
+  root: HTMLElement,
+  gameBoards: ReadonlyArray<GameBoard>,
+  rules: GameRules,
+  hubOptions: RenderHubOptions,
+  staffViewer: boolean,
+) => {
   const staffBanner = staffViewer
     ? `<p class="staff-banner">Режим персонала — очки не участвуют в розыгрыше</p>`
     : "";
@@ -88,31 +131,22 @@ const renderBoard = (
   root.innerHTML = `
     <header>
       <h1>Игры</h1>
-      <p class="muted">Три в ряд</p>
+      <p class="muted">Выберите игру недели</p>
     </header>
     ${staffBanner}
-    <section class="panel">
-      <p>Ваше место: ${formatPlace(board.me.place)}</p>
-      <p>Очки недели: ${board.me.points}</p>
-    </section>
     ${renderRulesSection(rules)}
-    <section class="panel">
-      <h2>Топ-10</h2>
-      ${top}
-    </section>
-    <button type="button" data-play>Играть</button>
+    ${gameBoards.map((entry) => renderGameCard(entry, staffViewer)).join("")}
   `;
 
-  const play = root.querySelector("[data-play]");
-  if (play instanceof HTMLButtonElement) {
-    play.addEventListener("click", () => {
-      renderMatch3({
-        root,
-        onBack: () => {
-          void renderHub(root, hubOptions);
-        },
+  for (const play of root.querySelectorAll("[data-play]")) {
+    if (play instanceof HTMLButtonElement) {
+      play.addEventListener("click", () => {
+        const slug = play.dataset.play;
+        if (slug !== undefined && slug.length > 0) {
+          launchGame(slug, root, hubOptions);
+        }
       });
-    });
+    }
   }
 };
 
@@ -138,14 +172,35 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
     return;
   }
 
-  const [board, rules] = await Promise.all([fetchLeaderboard("match3"), fetchGameRules()]);
-  if (board.kind === "error") {
-    root.textContent = board.message;
+  const [games, rules] = await Promise.all([fetchGames(), fetchGameRules()]);
+  if (games.kind === "error") {
+    root.textContent = games.message;
     return;
   }
   if (rules.kind === "error") {
     root.textContent = rules.message;
     return;
   }
-  renderBoard(root, board.data, rules.data, options, staffViewer);
+
+  const boards = await Promise.all(
+    games.data.map(async (game) => {
+      const board = await fetchLeaderboard(game.slug);
+      return { game, board };
+    }),
+  );
+
+  const failed = boards.find((entry) => entry.board.kind === "error");
+  if (failed !== undefined && failed.board.kind === "error") {
+    root.textContent = failed.board.message;
+    return;
+  }
+
+  const gameBoards = boards.flatMap((entry) => {
+    if (entry.board.kind === "ok") {
+      return [{ game: entry.game, board: entry.board.data }];
+    }
+    return [];
+  });
+
+  renderBoard(root, gameBoards, rules.data, options, staffViewer);
 };

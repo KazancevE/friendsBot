@@ -38,11 +38,19 @@ export class MemoryStore implements Store {
   awards = new Set<string>();
 
   constructor() {
-    const id = crypto.randomUUID();
-    this.games.set(id, {
-      id,
+    const match3Id = crypto.randomUUID();
+    this.games.set(match3Id, {
+      id: match3Id,
       slug: "match3",
       title: "Три в ряд",
+      active: true,
+      maxScorePerSession: 50000,
+    });
+    const blockBlastId = crypto.randomUUID();
+    this.games.set(blockBlastId, {
+      id: blockBlastId,
+      slug: "blockblast",
+      title: "Блоки",
       active: true,
       maxScorePerSession: 50000,
     });

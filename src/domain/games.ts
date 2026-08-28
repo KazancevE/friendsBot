@@ -134,6 +134,14 @@ export const getLeaderboard = async (store: Store, input: GetLeaderboardParamete
   return { me, top };
 };
 
+export const listGames = async (store: Store) => {
+  const games = await store.listActiveGames();
+  return games.map((game) => ({
+    slug: game.slug,
+    title: game.title,
+  }));
+};
+
 export const getGameRules = async (store: Store) => {
   const settings = await store.getSettings();
   const page = await store.getPage("game_rules");

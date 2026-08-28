@@ -245,6 +245,26 @@ export const fetchGameRules = () => {
   return getJson("/api/games/rules", isGameRules);
 };
 
+export type GameCatalogEntry = {
+  readonly slug: string;
+  readonly title: string;
+};
+
+const isGameCatalogEntry = (value: unknown): value is GameCatalogEntry => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.slug === "string" && typeof value.title === "string";
+};
+
+const isGameCatalog = (value: unknown): value is ReadonlyArray<GameCatalogEntry> => {
+  return Array.isArray(value) && value.every(isGameCatalogEntry);
+};
+
+export const fetchGames = () => {
+  return getJson("/api/games", isGameCatalog);
+};
+
 type SubmitGameScoreParameters = {
   readonly slug: string;
   readonly points: number;
