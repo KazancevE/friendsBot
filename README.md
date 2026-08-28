@@ -75,7 +75,7 @@ npx prisma db seed
 
 ## Mini App
 
-В BotFather укажите URL Mini App: `PUBLIC_URL/app/` (со слэшем). Тот же URL открывают кнопки «Игры» (гость) и «Касса QR» (персонал). Webhook бота: `PUBLIC_URL/tg/<BOT_TOKEN>` — ставится при старте процесса.
+В BotFather укажите URL Mini App: `PUBLIC_URL/app/` (со слэшем). Тот же URL открывают кнопки «Игры» (гость) и «Приложение» (персонал) через inline-кнопку в чате. Webhook бота: `PUBLIC_URL/tg/<BOT_TOKEN>` — ставится при старте процесса.
 
 ## Как добавить мастера
 

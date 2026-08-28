@@ -3,23 +3,23 @@ import {
   cancelKeyboard,
   contactOrCancelKeyboard,
   mainKeyboard,
+  MINI_APP_GUEST_LABEL,
+  MINI_APP_STAFF_LABEL,
 } from "../../src/bot/keyboards.ts";
 
-test("staff keyboard includes Касса QR web app at PUBLIC_URL/app/", () => {
+test("staff keyboard uses text Приложение and no reply web_app buttons", () => {
   const keyboard = mainKeyboard({ role: "master", publicUrl: "https://friends.example/" });
   const buttons = keyboard.keyboard.flat();
-  const webApp = buttons.find((button) => "web_app" in button);
-  expect(webApp).toEqual({
-    text: "Касса QR",
-    web_app: { url: "https://friends.example/app/" },
-  });
+  const miniApp = buttons.find((button) => "text" in button && button.text === MINI_APP_STAFF_LABEL);
+  expect(miniApp).toEqual({ text: MINI_APP_STAFF_LABEL });
+  expect(buttons.some((button) => "web_app" in button)).toBe(false);
 });
 
 test("guest keyboard uses text Игры so inline Mini App can send initData", () => {
   const keyboard = mainKeyboard({ role: "guest", publicUrl: "https://friends.example" });
   const buttons = keyboard.keyboard.flat();
-  const games = buttons.find((button) => "text" in button && button.text === "Игры");
-  expect(games).toEqual({ text: "Игры" });
+  const games = buttons.find((button) => "text" in button && button.text === MINI_APP_GUEST_LABEL);
+  expect(games).toEqual({ text: MINI_APP_GUEST_LABEL });
   expect(buttons.some((button) => "web_app" in button)).toBe(false);
 });
 

@@ -19,9 +19,11 @@ export const contactOrCancelKeyboard = (): Keyboard => {
     .oneTime();
 };
 
-const miniAppUrl = (publicUrl: string) => {
-  const origin = publicUrl.replace(/\/$/, "");
-  return `${origin}/app/`;
+export const MINI_APP_GUEST_LABEL = "Игры";
+export const MINI_APP_STAFF_LABEL = "Приложение";
+
+export const miniAppButtonLabel = (role: Role) => {
+  return role === "guest" ? MINI_APP_GUEST_LABEL : MINI_APP_STAFF_LABEL;
 };
 
 type MainKeyboardParameters = {
@@ -29,7 +31,7 @@ type MainKeyboardParameters = {
   readonly publicUrl: string;
 };
 
-export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
+export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParameters) => {
   const keyboard = new Keyboard()
     .text("Баланс и QR")
     .text("История")
@@ -41,13 +43,13 @@ export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
     .text("Как доехать")
     .row()
     .text("Контакты")
-    .text("Игры");
+    .text(miniAppButtonLabel(role));
 
   if (role === "guest") {
     keyboard.row().text("Отключить рассылку");
   }
   if (role === "master" || role === "admin") {
-    keyboard.row().text("Найти гостя").text("Код зала").row().webApp("Касса QR", miniAppUrl(publicUrl));
+    keyboard.row().text("Найти гостя").text("Код зала");
   }
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");
