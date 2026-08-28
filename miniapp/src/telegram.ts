@@ -1,6 +1,11 @@
+type TelegramHapticFeedback = {
+  readonly impactOccurred: (style: "light" | "medium" | "heavy") => void;
+};
+
 type TelegramWebApp = {
   readonly ready: () => void;
   readonly initData: string;
+  readonly HapticFeedback?: TelegramHapticFeedback;
 };
 
 type TelegramNamespace = {
@@ -18,4 +23,8 @@ export const readyTelegram = () => {
 
 export const initData = () => {
   return telegramWebApp()?.initData ?? "";
+};
+
+export const hapticImpact = (style: "light" | "medium" | "heavy" = "light") => {
+  telegramWebApp()?.HapticFeedback?.impactOccurred(style);
 };

@@ -1,6 +1,8 @@
 import type { Board } from "../../src/domain/match3.ts";
 
 const TILE_EMOJI = ["🔥", "💧", "🫧", "🌿"] as const;
+const FALL_DURATION_MS = 320;
+const STAGGER_MS = 30;
 
 export type Cell = {
   readonly row: number;
@@ -37,6 +39,29 @@ const waitTransition = (element: HTMLElement, fallbackMs: number) => {
   });
 };
 
+const animateFall = async (
+  element: HTMLElement,
+  fromY: number,
+  delayMs = 0,
+) => {
+  if (delayMs > 0) {
+    await wait(delayMs);
+  }
+  element.classList.add("falling");
+  element.style.transform = `translateY(${fromY}px)`;
+  void element.offsetHeight;
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      element.style.transform = "translateY(0)";
+      void waitTransition(element, FALL_DURATION_MS).then(() => {
+        element.classList.remove("falling");
+        element.style.transform = "";
+        resolve();
+      });
+    });
+  });
+};
+
 type GravityMove = {
   readonly fromRow: number;
   readonly toRow: number;
@@ -50,7 +75,6 @@ type GravitySpawn = {
 
 const computeGravityMotion = (
   before: Board,
-  after: Board,
   matchedCells: ReadonlyArray<Cell>,
 ) => {
   const matched = new Set(matchedCells.map(cellKey));
@@ -84,7 +108,7 @@ const computeGravityMotion = (
     }
   }
 
-  return { moves, spawns };
+  return { moves, spawns, rows };
 };
 
 export type Match3Board = {
@@ -136,6 +160,14 @@ export const createMatch3Board = (container: HTMLElement): Match3Board => {
     return tiles[cell.row]?.[cell.col];
   };
 
+  const applyTile = (element: HTMLButtonElement, tile: number) => {
+    element.textContent = tileEmoji(tile);
+    element.dataset.tile = String(tile);
+    element.style.transform = "";
+    element.style.opacity = "";
+    element.classList.remove("popping", "flashing", "falling");
+  };
+
   const sync = (board: Board) => {
     ensureGrid(board);
     for (let row = 0; row < board.length; row += 1) {
@@ -144,9 +176,7 @@ export const createMatch3Board = (container: HTMLElement): Match3Board => {
         const tile = line[col] ?? 0;
         const element = tiles[row]?.[col];
         if (element !== undefined) {
-          element.textContent = tileEmoji(tile);
-          element.style.transform = "";
-          element.classList.remove("popping");
+          applyTile(element, tile);
         }
       }
     }
@@ -238,7 +268,13 @@ export const createMatch3Board = (container: HTMLElement): Match3Board => {
     const first = cells[0];
     const anchor = first === undefined ? undefined : tileAt(first);
     for (const cell of cells) {
-      tileAt(cell)?.classList.add("popping");
+      tileAt(cell)?.classList.add("flashing");
+    }
+    await wait(80);
+    for (const cell of cells) {
+      const tile = tileAt(cell);
+      tile?.classList.remove("flashing");
+      tile?.classList.add("popping");
     }
     if (anchor !== undefined && scoreDelta > 0) {
       const pop = document.createElement("span");
@@ -269,7 +305,11 @@ export const createMatch3Board = (container: HTMLElement): Match3Board => {
     matchedCells: ReadonlyArray<Cell>,
   ) => {
     const size = getCellSize();
-    const { moves, spawns } = computeGravityMotion(before, after, matchedCells);
+    if (size === 0) {
+      sync(after);
+      return;
+    }
+    const { moves, spawns, rows } = computeGravityMotion(before, matchedCells);
     const animations: Promise<void>[] = [];
 
     for (const move of moves) {
@@ -281,17 +321,14 @@ export const createMatch3Board = (container: HTMLElement): Match3Board => {
         continue;
       }
       target.textContent = element.textContent;
+      const tileType = element.dataset.tile;
+      if (tileType !== undefined) {
+        target.dataset.tile = tileType;
+      }
       target.style.opacity = "1";
       element.style.opacity = "0";
-      const delta = (move.toRow - move.fromRow) * size;
-      target.style.transform = `translateY(${-delta}px)`;
-      animations.push(
-        (async () => {
-          target.style.transform = "translateY(0)";
-          await waitTransition(target, 280);
-          target.style.transform = "";
-        })(),
-      );
+      const fromY = (move.fromRow - move.toRow) * size;
+      animations.push(animateFall(target, fromY, move.col * STAGGER_MS));
     }
 
     for (const spawn of spawns) {
@@ -301,22 +338,14 @@ export const createMatch3Board = (container: HTMLElement): Match3Board => {
       }
       const tile = after[spawn.row]?.[spawn.col] ?? 0;
       element.textContent = tileEmoji(tile);
+      element.dataset.tile = String(tile);
       element.style.opacity = "1";
-      element.style.transform = `translateY(${-size * 2}px)`;
-      animations.push(
-        (async () => {
-          element.style.transform = "translateY(0)";
-          await waitTransition(element, 280);
-          element.style.transform = "";
-        })(),
-      );
+      const fromY = -(rows - spawn.row) * size;
+      animations.push(animateFall(element, fromY, spawn.col * STAGGER_MS));
     }
 
     await Promise.all(animations);
     sync(after);
-    container.classList.add("shake");
-    await wait(120);
-    container.classList.remove("shake");
   };
 
   return {

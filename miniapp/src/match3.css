@@ -1,13 +1,112 @@
-.match3-status {
+.match3-header {
   display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
+  align-items: flex-start;
+  gap: 0.65rem;
   margin-bottom: 0.75rem;
-  color: var(--smoke);
 }
 
-.match3-status span.match3-score-bump {
+.match3-header h1 {
+  margin: 0;
+}
+
+.match3-hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+}
+
+.match3-back {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: var(--bg-panel);
+  border: 1px solid var(--coal);
+  border-radius: 0.5rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.match3-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.match3-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.match3-stat-label {
+  font-size: 0.75rem;
+  color: var(--ash);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.match3-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.match3-stat-value.match3-score-bump {
   animation: match3-score-bump 400ms ease-out;
+}
+
+.match3-moves-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-items: flex-end;
+}
+
+.match3-moves-bar {
+  width: 100%;
+  height: 0.35rem;
+  background: var(--coal);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.match3-moves-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--ember);
+  border-radius: 999px;
+  transition: width 300ms ease-out;
+}
+
+.match3-board-wrap {
+  position: relative;
+}
+
+.match3-combo {
+  position: absolute;
+  top: -0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 0.3rem 0.75rem;
+  background: var(--ember);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.match3-combo.match3-combo-pop {
+  animation: match3-combo-pop 900ms ease-out forwards;
 }
 
 .match3-board {
@@ -21,6 +120,7 @@
   touch-action: none;
   user-select: none;
   position: relative;
+  box-shadow: inset 0 2px 8px rgb(0 0 0 / 35%);
 }
 
 .match3-board.shake {
@@ -39,23 +139,51 @@
   border: none;
   transition:
     transform 180ms ease-out,
-    opacity 220ms ease-out;
+    opacity 220ms ease-out,
+    background 120ms ease-out;
   will-change: transform;
+}
+
+.match3-tile[data-tile="0"] {
+  background: #5c2e1a;
+}
+
+.match3-tile[data-tile="1"] {
+  background: #1a3a5c;
+}
+
+.match3-tile[data-tile="2"] {
+  background: #3a2a5c;
+}
+
+.match3-tile[data-tile="3"] {
+  background: #1a4a2a;
 }
 
 .match3-tile.selected {
   outline: 2px solid var(--ember);
-  background: #4a3228;
-  box-shadow: 0 0 0 2px var(--ember);
+  box-shadow:
+    0 0 0 2px var(--ember),
+    0 0 12px rgb(212 120 74 / 45%);
+  filter: brightness(1.15);
 }
 
 .match3-tile:active:not(.busy) {
   transform: scale(0.92);
 }
 
+.match3-tile.flashing {
+  filter: brightness(1.6);
+  background-color: var(--ember) !important;
+}
+
 .match3-tile.popping {
   transform: scale(1.2);
   opacity: 0;
+}
+
+.match3-tile.falling {
+  transition: transform 320ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 .match3-score-pop {
@@ -71,6 +199,34 @@
 
 .match3-done {
   margin-top: 0.85rem;
+  text-align: center;
+}
+
+.match3-rank {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ember);
+}
+
+.match3-final-score {
+  margin: 0 0 0.35rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.match3-done-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.match3-done-actions .secondary {
+  background: transparent;
+  border: 1px solid var(--coal);
+  color: var(--smoke);
 }
 
 @keyframes match3-shake {
@@ -114,11 +270,35 @@
   }
 }
 
+@keyframes match3-combo-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.6);
+  }
+
+  20% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.1);
+  }
+
+  80% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.9) translateY(-8px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .match3-tile,
   .match3-board.shake,
   .match3-score-pop,
-  .match3-status span.match3-score-bump {
+  .match3-combo,
+  .match3-stat-value.match3-score-bump,
+  .match3-moves-fill {
     transition: none !important;
     animation: none !important;
   }
