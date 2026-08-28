@@ -554,7 +554,7 @@ function toMenuItem(row: MenuItem): MenuItemRecord {
 }
 
 function toPage(row: ContentPage): ContentPageRecord {
-  if (row.slug !== "contacts" && row.slug !== "directions") {
+  if (row.slug !== "contacts" && row.slug !== "directions" && row.slug !== "game_rules") {
     throw new Error(`unknown page slug: ${row.slug}`);
   }
   return { slug: row.slug, body: row.body, mapUrl: row.mapUrl };
