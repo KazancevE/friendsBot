@@ -2,6 +2,10 @@ type TelegramHapticFeedback = {
   readonly impactOccurred: (style: "light" | "medium" | "heavy") => void;
 };
 
+type ScanQrPopupParams = {
+  readonly text?: string;
+};
+
 type TelegramWebApp = {
   readonly ready: () => void;
   readonly expand?: () => void;
@@ -12,6 +16,13 @@ type TelegramWebApp = {
   readonly isVersionAtLeast?: (version: string) => boolean;
   readonly initData: string;
   readonly HapticFeedback?: TelegramHapticFeedback;
+  readonly showScanQrPopup?: (
+    params: ScanQrPopupParams,
+    callback?: (text: string) => boolean,
+  ) => void;
+  readonly closeScanQrPopup?: () => void;
+  readonly onEvent?: (eventType: string, callback: () => void) => void;
+  readonly offEvent?: (eventType: string, callback: () => void) => void;
 };
 
 type TelegramNamespace = {
@@ -49,4 +60,38 @@ export const initData = () => {
 
 export const hapticImpact = (style: "light" | "medium" | "heavy" = "light") => {
   telegramWebApp()?.HapticFeedback?.impactOccurred(style);
+};
+
+export const canScanViaTelegram = () => {
+  return telegramWebApp()?.showScanQrPopup !== undefined;
+};
+
+export const scanViaTelegramPopup = (hint?: string): Promise<string | undefined> => {
+  return new Promise((resolve) => {
+    const webApp = telegramWebApp();
+    if (webApp?.showScanQrPopup === undefined) {
+      resolve(undefined);
+      return;
+    }
+
+    let settled = false;
+    const finish = (value: string | undefined) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      webApp.offEvent?.("scanQrPopupClosed", onClosed);
+      resolve(value);
+    };
+
+    const onClosed = () => {
+      finish(undefined);
+    };
+
+    webApp.onEvent?.("scanQrPopupClosed", onClosed);
+    webApp.showScanQrPopup({ text: hint ?? "" }, (text) => {
+      finish(text);
+      return true;
+    });
+  });
 };
