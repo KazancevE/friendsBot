@@ -7,29 +7,9 @@ import {
   redeemBonuses,
   redeemCoupon,
 } from "./api.ts";
-
-type DetectedBarcode = {
-  readonly rawValue: string;
-};
-
-type BarcodeDetectorInstance = {
-  detect: (source: ImageBitmapSource) => Promise<ReadonlyArray<DetectedBarcode>>;
-};
-
-type BarcodeDetectorConstructor = new (options: {
-  readonly formats: ReadonlyArray<string>;
-}) => BarcodeDetectorInstance;
+import { canScanCamera, canScanQr, prefersTelegramScanner, scanQr } from "./qr-scan.ts";
 
 type GuestQuery = { readonly phone: string } | { readonly qrToken: string };
-
-const barcodeDetectorCtor = (): BarcodeDetectorConstructor | undefined => {
-  const ctor = (window as Window & { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
-  return ctor;
-};
-
-const canScanCamera = () => {
-  return barcodeDetectorCtor() !== undefined && navigator.mediaDevices?.getUserMedia !== undefined;
-};
 
 const parseQuery = (raw: string): GuestQuery => {
   const trimmed = raw.trim();
@@ -99,14 +79,15 @@ const renderCard = (root: HTMLElement, card: GuestCard) => {
 };
 
 export const renderCashier = (root: HTMLElement) => {
+  const useCamera = canScanQr() && canScanCamera() && !prefersTelegramScanner();
   root.innerHTML = `
     <header>
       <h1>Касса</h1>
       <p class="muted">Сканируйте QR гостя или введите телефон / код</p>
     </header>
     <section class="panel">
-      <video data-preview playsinline muted hidden></video>
-      <button type="button" data-scan>Сканировать</button>
+      ${useCamera ? `<video data-preview playsinline muted hidden></video>` : ""}
+      ${canScanQr() ? `<button type="button" data-scan>Сканировать</button>` : ""}
       <form data-lookup>
         <label>
           Телефон или код QR
@@ -180,15 +161,18 @@ export const renderCashier = (root: HTMLElement) => {
   }
 
   const scanButton = root.querySelector("[data-scan]");
-  if (scanButton instanceof HTMLButtonElement) {
-    if (!canScanCamera()) {
-      scanButton.hidden = true;
+  const resetScanButton = () => {
+    if (scanButton instanceof HTMLButtonElement) {
+      scanButton.textContent = "Сканировать";
     }
+  };
+
+  if (scanButton instanceof HTMLButtonElement) {
     scanButton.addEventListener("click", () => {
       if (scanStop !== undefined) {
         scanStop();
         scanStop = undefined;
-        scanButton.textContent = "Сканировать";
+        resetScanButton();
         return;
       }
       void startScan();
@@ -196,59 +180,26 @@ export const renderCashier = (root: HTMLElement) => {
   }
 
   const startScan = async () => {
-    const Ctor = barcodeDetectorCtor();
     const video = root.querySelector("[data-preview]");
-    const scanButtonEl = root.querySelector("[data-scan]");
-    if (Ctor === undefined || !(video instanceof HTMLVideoElement)) {
-      setStatus(root, "Камера недоступна, введите код вручную", true);
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-      });
-      video.srcObject = stream;
-      video.hidden = false;
-      await video.play();
-      const detector = new Ctor({ formats: ["qr_code"] });
-      let active = true;
-      scanStop = () => {
-        active = false;
-        stream.getTracks().forEach((track) => {
-          track.stop();
-        });
-        video.srcObject = null;
-        video.hidden = true;
-      };
-      if (scanButtonEl instanceof HTMLButtonElement) {
-        scanButtonEl.textContent = "Стоп";
+    const stop = await scanQr({
+      hint: "Наведите на QR гостя",
+      video: video instanceof HTMLVideoElement ? video : undefined,
+      onCode: async (value) => {
+        scanStop = undefined;
+        resetScanButton();
+        await lookup(parseQuery(value));
+      },
+      onError: (message) => {
+        scanStop = undefined;
+        resetScanButton();
+        setStatus(root, `${message}, введите код вручную`, true);
+      },
+    });
+    if (stop !== undefined) {
+      scanStop = stop;
+      if (scanButton instanceof HTMLButtonElement) {
+        scanButton.textContent = "Стоп";
       }
-      const tick = async () => {
-        if (!active) {
-          return;
-        }
-        try {
-          const codes = await detector.detect(video);
-          const value = codes[0]?.rawValue;
-          if (value !== undefined && value.length > 0) {
-            scanStop?.();
-            scanStop = undefined;
-            if (scanButtonEl instanceof HTMLButtonElement) {
-              scanButtonEl.textContent = "Сканировать";
-            }
-            await lookup(parseQuery(value));
-            return;
-          }
-        } catch {
-          // keep scanning; some frames fail to detect
-        }
-        requestAnimationFrame(() => {
-          void tick();
-        });
-      };
-      void tick();
-    } catch {
-      setStatus(root, "Нет доступа к камере, введите код вручную", true);
     }
   };
 
