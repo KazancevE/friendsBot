@@ -1,7 +1,9 @@
+import { DateTime } from "luxon";
 import { DEFAULT_SETTINGS } from "../domain/settings.ts";
 import type {
   ActiveVisitRow,
   BonusLotRecord,
+  BookingRequestRecord,
   CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
@@ -13,11 +15,13 @@ import type {
   MenuItemRecord,
   PromoRecord,
   Settings,
+  StaffActionKind,
+  StaffActionLogRecord,
   UserRecord,
   VenueCodeRecord,
   VisitRecord,
 } from "../domain/types.ts";
-import { moscowCalendarYear } from "../domain/week.ts";
+import { MOSCOW, moscowCalendarYear } from "../domain/week.ts";
 import type { NewUser, Store } from "./types.ts";
 
 export class MemoryStore implements Store {
@@ -36,6 +40,8 @@ export class MemoryStore implements Store {
   coupons = new Map<string, CouponRecord>();
   bonusLots = new Map<string, BonusLotRecord>();
   awards = new Set<string>();
+  staffActionLogs: StaffActionLogRecord[] = [];
+  bookings = new Map<string, BookingRequestRecord>();
 
   constructor() {
     const match3Id = crypto.randomUUID();
@@ -80,6 +86,7 @@ export class MemoryStore implements Store {
       balance: 0,
       qrToken: input.qrToken,
       broadcastOptOut: false,
+      staffNote: null,
       createdAt: new Date(),
     };
     this.users.set(user.id, user);
@@ -110,6 +117,183 @@ export class MemoryStore implements Store {
     return [...this.users.values()]
       .filter((u) => u.role === "guest" && !u.broadcastOptOut)
       .map((u) => u.telegramId);
+  }
+  async listStaffTelegramIds() {
+    return [...this.users.values()]
+      .filter((u) => u.role === "master" || u.role === "admin")
+      .map((u) => u.telegramId);
+  }
+  async countRegistrationsBetween(from: Date, to: Date) {
+    return [...this.users.values()].filter(
+      (u) => u.role === "guest" && u.createdAt >= from && u.createdAt <= to,
+    ).length;
+  }
+  async searchGuestsByName(query: string, limit: number) {
+    const q = query.toLowerCase();
+    return [...this.users.values()]
+      .filter((u) => {
+        if (u.role !== "guest") {
+          return false;
+        }
+        const first = (u.firstName ?? "").toLowerCase();
+        const last = (u.lastName ?? "").toLowerCase();
+        const combined = `${first} ${last}`.trim();
+        return first.includes(q) || last.includes(q) || combined.includes(q);
+      })
+      .slice(0, limit)
+      .map((u) => ({ ...u }));
+  }
+  async createStaffActionLog(input: {
+    actorId: string;
+    guestId: string | null;
+    action: StaffActionKind;
+    payload: Record<string, unknown>;
+  }) {
+    const row: StaffActionLogRecord = {
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      ...input,
+    };
+    this.staffActionLogs.push(row);
+    return { ...row };
+  }
+  async listStaffActionLog(input: {
+    from: Date;
+    to: Date;
+    actorId?: string;
+    limit: number;
+    offset: number;
+  }) {
+    return this.staffActionLogs
+      .filter((row) => {
+        if (row.createdAt < input.from || row.createdAt > input.to) {
+          return false;
+        }
+        if (input.actorId !== undefined && row.actorId !== input.actorId) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(input.offset, input.offset + input.limit)
+      .map((row) => ({ ...row }));
+  }
+  async countStaffActionsBetween(from: Date, to: Date) {
+    return this.staffActionLogs.filter((row) => row.createdAt >= from && row.createdAt <= to).length;
+  }
+  async countVisitsForUser(userId: string) {
+    return [...this.visits.values()].filter((v) => v.userId === userId).length;
+  }
+  async lastVisitStartedAt(userId: string) {
+    const visits = [...this.visits.values()]
+      .filter((v) => v.userId === userId)
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    return visits[0]?.startedAt ?? null;
+  }
+  async hasCheckInToday(userId: string, now: Date) {
+    const start = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
+    const end = DateTime.fromJSDate(now, { zone: MOSCOW }).endOf("day").toJSDate();
+    return this.checkInLogs.some(
+      (log) => log.userId === userId && log.createdAt >= start && log.createdAt <= end,
+    );
+  }
+  async countVisitsBetween(from: Date, to: Date) {
+    return [...this.visits.values()].filter((v) => v.startedAt >= from && v.startedAt <= to).length;
+  }
+  async countUniqueGuestsWithVisitBetween(from: Date, to: Date) {
+    const ids = new Set(
+      [...this.visits.values()]
+        .filter((v) => v.startedAt >= from && v.startedAt <= to)
+        .map((v) => v.userId),
+    );
+    return ids.size;
+  }
+  async countCheckInsBetween(from: Date, to: Date) {
+    return this.checkInLogs.filter((log) => log.createdAt >= from && log.createdAt <= to).length;
+  }
+  async listVisitsBetween(from: Date, to: Date) {
+    return [...this.visits.values()]
+      .filter((v) => v.startedAt >= from && v.startedAt <= to)
+      .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+  }
+  async listCheckInsBetween(from: Date, to: Date) {
+    return this.checkInLogs
+      .filter((log) => log.createdAt >= from && log.createdAt <= to)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((log) => ({ ...log }));
+  }
+  async listLedgerBetween(from: Date, to: Date) {
+    return this.ledger
+      .filter((row) => row.createdAt >= from && row.createdAt <= to)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((row) => ({ ...row }));
+  }
+  async listCouponsBetween(from: Date, to: Date) {
+    return [...this.coupons.values()]
+      .filter((coupon) => coupon.expiresAt >= from && coupon.expiresAt <= to)
+      .map((coupon) => ({ ...coupon }));
+  }
+  async sumActiveBonusLotRemaining(now: Date) {
+    return [...this.bonusLots.values()]
+      .filter((lot) => lot.remaining > 0 && lot.expiresAt > now)
+      .reduce((sum, lot) => sum + lot.remaining, 0);
+  }
+  async createBookingRequest(input: {
+    userId: string;
+    requestedFor: Date;
+    partySize: number;
+    comment: string | null;
+  }) {
+    const row: BookingRequestRecord = {
+      id: crypto.randomUUID(),
+      status: "pending",
+      handledBy: null,
+      handledAt: null,
+      reminderSent: false,
+      createdAt: new Date(),
+      ...input,
+    };
+    this.bookings.set(row.id, row);
+    return { ...row };
+  }
+  async findBookingById(id: string) {
+    const row = this.bookings.get(id);
+    return row ? { ...row } : null;
+  }
+  async findPendingBookingForUser(userId: string) {
+    return (
+      [...this.bookings.values()].find((b) => b.userId === userId && b.status === "pending") ?? null
+    );
+  }
+  async updateBooking(
+    id: string,
+    patch: Partial<
+      Pick<BookingRequestRecord, "status" | "handledBy" | "handledAt" | "reminderSent">
+    >,
+  ) {
+    const cur = this.bookings.get(id);
+    if (!cur) {
+      throw new Error("booking missing");
+    }
+    const next = { ...cur, ...patch, id: cur.id };
+    this.bookings.set(id, next);
+    return { ...next };
+  }
+  async listBookingsNeedingReminder(now: Date) {
+    const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    return [...this.bookings.values()].filter(
+      (b) =>
+        !b.reminderSent &&
+        b.status === "confirmed" &&
+        b.requestedFor <= inTwoHours &&
+        b.requestedFor > now,
+    );
+  }
+  async listPendingBookings() {
+    return [...this.bookings.values()]
+      .filter((b) => b.status === "pending")
+      .sort((a, b) => a.requestedFor.getTime() - b.requestedFor.getTime())
+      .map((b) => ({ ...b }));
   }
 
   async addLedger(input: {

@@ -82,6 +82,7 @@ const formatSettings = (settings: Settings): string => {
     `Срок купона — дефолт (дни): ${settings.couponClaimDaysDefault}`,
     `Срок купона в розыгрыше (дни): ${settings.couponClaimDays}`,
     `Порог уведомлений о бонусах: ${settings.expireNotifyMinBonuses}`,
+    `Check-in уведомления: ${settings.checkInNotifyEnabled ? "вкл" : "выкл"}`,
     "Предупреждения о сгорании: за 7, 3 и 1 день",
     `Победителей: ${settings.winnersCount}`,
     "Призы:",

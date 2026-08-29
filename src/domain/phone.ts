@@ -20,3 +20,10 @@ export function formatDisplayPhone(phone: string | null): string {
   }
   return phone;
 }
+
+export function maskPhone(phone: string | null): string | null {
+  if (phone === null || phone.length < 4) {
+    return null;
+  }
+  return `***${phone.slice(-4)}`;
+}

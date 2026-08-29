@@ -3,6 +3,7 @@ import { CronJob } from "cron";
 import type { Store } from "../store/types.ts";
 import { MOSCOW } from "../domain/week.ts";
 import { runBirthdayJob } from "./birthday-job.ts";
+import { runBookingReminders } from "../domain/booking.ts";
 import { runExpiryJob } from "./expiry-job.ts";
 import { runVenueCodeJob } from "./venue-code-job.ts";
 import { runWeeklyJob } from "./weekly-job.ts";
@@ -11,6 +12,7 @@ const BIRTHDAY_CRON = "0 2 * * *";
 const EXPIRY_CRON = "0 2 * * *";
 const WEEKLY_CRON = "0 0 * * 1";
 const VENUE_CODE_CRON = "0 */2 * * *";
+const BOOKING_REMINDER_CRON = "*/5 * * * *";
 
 export const startScheduler = (store: Store, api: Api) => {
   CronJob.from({
@@ -41,6 +43,14 @@ export const startScheduler = (store: Store, api: Api) => {
     cronTime: VENUE_CODE_CRON,
     onTick: () => {
       void runVenueCodeJob(store);
+    },
+    start: true,
+    timeZone: MOSCOW,
+  });
+  CronJob.from({
+    cronTime: BOOKING_REMINDER_CRON,
+    onTick: () => {
+      void runBookingReminders(store, api, new Date());
     },
     start: true,
     timeZone: MOSCOW,

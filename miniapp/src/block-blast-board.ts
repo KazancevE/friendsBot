@@ -33,6 +33,9 @@ const prefersReducedMotion = () => {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 };
 
+const TRAY_PIECE_MAX_PX = 56;
+const TRAY_PIECE_GAP_PX = 1;
+
 const pieceBounds = (piece: Piece) => {
   let maxDr = 0;
   let maxDc = 0;
@@ -51,12 +54,16 @@ const createBlockElement = (tile: number) => {
   return block;
 };
 
-export const renderPiecePreview = (piece: Piece) => {
+export const renderPiecePreview = (piece: Piece, maxPx = TRAY_PIECE_MAX_PX) => {
   const { rows, cols } = pieceBounds(piece);
+  const cellSize = Math.max(1, Math.floor(maxPx / Math.max(rows, cols)));
+  const gridGap = TRAY_PIECE_GAP_PX;
   const wrap = document.createElement("div");
   wrap.className = "bb-tray-piece-grid";
-  wrap.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-  wrap.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  wrap.style.gridTemplateRows = `repeat(${rows}, ${cellSize}px)`;
+  wrap.style.gridTemplateColumns = `repeat(${cols}, ${cellSize}px)`;
+  wrap.style.width = `${cols * cellSize + (cols - 1) * gridGap}px`;
+  wrap.style.height = `${rows * cellSize + (rows - 1) * gridGap}px`;
   for (let dr = 0; dr < rows; dr += 1) {
     for (let dc = 0; dc < cols; dc += 1) {
       const slot = document.createElement("div");
@@ -75,7 +82,7 @@ export const renderPiecePreview = (piece: Piece) => {
 export const createDragGhostElement = (piece: Piece) => {
   const ghost = document.createElement("div");
   ghost.className = "bb-drag-ghost";
-  ghost.append(renderPiecePreview(piece));
+  ghost.append(renderPiecePreview(piece, 72));
   return ghost;
 };
 

@@ -1,5 +1,8 @@
 import { Hono } from "hono";
+import type { Api } from "grammy";
 import { guestCheckIn } from "../domain/check-in.ts";
+import { notifyStaffOfCheckIn } from "../domain/check-in-notify.ts";
+import { buildStaffGuestCard } from "../domain/guest-card.ts";
 import { DomainError } from "../domain/errors.ts";
 import type { Role } from "../domain/types.ts";
 import {
@@ -15,6 +18,7 @@ import { checkPinRateLimit, resetPinRateLimit } from "./pin-rate-limit.ts";
 type CreateCheckInRoutesParameters = {
   readonly store: Store;
   readonly botToken: string;
+  readonly botApi?: Api;
 };
 
 const isStaffRole = (role: Role) => {
@@ -59,7 +63,7 @@ const formatMoscowTime = (at: Date) => {
   return at.toLocaleString("ru-RU", { timeZone: MOSCOW, hour: "2-digit", minute: "2-digit" });
 };
 
-export const createCheckInRoutes = ({ store, botToken }: CreateCheckInRoutesParameters) => {
+export const createCheckInRoutes = ({ store, botToken, botApi }: CreateCheckInRoutesParameters) => {
   const app = new Hono();
 
   app.onError((err, c) => {
@@ -94,6 +98,13 @@ export const createCheckInRoutes = ({ store, botToken }: CreateCheckInRoutesPara
     });
     if (method === "pin") {
       resetPinRateLimit(String(user.telegramId));
+    }
+    if (botApi !== undefined) {
+      void notifyStaffOfCheckIn(store, botApi, {
+        guest: user,
+        visit: result.visit,
+        now,
+      });
     }
     return c.json({
       visitActive: true,
@@ -156,6 +167,31 @@ export const createCheckInRoutes = ({ store, botToken }: CreateCheckInRoutesPara
         checkInMethod: row.checkInMethod,
       })),
     });
+  });
+
+  app.post("/api/staff/guest-by-visit", async (c) => {
+    const body = await readJsonBody(c);
+    const initData = readInitData(c.req.header("X-Telegram-Init-Data"), body);
+    const user = await requireRegistered(store, initData, botToken);
+    if (!isStaffRole(user.role)) {
+      return c.json({ code: "forbidden", message: "Недостаточно прав" }, 403);
+    }
+    const visitId = body.visitId;
+    if (typeof visitId !== "string" || visitId.length === 0) {
+      throw new DomainError("bad_request", "Нужен visitId");
+    }
+    const now = new Date();
+    const visits = await store.listActiveVisits(now);
+    const visit = visits.find((row) => row.visitId === visitId);
+    if (visit === undefined) {
+      throw new DomainError("not_found", "Гость не в зале");
+    }
+    const guest = await store.findUserById(visit.userId);
+    if (guest === null) {
+      throw new DomainError("not_found", "Гость не найден");
+    }
+    const card = await buildStaffGuestCard(store, guest, now);
+    return c.json(card);
   });
 
   return app;

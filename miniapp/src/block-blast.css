@@ -351,6 +351,7 @@
   cursor: pointer;
   touch-action: none;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
 }
 
 .bb-tray-slot:not(.bb-tray-slot--empty):not(.bb-tray-slot--selected) {
@@ -400,16 +401,14 @@
 .bb-tray-piece-grid {
   display: grid;
   gap: 1px;
-  width: 100%;
-  max-width: 4rem;
+  flex-shrink: 0;
 }
 
 .bb-tray-piece-cell {
-  aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   border-radius: 0.2rem;
   border: 1px solid transparent;
   box-shadow:
@@ -422,13 +421,12 @@
   z-index: 100;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  opacity: 0.88;
+  opacity: 0.92;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.45));
 }
 
-.bb-drag-ghost .bb-tray-piece-grid {
-  max-width: 5rem;
-  font-size: 1.1rem;
+.bb-drag-ghost .bb-tray-piece-cell {
+  font-size: 0.95rem;
 }
 
 .bb-combo {

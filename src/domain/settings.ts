@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: Settings = {
   couponClaimDaysDefault: 10,
   couponClaimDays: 10,
   expireNotifyMinBonuses: 300,
+  checkInNotifyEnabled: true,
+  checkInNotifyTelegramIds: [],
 };
 
 export function expiresAfterDays(from: Date, days: number): Date {

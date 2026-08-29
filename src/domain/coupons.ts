@@ -1,4 +1,5 @@
 import { DomainError } from "./errors.ts";
+import { logStaffAction } from "./staff-log.ts";
 import type { Store } from "../store/types.ts";
 
 export async function redeemCoupon(
@@ -24,6 +25,12 @@ export async function redeemCoupon(
       actorId: actor.id,
       comment: `Купон: ${coupon.title}`,
       checkAmount: null,
+    });
+    await logStaffAction(tx, {
+      actorId: actor.id,
+      guestId: coupon.userId,
+      action: "coupon_redeem",
+      payload: { couponId: coupon.id, title: coupon.title },
     });
     return redeemed;
   });

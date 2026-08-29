@@ -30,6 +30,41 @@ export type Settings = {
   couponClaimDaysDefault: number;
   couponClaimDays: number;
   expireNotifyMinBonuses: number;
+  checkInNotifyEnabled: boolean;
+  checkInNotifyTelegramIds: bigint[];
+};
+
+export type StaffActionKind =
+  | "check"
+  | "redeem"
+  | "manual_adjust"
+  | "visit_open"
+  | "visit_extend"
+  | "coupon_redeem"
+  | "guest_search";
+
+export type StaffActionLogRecord = {
+  id: string;
+  actorId: string;
+  guestId: string | null;
+  action: StaffActionKind;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+};
+
+export type BookingStatus = "pending" | "confirmed" | "cancelled" | "completed";
+
+export type BookingRequestRecord = {
+  id: string;
+  userId: string;
+  requestedFor: Date;
+  partySize: number;
+  comment: string | null;
+  status: BookingStatus;
+  handledBy: string | null;
+  handledAt: Date | null;
+  reminderSent: boolean;
+  createdAt: Date;
 };
 
 export type UserRecord = {
@@ -43,6 +78,7 @@ export type UserRecord = {
   balance: number;
   qrToken: string;
   broadcastOptOut: boolean;
+  staffNote: string | null;
   createdAt: Date;
 };
 

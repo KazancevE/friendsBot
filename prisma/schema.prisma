@@ -40,6 +40,23 @@ enum CheckInMethod {
   pin
 }
 
+enum StaffActionKind {
+  check
+  redeem
+  manual_adjust
+  visit_open
+  visit_extend
+  coupon_redeem
+  guest_search
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  completed
+}
+
 model User {
   id               String    @id @default(uuid())
   telegramId       BigInt    @unique
@@ -51,6 +68,7 @@ model User {
   balance          Int       @default(0)
   qrToken          String    @unique
   broadcastOptOut  Boolean   @default(false)
+  staffNote        String?
   createdAt        DateTime  @default(now())
   ledger           Ledger[]  @relation("UserLedger")
   actedLedger      Ledger[]  @relation("ActorLedger")
@@ -62,6 +80,36 @@ model User {
   awards           WeeklyAward[]
   checkIns         CheckInLog[]
   venueCodes       VenueCode[] @relation("VenueCodeCreator")
+  staffActions     StaffActionLog[] @relation("StaffActor")
+  guestActions     StaffActionLog[] @relation("StaffGuest")
+  bookings         BookingRequest[] @relation("BookingGuest")
+  handledBookings  BookingRequest[] @relation("BookingHandler")
+}
+
+model StaffActionLog {
+  id        String          @id @default(uuid())
+  actor     User            @relation("StaffActor", fields: [actorId], references: [id])
+  actorId   String
+  guest     User?           @relation("StaffGuest", fields: [guestId], references: [id])
+  guestId   String?
+  action    StaffActionKind
+  payload   Json            @default("{}")
+  createdAt DateTime        @default(now())
+}
+
+model BookingRequest {
+  id           String        @id @default(uuid())
+  user         User          @relation("BookingGuest", fields: [userId], references: [id])
+  userId       String
+  requestedFor DateTime
+  partySize    Int
+  comment      String?
+  status       BookingStatus @default(pending)
+  handler      User?         @relation("BookingHandler", fields: [handledBy], references: [id])
+  handledBy    String?
+  handledAt    DateTime?
+  reminderSent Boolean       @default(false)
+  createdAt    DateTime      @default(now())
 }
 
 model Ledger {

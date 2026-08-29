@@ -19,6 +19,13 @@ import {
   setWeeklyPrizesConversation,
   wireAdminHandlers,
 } from "./admin.ts";
+import {
+  adminExportConversation,
+  adminStaffLogConversation,
+  adminStatsConversation,
+  wireAdminOpsHandlers,
+} from "./admin-ops.ts";
+import { guestBookingConversation, wireBookingHandlers } from "./booking.ts";
 import type { BotContext } from "./context.ts";
 import { editGuestProfileConversation, wireGuestHandlers } from "./guest.ts";
 import { hydrateBotContext } from "./hydrate.ts";
@@ -30,6 +37,7 @@ import {
   staffCouponRedeemConversation,
   staffFindConversation,
   staffManualConversation,
+  staffNoteConversation,
   staffRedeemConversation,
   staffVisitConversation,
   wireStaffHandlers,
@@ -62,7 +70,12 @@ export function createBot(
   bot.use(createConversation(staffRedeemConversation, "staffRedeem"));
   bot.use(createConversation(staffManualConversation, "staffManual"));
   bot.use(createConversation(staffVisitConversation, "staffVisit"));
+  bot.use(createConversation(staffNoteConversation, "staffNote"));
   bot.use(createConversation(staffCouponRedeemConversation, "staffCouponRedeem"));
+  bot.use(createConversation(adminStatsConversation, "adminStats"));
+  bot.use(createConversation(adminStaffLogConversation, "adminStaffLog"));
+  bot.use(createConversation(adminExportConversation, "adminExport"));
+  bot.use(createConversation(guestBookingConversation, "guestBooking"));
   bot.use(createConversation(setPercentConversation, "setPercent"));
   bot.use(createConversation(setRegistrationBonusConversation, "setRegistrationBonus"));
   bot.use(createConversation(setBirthdayBonusConversation, "setBirthdayBonus"));
@@ -82,5 +95,7 @@ export function createBot(
   wireStaffHandlers(bot);
   wireVenueCodeHandlers(bot);
   wireAdminHandlers(bot);
+  wireAdminOpsHandlers(bot);
+  wireBookingHandlers(bot);
   return bot;
 }

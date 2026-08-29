@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import type {
   BonusLot,
+  BookingRequest,
   CheckInLog,
   ContentPage,
   Coupon,
@@ -11,6 +12,7 @@ import type {
   MenuItem,
   Prisma,
   Promo,
+  StaffActionLog,
   User,
   VenueCode,
   Visit,
@@ -21,6 +23,7 @@ import type {
   ActiveVisitRow,
   AggregatedScoreRecord,
   BonusLotRecord,
+  BookingRequestRecord,
   CheckInLogRecord,
   CheckInMethod,
   ContentPageRecord,
@@ -34,11 +37,14 @@ import type {
   PromoRecord,
   Role,
   Settings,
+  StaffActionKind,
+  StaffActionLogRecord,
   UserRecord,
   VenueCodeRecord,
   VisitRecord,
 } from "../domain/types.ts";
-import { moscowYearStart } from "../domain/week.ts";
+import { moscowYearStart, MOSCOW } from "../domain/week.ts";
+import { DateTime } from "luxon";
 import type { NewUser, Store } from "./types.ts";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -55,7 +61,24 @@ const SETTING_KEYS = [
   "couponClaimDaysDefault",
   "couponClaimDays",
   "expireNotifyMinBonuses",
+  "checkInNotifyEnabled",
+  "checkInNotifyTelegramIds",
 ] as const;
+
+const parseTelegramIds = (raw: string | undefined): bigint[] => {
+  if (raw === undefined || raw.length === 0) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((value) => BigInt(String(value)));
+  } catch {
+    return [];
+  }
+};
 
 export class PrismaStore implements Store {
   constructor(private readonly prisma: DbClient) {}
@@ -90,6 +113,10 @@ export class PrismaStore implements Store {
       expireNotifyMinBonuses: Number(
         map.get("expireNotifyMinBonuses") ?? DEFAULT_SETTINGS.expireNotifyMinBonuses,
       ),
+      checkInNotifyEnabled:
+        (map.get("checkInNotifyEnabled") ?? String(DEFAULT_SETTINGS.checkInNotifyEnabled)) ===
+        "true",
+      checkInNotifyTelegramIds: parseTelegramIds(map.get("checkInNotifyTelegramIds")),
     };
   }
 
@@ -107,6 +134,10 @@ export class PrismaStore implements Store {
       couponClaimDaysDefault: String(next.couponClaimDaysDefault),
       couponClaimDays: String(next.couponClaimDays),
       expireNotifyMinBonuses: String(next.expireNotifyMinBonuses),
+      checkInNotifyEnabled: String(next.checkInNotifyEnabled),
+      checkInNotifyTelegramIds: JSON.stringify(
+        next.checkInNotifyTelegramIds.map((id) => id.toString()),
+      ),
     };
     await Promise.all(
       SETTING_KEYS.map((key) =>
@@ -168,6 +199,7 @@ export class PrismaStore implements Store {
         balance: patch.balance,
         qrToken: patch.qrToken,
         broadcastOptOut: patch.broadcastOptOut,
+        staffNote: patch.staffNote,
       },
     });
     return toUser(row);
@@ -179,6 +211,207 @@ export class PrismaStore implements Store {
       select: { telegramId: true },
     });
     return rows.map((row) => row.telegramId);
+  }
+
+  async listStaffTelegramIds(): Promise<bigint[]> {
+    const rows = await this.prisma.user.findMany({
+      where: { role: { in: ["master", "admin"] } },
+      select: { telegramId: true },
+    });
+    return rows.map((row) => row.telegramId);
+  }
+
+  async countRegistrationsBetween(from: Date, to: Date): Promise<number> {
+    return this.prisma.user.count({
+      where: { role: "guest", createdAt: { gte: from, lte: to } },
+    });
+  }
+
+  async searchGuestsByName(query: string, limit: number): Promise<UserRecord[]> {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        role: "guest",
+        OR: [
+          { firstName: { contains: query, mode: "insensitive" } },
+          { lastName: { contains: query, mode: "insensitive" } },
+        ],
+      },
+      take: limit,
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toUser);
+  }
+
+  async createStaffActionLog(input: {
+    actorId: string;
+    guestId: string | null;
+    action: StaffActionKind;
+    payload: Record<string, unknown>;
+  }): Promise<StaffActionLogRecord> {
+    const row = await this.prisma.staffActionLog.create({
+      data: {
+        actorId: input.actorId,
+        guestId: input.guestId,
+        action: input.action,
+        payload: input.payload as Prisma.InputJsonValue,
+      },
+    });
+    return toStaffActionLog(row);
+  }
+
+  async listStaffActionLog(input: {
+    from: Date;
+    to: Date;
+    actorId?: string;
+    limit: number;
+    offset: number;
+  }): Promise<StaffActionLogRecord[]> {
+    const rows = await this.prisma.staffActionLog.findMany({
+      where: {
+        createdAt: { gte: input.from, lte: input.to },
+        actorId: input.actorId,
+      },
+      orderBy: { createdAt: "desc" },
+      take: input.limit,
+      skip: input.offset,
+    });
+    return rows.map(toStaffActionLog);
+  }
+
+  async countStaffActionsBetween(from: Date, to: Date): Promise<number> {
+    return this.prisma.staffActionLog.count({
+      where: { createdAt: { gte: from, lte: to } },
+    });
+  }
+
+  async countVisitsForUser(userId: string): Promise<number> {
+    return this.prisma.visit.count({ where: { userId } });
+  }
+
+  async lastVisitStartedAt(userId: string): Promise<Date | null> {
+    const row = await this.prisma.visit.findFirst({
+      where: { userId },
+      orderBy: { startedAt: "desc" },
+      select: { startedAt: true },
+    });
+    return row?.startedAt ?? null;
+  }
+
+  async hasCheckInToday(userId: string, now: Date): Promise<boolean> {
+    const start = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
+    const end = DateTime.fromJSDate(now, { zone: MOSCOW }).endOf("day").toJSDate();
+    const count = await this.prisma.checkInLog.count({
+      where: { userId, createdAt: { gte: start, lte: end } },
+    });
+    return count > 0;
+  }
+
+  async countVisitsBetween(from: Date, to: Date): Promise<number> {
+    return this.prisma.visit.count({ where: { startedAt: { gte: from, lte: to } } });
+  }
+
+  async countUniqueGuestsWithVisitBetween(from: Date, to: Date): Promise<number> {
+    const rows = await this.prisma.visit.findMany({
+      where: { startedAt: { gte: from, lte: to } },
+      distinct: ["userId"],
+      select: { userId: true },
+    });
+    return rows.length;
+  }
+
+  async countCheckInsBetween(from: Date, to: Date): Promise<number> {
+    return this.prisma.checkInLog.count({ where: { createdAt: { gte: from, lte: to } } });
+  }
+
+  async listVisitsBetween(from: Date, to: Date): Promise<VisitRecord[]> {
+    const rows = await this.prisma.visit.findMany({
+      where: { startedAt: { gte: from, lte: to } },
+      orderBy: { startedAt: "asc" },
+    });
+    return rows.map(toVisit);
+  }
+
+  async listCheckInsBetween(from: Date, to: Date): Promise<CheckInLogRecord[]> {
+    const rows = await this.prisma.checkInLog.findMany({
+      where: { createdAt: { gte: from, lte: to } },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toCheckInLog);
+  }
+
+  async listLedgerBetween(from: Date, to: Date): Promise<LedgerRecord[]> {
+    const rows = await this.prisma.ledger.findMany({
+      where: { createdAt: { gte: from, lte: to } },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toLedger);
+  }
+
+  async listCouponsBetween(from: Date, to: Date): Promise<CouponRecord[]> {
+    const rows = await this.prisma.coupon.findMany({
+      where: { expiresAt: { gte: from, lte: to } },
+    });
+    return rows.map(toCoupon);
+  }
+
+  async sumActiveBonusLotRemaining(now: Date): Promise<number> {
+    const result = await this.prisma.bonusLot.aggregate({
+      where: { remaining: { gt: 0 }, expiresAt: { gt: now } },
+      _sum: { remaining: true },
+    });
+    return result._sum.remaining ?? 0;
+  }
+
+  async createBookingRequest(input: {
+    userId: string;
+    requestedFor: Date;
+    partySize: number;
+    comment: string | null;
+  }): Promise<BookingRequestRecord> {
+    const row = await this.prisma.bookingRequest.create({ data: input });
+    return toBooking(row);
+  }
+
+  async findBookingById(id: string): Promise<BookingRequestRecord | null> {
+    const row = await this.prisma.bookingRequest.findUnique({ where: { id } });
+    return row ? toBooking(row) : null;
+  }
+
+  async findPendingBookingForUser(userId: string): Promise<BookingRequestRecord | null> {
+    const row = await this.prisma.bookingRequest.findFirst({
+      where: { userId, status: "pending" },
+    });
+    return row ? toBooking(row) : null;
+  }
+
+  async updateBooking(
+    id: string,
+    patch: Partial<
+      Pick<BookingRequestRecord, "status" | "handledBy" | "handledAt" | "reminderSent">
+    >,
+  ): Promise<BookingRequestRecord> {
+    const row = await this.prisma.bookingRequest.update({ where: { id }, data: patch });
+    return toBooking(row);
+  }
+
+  async listBookingsNeedingReminder(now: Date): Promise<BookingRequestRecord[]> {
+    const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const rows = await this.prisma.bookingRequest.findMany({
+      where: {
+        reminderSent: false,
+        status: "confirmed",
+        requestedFor: { gt: now, lte: inTwoHours },
+      },
+    });
+    return rows.map(toBooking);
+  }
+
+  async listPendingBookings(): Promise<BookingRequestRecord[]> {
+    const rows = await this.prisma.bookingRequest.findMany({
+      where: { status: "pending" },
+      orderBy: { requestedFor: "asc" },
+    });
+    return rows.map(toBooking);
   }
 
   async addLedger(input: {
@@ -632,6 +865,48 @@ function toUser(row: User): UserRecord {
     balance: row.balance,
     qrToken: row.qrToken,
     broadcastOptOut: row.broadcastOptOut,
+    staffNote: row.staffNote,
+    createdAt: row.createdAt,
+  };
+}
+
+function toStaffActionKind(value: string): StaffActionKind {
+  if (
+    value === "check" ||
+    value === "redeem" ||
+    value === "manual_adjust" ||
+    value === "visit_open" ||
+    value === "visit_extend" ||
+    value === "coupon_redeem" ||
+    value === "guest_search"
+  ) {
+    return value;
+  }
+  throw new Error(`unknown staff action: ${value}`);
+}
+
+function toStaffActionLog(row: StaffActionLog): StaffActionLogRecord {
+  return {
+    id: row.id,
+    actorId: row.actorId,
+    guestId: row.guestId,
+    action: toStaffActionKind(row.action),
+    payload: (row.payload as Record<string, unknown>) ?? {},
+    createdAt: row.createdAt,
+  };
+}
+
+function toBooking(row: BookingRequest): BookingRequestRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    requestedFor: row.requestedFor,
+    partySize: row.partySize,
+    comment: row.comment,
+    status: row.status,
+    handledBy: row.handledBy,
+    handledAt: row.handledAt,
+    reminderSent: row.reminderSent,
     createdAt: row.createdAt,
   };
 }

@@ -27,8 +27,8 @@ body {
   max-width: 28rem;
   margin: 0 auto;
   min-height: var(--tg-viewport-height, 100dvh);
-  padding: calc(1.25rem + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px))) 1rem
-    calc(2rem + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  padding: calc(1.75rem + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px))) 1rem
+    calc(3.5rem + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 h1 {
@@ -118,6 +118,11 @@ video {
 .staff-tabs {
   display: flex;
   gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.staff-content {
+  padding-bottom: calc(0.75rem + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 .staff-tab {
@@ -180,8 +185,32 @@ video {
 
 .active-visits {
   margin: 0;
-  padding-left: 1.2rem;
+  padding-left: 0;
+  list-style: none;
   color: var(--smoke);
+}
+
+.active-visit-btn {
+  width: 100%;
+  margin-top: 0.35rem;
+  text-align: left;
+  background: transparent;
+  color: var(--smoke);
+  border: 1px solid var(--coal);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  font-weight: 400;
+  font-size: 0.95rem;
+}
+
+.active-visit-btn:active {
+  border-color: var(--ember);
+  color: var(--text);
+}
+
+.venue-list-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
 }
 
 .hub-header h1 {
@@ -322,7 +351,7 @@ video {
   align-items: flex-end;
   justify-content: center;
   background: rgb(0 0 0 / 55%);
-  padding: 0 0.75rem 1rem;
+  padding: 0 0.75rem calc(1rem + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 .hub-sheet-backdrop[hidden] {

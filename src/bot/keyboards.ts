@@ -46,13 +46,14 @@ export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParame
     .text(miniAppButtonLabel(role));
 
   if (role === "guest") {
-    keyboard.row().text("Отключить рассылку");
+    keyboard.row().text("Отключить рассылку").text("Забронировать");
   }
   if (role === "master" || role === "admin") {
     keyboard.row().text("Найти гостя").text("Код зала");
   }
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");
+    keyboard.row().text("Статистика").text("История персонала").text("Экспорт");
   }
 
   return keyboard.resized().persistent();
