@@ -1,5 +1,7 @@
 import { allocateBonusSpend, createLotForCredit } from "./bonus-lots.ts";
 import { DomainError } from "./errors.ts";
+import { creditPromoBonus, pickPromoAdjustment } from "./promo-rules.ts";
+import { tryActivateReferral } from "./referral.ts";
 import { calculateCheckBonus } from "./settings.ts";
 import { logStaffAction } from "./staff-log.ts";
 import { openOrExtendVisit } from "./visits.ts";
@@ -15,20 +17,30 @@ async function requireStaff(store: Store, actorId: string) {
 
 export async function applyCheck(
   store: Store,
-  input: { guestId: string; actorId: string; checkRubles: number; now: Date },
+  input: {
+    guestId: string;
+    actorId: string;
+    checkRubles: number;
+    now: Date;
+    promoCode?: string | null;
+  },
 ) {
   if (input.checkRubles <= 0) throw new DomainError("bad_amount", "Сумма чека должна быть > 0");
-  return store.withTransaction(async (tx) => {
+  const result = await store.withTransaction(async (tx) => {
     await requireStaff(tx, input.actorId);
     const settings = await tx.getSettings();
-    const bonus = calculateCheckBonus(input.checkRubles, settings.percent);
+    const baseBonus = calculateCheckBonus(input.checkRubles, settings.percent);
+    const rules = await tx.listActivePromoRules(input.now);
+    const promo = pickPromoAdjustment(rules, input, baseBonus);
+    const checkBonus = Math.floor(baseBonus * promo.checkBonusMultiplier);
+    const totalBonus = checkBonus + promo.extraBonus;
     const guest = await tx.findUserById(input.guestId);
     if (!guest) throw new DomainError("not_found", "Гость не найден");
-    const user = await tx.updateUser(guest.id, { balance: guest.balance + bonus });
+    const user = await tx.updateUser(guest.id, { balance: guest.balance + totalBonus });
     const ledger = await tx.addLedger({
       userId: guest.id,
       type: "check",
-      amount: bonus,
+      amount: checkBonus,
       actorId: input.actorId,
       comment: `Чек ${input.checkRubles} ₽`,
       checkAmount: input.checkRubles,
@@ -37,10 +49,19 @@ export async function applyCheck(
       userId: guest.id,
       ledgerId: ledger.id,
       type: "check",
-      amount: bonus,
+      amount: checkBonus,
       createdAt: ledger.createdAt,
       settings,
     });
+    if (promo.extraBonus > 0) {
+      await creditPromoBonus(tx, {
+        guestId: guest.id,
+        amount: promo.extraBonus,
+        label: promo.label,
+        settings,
+        createdAt: ledger.createdAt,
+      });
+    }
     const visit = await openOrExtendVisit(tx, {
       userId: guest.id,
       openedBy: input.actorId,
@@ -51,10 +72,16 @@ export async function applyCheck(
       actorId: input.actorId,
       guestId: guest.id,
       action: "check",
-      payload: { checkRubles: input.checkRubles, bonus },
+      payload: { checkRubles: input.checkRubles, bonus: totalBonus, promoRuleId: promo.ruleId },
     });
-    return { user, bonus, visit };
+    return { user, bonus: totalBonus, visit, visitId: visit.id };
   });
+  await tryActivateReferral(store, {
+    guestId: input.guestId,
+    now: input.now,
+    visitId: result.visitId,
+  });
+  return { user: result.user, bonus: result.bonus, visit: result.visit };
 }
 
 export async function redeemBonuses(

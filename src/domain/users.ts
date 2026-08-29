@@ -12,6 +12,7 @@ export async function registerGuest(
     lastName: string;
     birthday: Date;
     phone: string;
+    referredByUserId?: string | null;
   },
 ) {
   const existing = await store.findUserByTelegramId(input.telegramId);
@@ -31,6 +32,9 @@ export async function registerGuest(
       phone,
       qrToken: newQrToken(),
     });
+    if (input.referredByUserId !== undefined && input.referredByUserId !== null) {
+      await tx.updateUser(user.id, { referredByUserId: input.referredByUserId });
+    }
     const next = await tx.updateUser(user.id, {
       balance: settings.registrationBonus,
     });

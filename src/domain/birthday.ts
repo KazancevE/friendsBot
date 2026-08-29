@@ -1,6 +1,9 @@
 import { DateTime } from "luxon";
+import type { Api } from "grammy";
 import { createLotForCredit } from "./bonus-lots.ts";
+import { expiresAfterDays } from "./settings.ts";
 import type { Store } from "../store/types.ts";
+import type { UserRecord } from "./types.ts";
 import { MOSCOW, moscowCalendarYear } from "./week.ts";
 
 const anniversaryInYear = (birthday: Date, year: number): DateTime => {
@@ -22,6 +25,29 @@ export function isBirthdayWeek(birthday: Date, now: Date): boolean {
     const end = anniversary.plus({ days: 3 });
     return nowMsk >= start && nowMsk <= end;
   });
+}
+
+export function isBirthdayToday(birthday: Date, now: Date): boolean {
+  const nowMsk = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day");
+  const anniversary = anniversaryInYear(birthday, nowMsk.year);
+  return nowMsk.hasSame(anniversary, "day");
+}
+
+export function daysUntilBirthday(birthday: Date, now: Date): number | null {
+  const nowMsk = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day");
+  const years = [nowMsk.year, nowMsk.year + 1];
+  let best: number | null = null;
+  for (const year of years) {
+    const anniversary = anniversaryInYear(birthday, year);
+    const diff = Math.round(anniversary.diff(nowMsk, "days").days);
+    if (diff < 0) {
+      continue;
+    }
+    if (best === null || diff < best) {
+      best = diff;
+    }
+  }
+  return best;
 }
 
 export async function grantDueBirthdays(store: Store, now: Date) {
@@ -61,8 +87,81 @@ export async function grantDueBirthdays(store: Store, now: Date) {
         createdAt: ledger.createdAt,
         settings,
       });
+      if (settings.birthdayCouponTitle !== null && settings.birthdayCouponTitle.length > 0) {
+        await tx.createCoupon({
+          userId: current.id,
+          title: settings.birthdayCouponTitle,
+          weekId: null,
+          expiresAt: expiresAfterDays(now, settings.birthdayCouponClaimDays),
+        });
+      }
     });
     granted += 1;
   }
   return granted;
+}
+
+const notifyGuest = async (api: Api, user: UserRecord, text: string) => {
+  if (user.broadcastOptOut) {
+    return false;
+  }
+  try {
+    await api.sendMessage(user.telegramId.toString(), text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export async function sendBirthdayWarnings(store: Store, api: Api, now: Date) {
+  const settings = await store.getSettings();
+  const users = await store.listUsersWithBirthday();
+  const year = moscowCalendarYear(now);
+  let sent = 0;
+  for (const user of users) {
+    if (user.birthday === null || user.birthdayWarnedYear === year) {
+      continue;
+    }
+    const days = daysUntilBirthday(user.birthday, now);
+    if (days !== settings.birthdayNotifyDaysBefore) {
+      continue;
+    }
+    const ok = await notifyGuest(
+      api,
+      user,
+      "Скоро ваш день рождения — загляните в «Друзья» 🎂",
+    );
+    if (ok) {
+      await store.updateUser(user.id, { birthdayWarnedYear: year });
+      sent += 1;
+    }
+  }
+  return sent;
+}
+
+export async function sendBirthdayGreetings(store: Store, api: Api, now: Date) {
+  const users = await store.listUsersWithBirthday();
+  const year = moscowCalendarYear(now);
+  let sent = 0;
+  for (const user of users) {
+    if (user.birthday === null || user.birthdayGreetedYear === year) {
+      continue;
+    }
+    if (!isBirthdayToday(user.birthday, now)) {
+      continue;
+    }
+    const ok = await notifyGuest(api, user, "С днём рождения! Ждём вас в «Друзья» 🎉");
+    if (ok) {
+      await store.updateUser(user.id, { birthdayGreetedYear: year });
+      sent += 1;
+    }
+  }
+  return sent;
+}
+
+export async function runBirthdayNotifications(store: Store, api: Api, now: Date) {
+  const granted = await grantDueBirthdays(store, now);
+  const warnings = await sendBirthdayWarnings(store, api, now);
+  const greetings = await sendBirthdayGreetings(store, api, now);
+  return { granted, warnings, greetings };
 }

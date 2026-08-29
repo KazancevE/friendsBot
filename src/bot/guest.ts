@@ -4,6 +4,12 @@ import { InlineKeyboard, InputFile } from "grammy";
 import type { Bot } from "grammy";
 import { listActiveMenu } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
+import {
+  ensureReferralCode,
+  getReferralStats,
+  parseReferralStartPayload,
+  referralLink,
+} from "../domain/referral.ts";
 import { newQrToken } from "../domain/qr-token.ts";
 import type { MenuItemRecord, PromoRecord } from "../domain/types.ts";
 import { formatDisplayPhone } from "../domain/phone.ts";
@@ -141,6 +147,11 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     }
 
     const isEnvAdmin = BigInt(from.id) === ctx.config.adminTelegramId;
+    const startPayload = typeof ctx.match === "string" ? ctx.match : "";
+    const referralCode = parseReferralStartPayload(startPayload);
+    if (referralCode !== null) {
+      ctx.session.pendingReferralCode = referralCode;
+    }
 
     if (!ctx.dbUser) {
       if (isEnvAdmin) {
@@ -291,6 +302,33 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     await ctx.reply("Управление рассылкой", {
       reply_markup: broadcastOptKeyboard(ctx.dbUser.broadcastOptOut),
     });
+  });
+
+  bot.hears("Пригласить друга", async (ctx) => {
+    if (!ctx.dbUser) {
+      await enterConversation(ctx, "registerGuest");
+      return;
+    }
+    const settings = await ctx.store.getSettings();
+    if (!settings.referralEnabled) {
+      await ctx.reply("Реферальная программа временно недоступна");
+      return;
+    }
+    const code = await ensureReferralCode(ctx.store, ctx.dbUser.id);
+    const stats = await getReferralStats(ctx.store, ctx.dbUser.id);
+    const username = ctx.me?.username;
+    const link =
+      username !== undefined ? referralLink(username, code) : `https://t.me/?start=ref_${code}`;
+    await ctx.reply(
+      [
+        "Пригласите друга в «Друзья»:",
+        link,
+        "",
+        `Вы пригласили: ${stats.invited}`,
+        `Активировано: ${stats.activated}`,
+        `Получено: ${stats.bonusesEarned} бонусов`,
+      ].join("\n"),
+    );
   });
 
   bot.hears("Отключить рассылку", async (ctx) => {

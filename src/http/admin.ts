@@ -1,11 +1,15 @@
 import { Hono } from "hono";
+import { broadcastSegmentLabel, previewSegmentCount } from "../domain/broadcast.ts";
 import { exportCsv, type ExportType } from "../domain/export.ts";
 import { buildStaffGuestCard } from "../domain/guest-card.ts";
+import { listRejectedSessions } from "../domain/games.ts";
 import { searchGuestsByName } from "../domain/guest-search.ts";
-import { formatStatsSummary, getStatsSummary, periodLastDays, periodToday } from "../domain/stats.ts";
+import { promoRuleKindLabelRu } from "../domain/promo-rules.ts";
+import { getLiveQuiz } from "../domain/quiz.ts";
+import { getStatsSummary, periodLastDays, periodToday } from "../domain/stats.ts";
 import { extendActiveVisit } from "../domain/visits.ts";
 import { DomainError } from "../domain/errors.ts";
-import type { Role } from "../domain/types.ts";
+import type { BroadcastSegmentId, Role, Settings } from "../domain/types.ts";
 import type { Store } from "../store/types.ts";
 import { resolveActor } from "./auth.ts";
 
@@ -61,6 +65,38 @@ const isExportType = (value: string): value is ExportType => {
   );
 };
 
+const BROADCAST_SEGMENTS: BroadcastSegmentId[] = [
+  "all",
+  "inactive_30d",
+  "active_7d",
+  "balance_gt",
+  "has_coupon",
+  "birthday_week",
+  "referrers",
+  "weekly_top",
+];
+
+const settingsToJson = (settings: Settings) => ({
+  percent: settings.percent,
+  registrationBonus: settings.registrationBonus,
+  birthdayBonus: settings.birthdayBonus,
+  visitHours: settings.visitHours,
+  winnersCount: settings.winnersCount,
+  checkBonusTtlDays: settings.checkBonusTtlDays,
+  giftBonusTtlDays: settings.giftBonusTtlDays,
+  couponClaimDays: settings.couponClaimDays,
+  expireNotifyMinBonuses: settings.expireNotifyMinBonuses,
+  checkInNotifyEnabled: settings.checkInNotifyEnabled,
+  referralBonusReferrer: settings.referralBonusReferrer,
+  referralBonusReferee: settings.referralBonusReferee,
+  referralActivationDays: settings.referralActivationDays,
+  referralEnabled: settings.referralEnabled,
+  birthdayNotifyDaysBefore: settings.birthdayNotifyDaysBefore,
+  birthdayCouponTitle: settings.birthdayCouponTitle,
+  birthdayCouponClaimDays: settings.birthdayCouponClaimDays,
+  maxSessionsPerHour: settings.maxSessionsPerHour,
+});
+
 export const createAdminRoutes = ({ store, botToken }: CreateAdminRoutesParameters) => {
   const app = new Hono();
 
@@ -107,6 +143,102 @@ export const createAdminRoutes = ({ store, botToken }: CreateAdminRoutesParamete
     c.header("Content-Type", "text/csv; charset=utf-8");
     c.header("Content-Disposition", `attachment; filename="${typeRaw}.csv"`);
     return c.body(csv);
+  });
+
+  app.get("/api/admin/guest/:id/ledger", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const guest = await store.findUserById(c.req.param("id"));
+    if (guest === null) {
+      throw new DomainError("not_found", "Гость не найден");
+    }
+    const rows = await store.listLedger(guest.id);
+    return c.json({
+      rows: rows.map((row) => ({
+        id: row.id,
+        type: row.type,
+        amount: row.amount,
+        comment: row.comment,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    });
+  });
+
+  app.get("/api/admin/game-sessions/rejected", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const limit = Number(c.req.query("limit") ?? "20");
+    const rows = await listRejectedSessions(store, limit);
+    return c.json({
+      rows: rows.map((row) => ({
+        slug: row.slug,
+        points: row.points,
+        rejectReason: row.rejectReason,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    });
+  });
+
+  app.get("/api/admin/broadcast/segments", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const balanceMin = Number(c.req.query("balanceMin") ?? "500");
+    const weeklyTopPlace = Number(c.req.query("weeklyTopPlace") ?? "3");
+    const segments = await Promise.all(
+      BROADCAST_SEGMENTS.map(async (segment) => {
+        const params =
+          segment === "balance_gt"
+            ? { balanceMin }
+            : segment === "weekly_top"
+              ? { weeklyTopPlace }
+              : undefined;
+        const count = await previewSegmentCount(store, { segment, params, now });
+        return {
+          id: segment,
+          label: broadcastSegmentLabel(segment),
+          count,
+        };
+      }),
+    );
+    return c.json({ segments });
+  });
+
+  app.get("/api/admin/settings", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const settings = await store.getSettings();
+    return c.json({ settings: settingsToJson(settings) });
+  });
+
+  app.get("/api/admin/promo-rules", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const rows = await store.listActivePromoRules(now);
+    return c.json({
+      rows: rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        label: promoRuleKindLabelRu(row.kind),
+        params: row.params,
+        priority: row.priority,
+        validFrom: row.validFrom?.toISOString() ?? null,
+        validUntil: row.validUntil?.toISOString() ?? null,
+      })),
+    });
+  });
+
+  app.get("/api/admin/quiz/live", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const live = await getLiveQuiz(store, new Date());
+    if (live === null) {
+      return c.json({ live: null });
+    }
+    return c.json({
+      live: {
+        sessionId: live.session.id,
+        status: live.session.status,
+        startedAt: live.session.startedAt.toISOString(),
+        endsAt: live.session.endsAt.toISOString(),
+        questionCount: live.questions.length,
+      },
+    });
   });
 
   app.get("/api/cashier/search", async (c) => {

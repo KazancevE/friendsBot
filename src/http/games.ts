@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { DomainError } from "../domain/errors.ts";
 import { getGameRules, getLeaderboard, getOverallLeaderboard, listGames, submitScoreOrPractice } from "../domain/games.ts";
+import { getLiveQuiz, submitQuizAnswer } from "../domain/quiz.ts";
 import type { Store } from "../store/types.ts";
 import { resolveActor } from "./auth.ts";
 
@@ -70,11 +71,20 @@ export const createGameRoutes = ({ store, botToken }: CreateGameRoutesParameters
     if (typeof body.points !== "number") {
       throw new DomainError("score_cap", "Слишком много очков за партию");
     }
+    const parseSessionDate = (value: unknown) => {
+      if (typeof value !== "string" || value.length === 0) {
+        return undefined;
+      }
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    };
     const result = await submitScoreOrPractice(store, {
       userId: user.id,
       slug: body.slug,
       points: body.points,
       now: new Date(),
+      sessionStartedAt: parseSessionDate(body.sessionStartedAt),
+      sessionEndedAt: parseSessionDate(body.sessionEndedAt),
     });
     return c.json(result);
   });
@@ -118,6 +128,40 @@ export const createGameRoutes = ({ store, botToken }: CreateGameRoutesParameters
       viewerRole: user.role,
     });
     return c.json(board);
+  });
+
+  app.get("/api/quiz/live", async (c) => {
+    const initData = readInitData(c.req.header("X-Telegram-Init-Data"), {});
+    await requireRegistered({ store, initData, botToken });
+    const live = await getLiveQuiz(store, new Date());
+    if (live === null) {
+      return c.json(null);
+    }
+    return c.json({
+      sessionId: live.session.id,
+      questions: live.questions,
+    });
+  });
+
+  app.post("/api/quiz/answer", async (c) => {
+    const body = await readJsonBody(c);
+    const initData = readInitData(c.req.header("X-Telegram-Init-Data"), body);
+    const user = await requireRegistered({ store, initData, botToken });
+    if (typeof body.sessionId !== "string" || typeof body.questionId !== "string") {
+      throw new DomainError("bad_request", "Нужны sessionId и questionId");
+    }
+    if (typeof body.optionIndex !== "number" || typeof body.elapsedMs !== "number") {
+      throw new DomainError("bad_request", "Некорректный ответ");
+    }
+    const result = await submitQuizAnswer(store, {
+      userId: user.id,
+      sessionId: body.sessionId,
+      questionId: body.questionId,
+      optionIndex: body.optionIndex,
+      elapsedMs: body.elapsedMs,
+      now: new Date(),
+    });
+    return c.json(result);
   });
 
   return app;

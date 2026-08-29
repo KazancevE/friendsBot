@@ -18,6 +18,14 @@ export const DEFAULT_SETTINGS: Settings = {
   expireNotifyMinBonuses: 300,
   checkInNotifyEnabled: true,
   checkInNotifyTelegramIds: [],
+  referralBonusReferrer: 300,
+  referralBonusReferee: 300,
+  referralActivationDays: 30,
+  referralEnabled: true,
+  birthdayNotifyDaysBefore: 7,
+  birthdayCouponTitle: null,
+  birthdayCouponClaimDays: 14,
+  maxSessionsPerHour: 30,
 };
 
 export function expiresAfterDays(from: Date, days: number): Date {

@@ -47,6 +47,7 @@ export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParame
 
   if (role === "guest") {
     keyboard.row().text("Отключить рассылку").text("Забронировать");
+    keyboard.row().text("Пригласить друга");
   }
   if (role === "master" || role === "admin") {
     keyboard.row().text("Найти гостя").text("Код зала");
@@ -54,6 +55,8 @@ export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParame
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");
     keyboard.row().text("Статистика").text("История персонала").text("Экспорт");
+    keyboard.row().text("Подозрительные партии").text("Викторина");
+    keyboard.row().text("Веб-админ");
   }
 
   return keyboard.resized().persistent();

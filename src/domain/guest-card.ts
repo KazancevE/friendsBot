@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { isBirthdayWeek } from "./birthday.ts";
+import { daysUntilBirthday, isBirthdayWeek } from "./birthday.ts";
 import type { BonusLotCategory, UserRecord } from "./types.ts";
 import { MOSCOW } from "./week.ts";
 import type { Store } from "../store/types.ts";
@@ -26,6 +26,7 @@ export type StaffGuestCard = {
   lotSummaries: LotSummary[];
   birthday: Date | null;
   birthdayWeek: boolean;
+  birthdayDaysUntil: number | null;
   staffNote: string | null;
   broadcastOptOut: boolean;
 };
@@ -81,6 +82,8 @@ export async function buildStaffGuestCard(
     lotSummaries: summarizeLots(lots, now),
     birthday: guest.birthday,
     birthdayWeek: guest.birthday !== null ? isBirthdayWeek(guest.birthday, now) : false,
+    birthdayDaysUntil:
+      guest.birthday !== null ? daysUntilBirthday(guest.birthday, now) : null,
     staffNote: guest.staffNote,
     broadcastOptOut: guest.broadcastOptOut,
   };
@@ -119,7 +122,9 @@ export const formatStaffGuestCard = (card: StaffGuestCard): string => {
       ? null
       : card.birthdayWeek
         ? `🎂 Неделя ДР (${formatMoscowDate(card.birthday)})`
-        : `ДР: ${formatMoscowDate(card.birthday)}`;
+        : card.birthdayDaysUntil !== null && card.birthdayDaysUntil <= 14
+          ? `🎂 ДР через ${card.birthdayDaysUntil} дн. (${formatMoscowDate(card.birthday)})`
+          : `ДР: ${formatMoscowDate(card.birthday)}`;
   const lines = [
     `ФИО: ${name}`,
     `Телефон: ${card.phone ?? "—"}`,

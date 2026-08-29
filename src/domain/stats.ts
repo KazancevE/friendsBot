@@ -20,6 +20,7 @@ export type StatsSummary = {
   bonusLiability: number;
   averageCheckRubles: number | null;
   staffActions: number;
+  referralActivations: number;
 };
 
 export const periodToday = (now: Date): StatsPeriod => {
@@ -50,6 +51,7 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     ledgerRows,
     bonusLiability,
     staffActions,
+    referralActivations,
   ] = await Promise.all([
     store.countRegistrationsBetween(period.from, period.to),
     store.countVisitsBetween(period.from, period.to),
@@ -58,6 +60,7 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     store.listLedgerBetween(period.from, period.to),
     store.sumActiveBonusLotRemaining(now),
     store.countStaffActionsBetween(period.from, period.to),
+    store.countReferralsActivatedBetween(period.from, period.to),
   ]);
 
   let bonusesCredited = 0;
@@ -93,6 +96,7 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     bonusLiability,
     averageCheckRubles: checkCount > 0 ? Math.round(checkTotal / checkCount) : null,
     staffActions,
+    referralActivations,
   };
 };
 
@@ -115,6 +119,7 @@ export const formatStatsSummary = (summary: StatsSummary): string => {
       : `Средний чек: ${summary.averageCheckRubles} ₽`,
     "",
     `Действий персонала: ${summary.staffActions}`,
+    `Активаций рефералов: ${summary.referralActivations}`,
   ].join("\n");
 };
 

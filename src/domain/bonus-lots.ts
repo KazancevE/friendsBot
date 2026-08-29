@@ -5,13 +5,26 @@ import type { BonusLotCategory, BonusLotRecord, LedgerType, Settings } from "./t
 import { MOSCOW } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
-export type CreditLedgerType = "check" | "registration" | "birthday" | "manual" | "weekly_prize";
+export type CreditLedgerType =
+  | "check"
+  | "registration"
+  | "birthday"
+  | "manual"
+  | "weekly_prize"
+  | "referral"
+  | "promo_bonus";
 
 export function lotCategoryForLedger(type: LedgerType, amount: number): BonusLotCategory | null {
   if (type === "check") {
     return "check";
   }
-  if (type === "registration" || type === "birthday" || type === "weekly_prize") {
+  if (
+    type === "registration" ||
+    type === "birthday" ||
+    type === "weekly_prize" ||
+    type === "referral" ||
+    type === "promo_bonus"
+  ) {
     return "gift";
   }
   if (type === "manual" && amount > 0) {

@@ -137,6 +137,7 @@ const animateCountUp = (
 };
 
 export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) => {
+  const sessionStartedAt = new Date();
   let state: GameState = createGameState();
   let score = 0;
   let finished = false;
@@ -279,7 +280,12 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
       spawnConfetti(root);
     }
 
-    const result = await submitGameScore({ slug: BLOCK_BLAST_SLUG, points: score });
+    const result = await submitGameScore({
+      slug: BLOCK_BLAST_SLUG,
+      points: score,
+      sessionStartedAt,
+      sessionEndedAt: new Date(),
+    });
     const resultLine = document.createElement("p");
     resultLine.className = "status";
     if (result.kind === "error") {

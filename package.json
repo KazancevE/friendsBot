@@ -6,7 +6,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/index.ts",
-    "build": "vite build --config miniapp/vite.config.ts",
+    "build": "vite build --config miniapp/vite.config.ts && vite build --config admin/vite.config.ts",
     "start": "tsx src/index.ts",
     "prisma": "prisma"
   },

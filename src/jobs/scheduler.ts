@@ -4,6 +4,7 @@ import type { Store } from "../store/types.ts";
 import { MOSCOW } from "../domain/week.ts";
 import { runBirthdayJob } from "./birthday-job.ts";
 import { runBookingReminders } from "../domain/booking.ts";
+import { closeExpiredQuizSessions } from "../domain/quiz.ts";
 import { runExpiryJob } from "./expiry-job.ts";
 import { runVenueCodeJob } from "./venue-code-job.ts";
 import { runWeeklyJob } from "./weekly-job.ts";
@@ -18,7 +19,7 @@ export const startScheduler = (store: Store, api: Api) => {
   CronJob.from({
     cronTime: BIRTHDAY_CRON,
     onTick: () => {
-      void runBirthdayJob(store);
+      void runBirthdayJob(store, api);
     },
     start: true,
     timeZone: MOSCOW,
@@ -51,6 +52,7 @@ export const startScheduler = (store: Store, api: Api) => {
     cronTime: BOOKING_REMINDER_CRON,
     onTick: () => {
       void runBookingReminders(store, api, new Date());
+      void closeExpiredQuizSessions(store, new Date());
     },
     start: true,
     timeZone: MOSCOW,
