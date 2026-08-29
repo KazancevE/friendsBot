@@ -15,6 +15,8 @@ type TelegramWebApp = {
   readonly setBackgroundColor?: (color: string) => void;
   readonly isVersionAtLeast?: (version: string) => boolean;
   readonly initData: string;
+  readonly contentSafeAreaInset?: SafeAreaInset;
+  readonly safeAreaInset?: SafeAreaInset;
   readonly HapticFeedback?: TelegramHapticFeedback;
   readonly showScanQrPopup?: (
     params: ScanQrPopupParams,
@@ -25,11 +27,29 @@ type TelegramWebApp = {
   readonly offEvent?: (eventType: string, callback: () => void) => void;
 };
 
+type SafeAreaInset = {
+  readonly top: number;
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+};
+
 type TelegramNamespace = {
   readonly WebApp: TelegramWebApp;
 };
 
 const APP_BG = "#1a1210";
+
+const applySafeAreaInsets = (webApp: TelegramWebApp) => {
+  const inset = webApp.contentSafeAreaInset ?? webApp.safeAreaInset;
+  if (inset === undefined) {
+    return;
+  }
+  document.documentElement.style.setProperty("--tg-content-safe-area-inset-top", `${inset.top}px`);
+  document.documentElement.style.setProperty("--tg-content-safe-area-inset-bottom", `${inset.bottom}px`);
+  document.documentElement.style.setProperty("--tg-content-safe-area-inset-left", `${inset.left}px`);
+  document.documentElement.style.setProperty("--tg-content-safe-area-inset-right", `${inset.right}px`);
+};
 
 const telegramWebApp = (): TelegramWebApp | undefined => {
   const telegram = (window as Window & { Telegram?: TelegramNamespace }).Telegram;
@@ -52,6 +72,17 @@ export const readyTelegram = () => {
   }
 
   webApp.disableVerticalSwipes?.();
+
+  applySafeAreaInsets(webApp);
+  webApp.onEvent?.("contentSafeAreaChanged", () => {
+    applySafeAreaInsets(webApp);
+  });
+  webApp.onEvent?.("safeAreaChanged", () => {
+    applySafeAreaInsets(webApp);
+  });
+  webApp.onEvent?.("viewportChanged", () => {
+    applySafeAreaInsets(webApp);
+  });
 };
 
 export const initData = () => {

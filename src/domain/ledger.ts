@@ -1,6 +1,7 @@
 import { allocateBonusSpend, createLotForCredit } from "./bonus-lots.ts";
 import { DomainError } from "./errors.ts";
 import { calculateCheckBonus } from "./settings.ts";
+import { logStaffAction } from "./staff-log.ts";
 import { openOrExtendVisit } from "./visits.ts";
 import type { Store } from "../store/types.ts";
 
@@ -46,6 +47,12 @@ export async function applyCheck(
       hours: settings.visitHours,
       now: input.now,
     });
+    await logStaffAction(tx, {
+      actorId: input.actorId,
+      guestId: guest.id,
+      action: "check",
+      payload: { checkRubles: input.checkRubles, bonus },
+    });
     return { user, bonus, visit };
   });
 }
@@ -69,6 +76,12 @@ export async function redeemBonuses(
       actorId: input.actorId,
       comment: "Списание на кассе",
       checkAmount: null,
+    });
+    await logStaffAction(tx, {
+      actorId: input.actorId,
+      guestId: guest.id,
+      action: "redeem",
+      payload: { amount: input.amount },
     });
     return user;
   });
@@ -110,6 +123,12 @@ export async function manualAdjust(
         settings,
       });
     }
+    await logStaffAction(tx, {
+      actorId: input.actorId,
+      guestId: guest.id,
+      action: "manual_adjust",
+      payload: { delta: input.delta, comment: input.comment.trim() },
+    });
     return user;
   });
 }

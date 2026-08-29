@@ -21,7 +21,28 @@ export type GuestCard = {
   readonly balance: number;
   readonly qrToken: string;
   readonly visitActive: boolean;
+  readonly visitEndsAt?: string | null;
   readonly coupons: ReadonlyArray<GuestCoupon>;
+  readonly totalVisits?: number;
+  readonly lastVisitAt?: string | null;
+  readonly checkedInToday?: boolean;
+  readonly lotSummaries?: ReadonlyArray<{
+    readonly category: "gift" | "check";
+    readonly remaining: number;
+    readonly expiresAt: string;
+  }>;
+  readonly birthdayWeek?: boolean;
+  readonly staffNote?: string | null;
+  readonly broadcastOptOut?: boolean;
+};
+
+export type GuestSearchHit = {
+  readonly id: string;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly phoneMasked: string | null;
+  readonly balance: number;
+  readonly visitActive: boolean;
 };
 
 export type CheckResult = {
@@ -293,10 +314,41 @@ export const submitGameScore = ({ slug, points }: SubmitGameScoreParameters) => 
 type LookupGuestParameters = {
   readonly phone?: string;
   readonly qrToken?: string;
+  readonly nameQuery?: string;
+  readonly guestId?: string;
 };
 
-export const lookupGuest = ({ phone, qrToken }: LookupGuestParameters) => {
-  return postJson("/api/cashier/lookup", { phone, qrToken }, isGuestCard);
+type GuestLookupResult = GuestCard | { readonly guests: ReadonlyArray<GuestSearchHit> };
+
+const isGuestSearchHit = (value: unknown): value is GuestSearchHit => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.id === "string" && typeof value.balance === "number";
+};
+
+const isGuestLookupResult = (value: unknown): value is GuestLookupResult => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (Array.isArray(value.guests)) {
+    return value.guests.every(isGuestSearchHit);
+  }
+  return isGuestCard(value);
+};
+
+export const lookupGuest = (params: LookupGuestParameters) => {
+  return postJson("/api/cashier/lookup", { ...params }, isGuestLookupResult);
+};
+
+type GuestQueryBody = {
+  readonly phone?: string;
+  readonly qrToken?: string;
+  readonly guestId?: string;
+};
+
+const guestQueryBody = (card: GuestCard): GuestQueryBody => {
+  return { guestId: card.id };
 };
 
 type ApplyCheckParameters = {
@@ -305,8 +357,8 @@ type ApplyCheckParameters = {
   readonly checkRubles: number;
 };
 
-export const applyCheck = ({ phone, qrToken, checkRubles }: ApplyCheckParameters) => {
-  return postJson("/api/cashier/check", { phone, qrToken, checkRubles }, isCheckResult);
+export const applyCheck = ({ checkRubles, ...query }: ApplyCheckParameters & GuestQueryBody) => {
+  return postJson("/api/cashier/check", { ...query, checkRubles }, isCheckResult);
 };
 
 type RedeemParameters = {
@@ -315,8 +367,8 @@ type RedeemParameters = {
   readonly amount: number;
 };
 
-export const redeemBonuses = ({ phone, qrToken, amount }: RedeemParameters) => {
-  return postJson("/api/cashier/redeem", { phone, qrToken, amount }, isRedeemResult);
+export const redeemBonuses = ({ amount, ...query }: RedeemParameters & GuestQueryBody) => {
+  return postJson("/api/cashier/redeem", { ...query, amount }, isRedeemResult);
 };
 
 type OpenVisitParameters = {
@@ -324,15 +376,27 @@ type OpenVisitParameters = {
   readonly qrToken?: string;
 };
 
-export const openVisit = ({ phone, qrToken }: OpenVisitParameters) => {
+export const openVisit = (query: GuestQueryBody) => {
   return postJson(
     "/api/cashier/visit",
-    { phone, qrToken },
+    query,
     (value): value is { readonly visitActive: boolean } => {
       return isRecord(value) && typeof value.visitActive === "boolean";
     },
   );
 };
+
+export const extendVisit = (query: GuestQueryBody) => {
+  return postJson(
+    "/api/cashier/extend-visit",
+    query,
+    (value): value is { readonly visitActive: boolean; readonly card: GuestCard } => {
+      return isRecord(value) && typeof value.visitActive === "boolean" && isGuestCard(value.card);
+    },
+  );
+};
+
+export { guestQueryBody };
 
 type ManualAdjustParameters = {
   readonly phone?: string;
@@ -341,8 +405,8 @@ type ManualAdjustParameters = {
   readonly comment: string;
 };
 
-export const manualAdjust = ({ phone, qrToken, delta, comment }: ManualAdjustParameters) => {
-  return postJson("/api/cashier/manual", { phone, qrToken, delta, comment }, isRedeemResult);
+export const manualAdjust = ({ delta, comment, ...query }: ManualAdjustParameters & GuestQueryBody) => {
+  return postJson("/api/cashier/manual", { ...query, delta, comment }, isRedeemResult);
 };
 
 type RedeemCouponParameters = {
@@ -451,4 +515,8 @@ const isActiveVisits = (value: unknown): value is ActiveVisits => {
 
 export const fetchActiveVisits = () => {
   return postJson("/api/staff/active-visits", {}, isActiveVisits);
+};
+
+export const lookupGuestByVisit = (visitId: string) => {
+  return postJson("/api/staff/guest-by-visit", { visitId }, isGuestCard);
 };

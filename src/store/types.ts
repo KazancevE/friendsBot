@@ -1,6 +1,8 @@
 import type {
   ActiveVisitRow,
   BonusLotRecord,
+  BookingRequestRecord,
+  BookingStatus,
   CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
@@ -14,6 +16,8 @@ import type {
   PromoRecord,
   Role,
   Settings,
+  StaffActionKind,
+  StaffActionLogRecord,
   UserRecord,
   VenueCodeRecord,
   VisitRecord,
@@ -38,8 +42,55 @@ export interface Store {
   findUserByTelegramId(telegramId: bigint): Promise<UserRecord | null>;
   findUserByPhone(phone: string): Promise<UserRecord | null>;
   findUserByQrToken(token: string): Promise<UserRecord | null>;
+  searchGuestsByName(query: string, limit: number): Promise<UserRecord[]>;
   updateUser(id: string, patch: Partial<UserRecord>): Promise<UserRecord>;
   listGuestTelegramIdsForBroadcast(): Promise<bigint[]>;
+  listStaffTelegramIds(): Promise<bigint[]>;
+  countRegistrationsBetween(from: Date, to: Date): Promise<number>;
+
+  createStaffActionLog(input: {
+    actorId: string;
+    guestId: string | null;
+    action: StaffActionKind;
+    payload: Record<string, unknown>;
+  }): Promise<StaffActionLogRecord>;
+  listStaffActionLog(input: {
+    from: Date;
+    to: Date;
+    actorId?: string;
+    limit: number;
+    offset: number;
+  }): Promise<StaffActionLogRecord[]>;
+  countStaffActionsBetween(from: Date, to: Date): Promise<number>;
+
+  countVisitsForUser(userId: string): Promise<number>;
+  lastVisitStartedAt(userId: string): Promise<Date | null>;
+  hasCheckInToday(userId: string, now: Date): Promise<boolean>;
+  countVisitsBetween(from: Date, to: Date): Promise<number>;
+  countUniqueGuestsWithVisitBetween(from: Date, to: Date): Promise<number>;
+  countCheckInsBetween(from: Date, to: Date): Promise<number>;
+  listVisitsBetween(from: Date, to: Date): Promise<VisitRecord[]>;
+  listCheckInsBetween(from: Date, to: Date): Promise<CheckInLogRecord[]>;
+  listLedgerBetween(from: Date, to: Date): Promise<LedgerRecord[]>;
+  listCouponsBetween(from: Date, to: Date): Promise<CouponRecord[]>;
+  sumActiveBonusLotRemaining(now: Date): Promise<number>;
+
+  createBookingRequest(input: {
+    userId: string;
+    requestedFor: Date;
+    partySize: number;
+    comment: string | null;
+  }): Promise<BookingRequestRecord>;
+  findBookingById(id: string): Promise<BookingRequestRecord | null>;
+  findPendingBookingForUser(userId: string): Promise<BookingRequestRecord | null>;
+  updateBooking(
+    id: string,
+    patch: Partial<
+      Pick<BookingRequestRecord, "status" | "handledBy" | "handledAt" | "reminderSent">
+    >,
+  ): Promise<BookingRequestRecord>;
+  listBookingsNeedingReminder(now: Date): Promise<BookingRequestRecord[]>;
+  listPendingBookings(): Promise<BookingRequestRecord[]>;
 
   addLedger(input: {
     userId: string;

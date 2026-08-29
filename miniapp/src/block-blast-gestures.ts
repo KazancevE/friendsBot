@@ -15,6 +15,12 @@ type BindBlockBlastGesturesParameters = {
 };
 
 const DRAG_THRESHOLD_PX = 8;
+const DRAG_OFFSET_Y = 80;
+
+const positionDragGhost = (ghost: HTMLElement, clientX: number, clientY: number) => {
+  ghost.style.left = `${clientX}px`;
+  ghost.style.top = `${clientY - DRAG_OFFSET_Y}px`;
+};
 
 export const bindBlockBlastGestures = ({
   boardApi,
@@ -100,8 +106,7 @@ export const bindBlockBlastGestures = ({
     pointerStartY = event.clientY;
     clearDragGhost();
     dragGhost = createDragGhostElement(piece);
-    dragGhost.style.left = `${event.clientX}px`;
-    dragGhost.style.top = `${event.clientY}px`;
+    positionDragGhost(dragGhost, event.clientX, event.clientY);
     document.body.append(dragGhost);
   };
 
@@ -114,8 +119,7 @@ export const bindBlockBlastGestures = ({
       dragMoved = true;
     }
     if (dragGhost !== undefined) {
-      dragGhost.style.left = `${event.clientX}px`;
-      dragGhost.style.top = `${event.clientY}px`;
+      positionDragGhost(dragGhost, event.clientX, event.clientY);
     }
     const cell = boardApi.boardCellFromPoint(event.clientX, event.clientY);
     if (cell === undefined) {

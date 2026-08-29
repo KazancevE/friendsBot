@@ -87,6 +87,47 @@ test("staff can fetch venue code and active visits", async () => {
   expect(activeBody.count).toBe(1);
 });
 
+test("staff can lookup active guest by visit id", async () => {
+  const { guest, master, app, code } = await seed();
+  const guestInit = buildInitData({ id: Number(guest.telegramId) }, BOT_TOKEN);
+  await app.request("/api/check-in", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Telegram-Init-Data": guestInit,
+    },
+    body: JSON.stringify({ method: "pin", pin: code.pin }),
+  });
+
+  const initData = buildInitData({ id: Number(master.telegramId) }, BOT_TOKEN);
+  const activeRes = await app.request("/api/staff/active-visits", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Telegram-Init-Data": initData,
+    },
+    body: JSON.stringify({}),
+  });
+  const activeBody = (await activeRes.json()) as {
+    guests: ReadonlyArray<{ visitId: string }>;
+  };
+  const visitId = activeBody.guests[0]?.visitId;
+  expect(visitId).toBeDefined();
+
+  const lookupRes = await app.request("/api/staff/guest-by-visit", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Telegram-Init-Data": initData,
+    },
+    body: JSON.stringify({ visitId }),
+  });
+  expect(lookupRes.status).toBe(200);
+  const card = (await lookupRes.json()) as { balance: number; visitActive: boolean };
+  expect(card.visitActive).toBe(true);
+  expect(typeof card.balance).toBe("number");
+});
+
 test("guest cannot fetch venue code", async () => {
   const { guest, app } = await seed();
   const initData = buildInitData({ id: Number(guest.telegramId) }, BOT_TOKEN);
