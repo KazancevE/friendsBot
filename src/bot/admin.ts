@@ -4,7 +4,7 @@ import type { Api, Bot } from "grammy";
 import { recipientsForSegment, broadcastSegmentLabel, previewSegmentCount } from "../domain/broadcast.ts";
 import { listRejectedSessions } from "../domain/games.ts";
 import { promoRuleKindLabelRu } from "../domain/promo-rules.ts";
-import { startQuizSession } from "../domain/quiz.ts";
+import { startQuizSession, notifyActiveGuestsOfQuiz, addQuizQuestion } from "../domain/quiz.ts";
 import type { BroadcastSegmentId, PromoRuleKind } from "../domain/types.ts";
 import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
@@ -1026,6 +1026,50 @@ export async function createPromoConversation(
   });
 }
 
+export async function addQuizQuestionConversation(conversation: BotConversation, ctx: BotContext) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+  const quiz = await conversation.external((outer) => outer.store.findActiveQuiz());
+  if (quiz === null) {
+    await ctx.reply("Нет активной викторины");
+    return;
+  }
+  await ctx.reply("Текст вопроса", { reply_markup: cancelKeyboard() });
+  const text = (await waitCancellableText({ conversation, ctx, otherwise: "Отправьте текст" })).trim();
+  const options: string[] = [];
+  for (let index = 1; index <= 4; index += 1) {
+    await ctx.reply(`Вариант ${index}`, { reply_markup: cancelKeyboard() });
+    options.push((await waitCancellableText({ conversation, ctx, otherwise: "Отправьте вариант" })).trim());
+  }
+  await ctx.reply("Номер правильного варианта (1-4)", { reply_markup: cancelKeyboard() });
+  const correctRaw = Number(
+    (await waitCancellableText({ conversation, ctx, otherwise: "Отправьте число 1-4" })).trim(),
+  );
+  const correctIndex = correctRaw - 1;
+  const result = await conversation.external(async (outer) => {
+    try {
+      const question = await addQuizQuestion(outer.store, {
+        quizId: quiz.id,
+        text,
+        options,
+        correctIndex,
+      });
+      return { ok: true as const, sort: question.sort };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+  await ctx.reply(`Вопрос #${result.sort} добавлен`);
+}
+
 export function wireAdminHandlers(bot: Bot<BotContext>) {
   bot.hears("Настройки", async (ctx) => {
     if (!(await requireAdminOrReply(ctx))) {
@@ -1075,12 +1119,19 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
       return;
     }
     try {
+      const now = new Date();
       const session = await startQuizSession(ctx.store, {
         quizId: quiz.id,
         durationMinutes: 30,
-        now: new Date(),
+        now,
       });
-      await ctx.reply(`Викторина «${quiz.title}» запущена до ${session.endsAt.toISOString()}`);
+      const notified = await notifyActiveGuestsOfQuiz(ctx.store, ctx.api, {
+        quizTitle: quiz.title,
+        now,
+      });
+      await ctx.reply(
+        `Викторина «${quiz.title}» запущена до ${session.endsAt.toISOString()}\nУведомлено гостей с визитом: ${notified}`,
+      );
     } catch (err) {
       if (err instanceof DomainError) {
         await ctx.reply(err.message);
@@ -1088,6 +1139,13 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
       }
       throw err;
     }
+  });
+
+  bot.hears("Вопрос викторины", async (ctx) => {
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    await enterConversation(ctx, "addQuizQuestion");
   });
 
   bot.hears("Веб-админ", async (ctx) => {

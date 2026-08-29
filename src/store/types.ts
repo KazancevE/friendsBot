@@ -233,9 +233,20 @@ export interface Store {
   countGameSessionsSince(userId: string, since: Date): Promise<number>;
   getWeeklyGameScore(userId: string, gameId: string, weekStart: Date): Promise<number | null>;
   listRejectedGameSessionLogs(limit: number): Promise<GameSessionLogRecord[]>;
+  countAcceptedGameSessionsBetween(from: Date, to: Date): Promise<number>;
+  countUniqueGamePlayersBetween(from: Date, to: Date): Promise<number>;
 
   findActiveQuiz(): Promise<QuizRecord | null>;
+  findQuizById(id: string): Promise<QuizRecord | null>;
   listQuizQuestions(quizId: string): Promise<QuizQuestionRecord[]>;
+  createQuizQuestion(input: {
+    quizId: string;
+    sort: number;
+    text: string;
+    options: string[];
+    correctIndex: number;
+  }): Promise<QuizQuestionRecord>;
+  deleteQuizQuestion(id: string): Promise<void>;
   getLiveQuizSession(now: Date): Promise<QuizSessionRecord | null>;
   findQuizSessionById(id: string): Promise<QuizSessionRecord | null>;
   createQuizSession(input: {

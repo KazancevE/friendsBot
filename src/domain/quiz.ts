@@ -123,8 +123,8 @@ export async function startQuizSession(
   store: Store,
   input: { quizId: string; durationMinutes: number; now: Date },
 ) {
-  const quiz = await store.findActiveQuiz();
-  if (quiz === null || quiz.id !== input.quizId) {
+  const quiz = await store.findQuizById(input.quizId);
+  if (quiz === null || !quiz.active) {
     throw new DomainError("not_found", "Викторина не найдена");
   }
   const existing = await store.getLiveQuizSession(input.now);
@@ -147,4 +147,61 @@ export async function closeExpiredQuizSessions(store: Store, now: Date) {
   }
   await store.updateQuizSession(live.id, { status: "closed" });
   return 1;
+}
+
+export async function addQuizQuestion(
+  store: Store,
+  input: {
+    quizId: string;
+    text: string;
+    options: string[];
+    correctIndex: number;
+  },
+) {
+  const text = input.text.trim();
+  if (text.length === 0) {
+    throw new DomainError("bad_request", "Текст вопроса обязателен");
+  }
+  if (input.options.length !== 4 || input.options.some((option) => option.trim().length === 0)) {
+    throw new DomainError("bad_request", "Нужно 4 непустых варианта");
+  }
+  if (input.correctIndex < 0 || input.correctIndex > 3) {
+    throw new DomainError("bad_request", "correctIndex от 0 до 3");
+  }
+  const existing = await store.listQuizQuestions(input.quizId);
+  return store.createQuizQuestion({
+    quizId: input.quizId,
+    sort: existing.length + 1,
+    text,
+    options: input.options.map((option) => option.trim()),
+    correctIndex: input.correctIndex,
+  });
+}
+
+export async function removeQuizQuestion(store: Store, questionId: string) {
+  await store.deleteQuizQuestion(questionId);
+}
+
+export async function notifyActiveGuestsOfQuiz(
+  store: Store,
+  api: import("grammy").Api,
+  input: { quizTitle: string; now: Date },
+) {
+  const visits = await store.listActiveVisits(input.now);
+  const userIds = [...new Set(visits.map((visit) => visit.userId))];
+  const text = `🎯 Викторина «${input.quizTitle}» началась!\nОткройте игры в приложении.`;
+  await Promise.all(
+    userIds.map(async (userId) => {
+      const user = await store.findUserById(userId);
+      if (user === null) {
+        return;
+      }
+      try {
+        await api.sendMessage(user.telegramId.toString(), text);
+      } catch {
+        // ignore per-recipient failures
+      }
+    }),
+  );
+  return userIds.length;
 }

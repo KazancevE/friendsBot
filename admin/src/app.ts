@@ -166,6 +166,8 @@ const renderDashboard = async (host: HTMLElement, period: DashboardPeriod, metri
         <div class="stat"><div class="stat-label">Liability</div><div class="stat-value">${s.bonusLiability}</div></div>
         <div class="stat"><div class="stat-label">Средний чек</div><div class="stat-value">${s.averageCheckRubles ?? "—"}</div></div>
         <div class="stat"><div class="stat-label">Рефералы</div><div class="stat-value">${s.referralActivations}</div></div>
+        <div class="stat"><div class="stat-label">Игры</div><div class="stat-value">${s.gameSessions}</div></div>
+        <div class="stat"><div class="stat-label">Игроков</div><div class="stat-value">${s.uniqueGamePlayers}</div></div>
       </div>
     </section>
     <section class="panel">
@@ -295,6 +297,11 @@ const showGuest = async (detail: Element | null, guestId: string) => {
     ${card.data.birthdayWeek ? `<p>Неделя ДР${card.data.birthdayDaysUntil !== null && card.data.birthdayDaysUntil !== undefined ? ` · через ${card.data.birthdayDaysUntil} д` : ""}</p>` : ""}
     ${card.data.staffNote ? `<p>Заметка: ${escapeHtml(card.data.staffNote)}</p>` : ""}
     ${
+      card.data.referral
+        ? `<p>Рефералы: пригласил ${card.data.referral.invited} · активировано ${card.data.referral.activated}</p>`
+        : ""
+    }
+    ${
       card.data.coupons && card.data.coupons.length > 0
         ? `<p>Купоны: ${card.data.coupons.map((coupon) => escapeHtml(coupon.title)).join(", ")}</p>`
         : ""
@@ -410,6 +417,9 @@ const renderBroadcasts = async (host: HTMLElement) => {
       <label style="display:block;margin-top:0.5rem">Текст
         <textarea data-body rows="4" style="width:100%;margin-top:0.25rem"></textarea>
       </label>
+      <label style="display:block;margin-top:0.5rem">Telegram photo file_id (опционально)
+        <input type="text" data-photo-id placeholder="AgAC..." />
+      </label>
       <label style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center">
         <input type="checkbox" data-feed /> Показать в «Акции»
       </label>
@@ -431,9 +441,11 @@ const renderBroadcasts = async (host: HTMLElement) => {
     const body = host.querySelector("[data-body]");
     const balanceMin = host.querySelector("[data-balance-min]");
     const feed = host.querySelector("[data-feed]");
+    const photoInput = host.querySelector("[data-photo-id]");
     if (!(segment instanceof HTMLSelectElement) || !(body instanceof HTMLTextAreaElement)) {
       return null;
     }
+    const photoRaw = photoInput instanceof HTMLInputElement ? photoInput.value.trim() : "";
     const params =
       segment.value === "balance_gt" && balanceMin instanceof HTMLInputElement
         ? { balanceMin: Number(balanceMin.value) }
@@ -442,6 +454,7 @@ const renderBroadcasts = async (host: HTMLElement) => {
       segment: segment.value,
       body: body.value.trim(),
       showInFeed: feed instanceof HTMLInputElement && feed.checked,
+      photoId: photoRaw.length > 0 ? photoRaw : undefined,
       params,
     };
   };

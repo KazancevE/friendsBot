@@ -1050,8 +1050,28 @@ export class PrismaStore implements Store {
     return rows.map(toGameSessionLog);
   }
 
+  async countAcceptedGameSessionsBetween(from: Date, to: Date): Promise<number> {
+    return this.prisma.gameSessionLog.count({
+      where: { accepted: true, createdAt: { gte: from, lte: to } },
+    });
+  }
+
+  async countUniqueGamePlayersBetween(from: Date, to: Date): Promise<number> {
+    const rows = await this.prisma.gameSessionLog.findMany({
+      where: { accepted: true, createdAt: { gte: from, lte: to } },
+      distinct: ["userId"],
+      select: { userId: true },
+    });
+    return rows.length;
+  }
+
   async findActiveQuiz(): Promise<QuizRecord | null> {
     const row = await this.prisma.quiz.findFirst({ where: { active: true } });
+    return row ? toQuiz(row) : null;
+  }
+
+  async findQuizById(id: string): Promise<QuizRecord | null> {
+    const row = await this.prisma.quiz.findUnique({ where: { id } });
     return row ? toQuiz(row) : null;
   }
 
@@ -1061,6 +1081,29 @@ export class PrismaStore implements Store {
       orderBy: { sort: "asc" },
     });
     return rows.map(toQuizQuestion);
+  }
+
+  async createQuizQuestion(input: {
+    quizId: string;
+    sort: number;
+    text: string;
+    options: string[];
+    correctIndex: number;
+  }): Promise<QuizQuestionRecord> {
+    const row = await this.prisma.quizQuestion.create({
+      data: {
+        quizId: input.quizId,
+        sort: input.sort,
+        text: input.text,
+        options: input.options,
+        correctIndex: input.correctIndex,
+      },
+    });
+    return toQuizQuestion(row);
+  }
+
+  async deleteQuizQuestion(id: string): Promise<void> {
+    await this.prisma.quizQuestion.delete({ where: { id } });
   }
 
   async getLiveQuizSession(now: Date): Promise<QuizSessionRecord | null> {

@@ -2,12 +2,13 @@ import { Hono } from "hono";
 import type { Api } from "grammy";
 import { broadcastSegmentLabel, previewSegmentCount, runBroadcast } from "../domain/broadcast.ts";
 import { addMenuItem } from "../domain/content.ts";
-import { exportCsv, type ExportType } from "../domain/export.ts";
+import { exportCsv, exportRowCount, EXPORT_ROW_LIMIT, type ExportType } from "../domain/export.ts";
+import { consumeExportToken, createExportToken } from "../domain/export-token.ts";
 import { buildStaffGuestCard } from "../domain/guest-card.ts";
 import { listRejectedSessions } from "../domain/games.ts";
 import { searchGuestsByName } from "../domain/guest-search.ts";
 import { promoRuleKindLabelRu } from "../domain/promo-rules.ts";
-import { getLiveQuiz, startQuizSession } from "../domain/quiz.ts";
+import { addQuizQuestion, getLiveQuiz, notifyActiveGuestsOfQuiz, removeQuizQuestion, startQuizSession } from "../domain/quiz.ts";
 import { patchAdminSettings } from "../domain/settings.ts";
 import { getStatsSummary, getStatsStaff, getStatsTimeseries, periodLastDays, periodToday } from "../domain/stats.ts";
 import { extendActiveVisit } from "../domain/visits.ts";
@@ -178,9 +179,30 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
     const now = new Date();
     const from = parseDate(c.req.query("from"), periodLastDays(now, 7).from);
     const to = parseDate(c.req.query("to"), now);
+    const count = await exportRowCount(store, { type: typeRaw, from, to });
+    if (count > EXPORT_ROW_LIMIT) {
+      const token = createExportToken({ type: typeRaw, from, to, now });
+      return c.json({
+        tooLarge: true,
+        rowCount: count,
+        downloadUrl: `/api/admin/export.csv?token=${token}`,
+      });
+    }
     const csv = await exportCsv(store, { type: typeRaw, from, to });
     c.header("Content-Type", "text/csv; charset=utf-8");
     c.header("Content-Disposition", `attachment; filename="${typeRaw}.csv"`);
+    return c.body(csv);
+  });
+
+  app.get("/api/admin/export.csv", async (c) => {
+    const token = c.req.query("token") ?? "";
+    const payload = consumeExportToken(token, new Date());
+    if (payload === null) {
+      throw new DomainError("not_found", "Ссылка недействительна или истекла");
+    }
+    const csv = await exportCsv(store, { type: payload.type, from: payload.from, to: payload.to });
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header("Content-Disposition", `attachment; filename="${payload.type}.csv"`);
     return c.body(csv);
   });
 
@@ -311,12 +333,14 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
         ? (body.params as { balanceMin?: number; weeklyTopPlace?: number })
         : undefined;
     const showInFeed = "showInFeed" in body && body.showInFeed === true;
+    const photoId = "photoId" in body && typeof body.photoId === "string" ? body.photoId : undefined;
     const result = await runBroadcast(store, {
       api: botApi,
       segment: segmentRaw,
       params,
       body: text,
       showInFeed,
+      photoId,
       now: new Date(),
     });
     return c.json(result);
@@ -336,6 +360,44 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
     return c.json({ settings: settingsToJson(settings) });
   });
 
+  app.get("/api/admin/quiz/questions", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const quiz = await store.findActiveQuiz();
+    if (quiz === null) {
+      return c.json({ rows: [] });
+    }
+    const rows = await store.listQuizQuestions(quiz.id);
+    return c.json({
+      rows: rows.map((row) => ({
+        id: row.id,
+        sort: row.sort,
+        text: row.text,
+        options: row.options,
+        correctIndex: row.correctIndex,
+      })),
+    });
+  });
+
+  app.post("/api/admin/quiz/questions", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const quiz = await store.findActiveQuiz();
+    if (quiz === null) {
+      throw new DomainError("not_found", "Нет активной викторины");
+    }
+    const body = await readJsonBody(c);
+    const text = "text" in body && typeof body.text === "string" ? body.text : "";
+    const options = "options" in body && Array.isArray(body.options) ? body.options.map(String) : [];
+    const correctIndex = "correctIndex" in body && typeof body.correctIndex === "number" ? body.correctIndex : 0;
+    const question = await addQuizQuestion(store, { quizId: quiz.id, text, options, correctIndex });
+    return c.json({ question });
+  });
+
+  app.delete("/api/admin/quiz/questions/:id", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    await removeQuizQuestion(store, c.req.param("id"));
+    return c.json({ ok: true });
+  });
+
   app.post("/api/admin/quiz/start", async (c) => {
     await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
     const body = await readJsonBody(c);
@@ -345,14 +407,20 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
     if (quiz === null) {
       throw new DomainError("not_found", "Нет активной викторины");
     }
+    const now = new Date();
     const session = await startQuizSession(store, {
       quizId: quiz.id,
       durationMinutes,
-      now: new Date(),
+      now,
     });
+    let notified = 0;
+    if (botApi !== undefined) {
+      notified = await notifyActiveGuestsOfQuiz(store, botApi, { quizTitle: quiz.title, now });
+    }
     return c.json({
       sessionId: session.id,
       endsAt: session.endsAt.toISOString(),
+      notified,
     });
   });
 

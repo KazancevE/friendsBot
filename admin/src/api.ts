@@ -72,6 +72,8 @@ export type StatsSummary = {
   averageCheckRubles: number | null;
   staffActions: number;
   referralActivations: number;
+  gameSessions: number;
+  uniqueGamePlayers: number;
 };
 
 const isStatsSummary = (value: unknown): value is StatsSummary => {
@@ -162,6 +164,7 @@ export type GuestCard = {
   checkedInToday?: boolean;
   coupons?: Array<{ id: string; title: string }>;
   lotSummaries?: Array<{ category: string; remaining: number; expiresAt: string }>;
+  referral?: { invited: number; activated: number; bonusesEarned: number };
 };
 
 const isGuestCard = (value: unknown): value is GuestCard => {
@@ -309,6 +312,22 @@ export const downloadExport = async (type: string, days: number): Promise<ApiRes
         : "Ошибка экспорта";
     return { kind: "error", message };
   }
+  const contentType = res.headers.get("Content-Type") ?? "";
+  if (contentType.includes("application/json")) {
+    const parsed: unknown = await res.json();
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "tooLarge" in parsed &&
+      parsed.tooLarge === true &&
+      "downloadUrl" in parsed &&
+      typeof parsed.downloadUrl === "string"
+    ) {
+      window.open(parsed.downloadUrl, "_blank");
+      return { kind: "ok", data: null };
+    }
+    return { kind: "error", message: "Неожиданный ответ экспорта" };
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -328,6 +347,7 @@ export const sendBroadcast = (input: {
   segment: string;
   body: string;
   showInFeed: boolean;
+  photoId?: string;
   params?: { balanceMin?: number };
 }) =>
   postJson("/api/admin/broadcast/send", input, (value): value is { sent: number; failed: number; recipients: number } => {

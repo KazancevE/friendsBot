@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import { daysUntilBirthday, isBirthdayWeek } from "./birthday.ts";
-import type { BonusLotCategory, UserRecord } from "./types.ts";
+import { getReferralStats } from "./referral.ts";
+import type { BonusLotCategory, ReferralStats, UserRecord } from "./types.ts";
 import { MOSCOW } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
@@ -29,6 +30,7 @@ export type StaffGuestCard = {
   birthdayDaysUntil: number | null;
   staffNote: string | null;
   broadcastOptOut: boolean;
+  referral: ReferralStats;
 };
 
 const summarizeLots = (
@@ -66,6 +68,7 @@ export async function buildStaffGuestCard(
   const totalVisits = await store.countVisitsForUser(guest.id);
   const lastVisitAt = await store.lastVisitStartedAt(guest.id);
   const checkedInToday = await store.hasCheckInToday(guest.id, now);
+  const referral = await getReferralStats(store, guest.id);
   return {
     id: guest.id,
     firstName: guest.firstName,
@@ -86,6 +89,7 @@ export async function buildStaffGuestCard(
       guest.birthday !== null ? daysUntilBirthday(guest.birthday, now) : null,
     staffNote: guest.staffNote,
     broadcastOptOut: guest.broadcastOptOut,
+    referral,
   };
 };
 
@@ -138,6 +142,7 @@ export const formatStaffGuestCard = (card: StaffGuestCard): string => {
     `Check-in сегодня: ${card.checkedInToday ? "да" : "нет"}`,
     `Купоны: ${coupons}`,
     `Рассылка: ${card.broadcastOptOut ? "отключена" : "включена"}`,
+    `Рефералы: пригласил ${card.referral.invited} · активировано ${card.referral.activated} · +${card.referral.bonusesEarned} б.`,
   ];
   if (birthdayLine !== null) {
     lines.push(birthdayLine);

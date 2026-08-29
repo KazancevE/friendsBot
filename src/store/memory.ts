@@ -101,6 +101,13 @@ export class MemoryStore implements Store {
       active: true,
       maxScorePerSession: 5000,
     });
+    const defaultQuizId = crypto.randomUUID();
+    this.quizzes.set(defaultQuizId, {
+      id: defaultQuizId,
+      title: "Викторина",
+      active: true,
+      showInHub: false,
+    });
   }
 
   async withTransaction<T>(fn: (store: Store) => Promise<T>): Promise<T> {
@@ -769,8 +776,28 @@ export class MemoryStore implements Store {
       .map((row) => ({ ...row }));
   }
 
+  async countAcceptedGameSessionsBetween(from: Date, to: Date) {
+    return this.gameSessionLogs.filter(
+      (row) => row.accepted && row.createdAt >= from && row.createdAt <= to,
+    ).length;
+  }
+
+  async countUniqueGamePlayersBetween(from: Date, to: Date) {
+    const ids = new Set(
+      this.gameSessionLogs
+        .filter((row) => row.accepted && row.createdAt >= from && row.createdAt <= to)
+        .map((row) => row.userId),
+    );
+    return ids.size;
+  }
+
   async findActiveQuiz() {
     return [...this.quizzes.values()].find((quiz) => quiz.active) ?? null;
+  }
+
+  async findQuizById(id: string) {
+    const row = this.quizzes.get(id);
+    return row ? { ...row } : null;
   }
 
   async listQuizQuestions(quizId: string) {
@@ -778,6 +805,22 @@ export class MemoryStore implements Store {
       .filter((question) => question.quizId === quizId)
       .sort((a, b) => a.sort - b.sort)
       .map((question) => ({ ...question }));
+  }
+
+  async createQuizQuestion(input: {
+    quizId: string;
+    sort: number;
+    text: string;
+    options: string[];
+    correctIndex: number;
+  }) {
+    const row: QuizQuestionRecord = { id: crypto.randomUUID(), ...input };
+    this.quizQuestions.set(row.id, row);
+    return { ...row };
+  }
+
+  async deleteQuizQuestion(id: string) {
+    this.quizQuestions.delete(id);
   }
 
   async getLiveQuizSession(now: Date) {

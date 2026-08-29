@@ -21,6 +21,8 @@ export type StatsSummary = {
   averageCheckRubles: number | null;
   staffActions: number;
   referralActivations: number;
+  gameSessions: number;
+  uniqueGamePlayers: number;
 };
 
 export const periodToday = (now: Date): StatsPeriod => {
@@ -52,6 +54,8 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     bonusLiability,
     staffActions,
     referralActivations,
+    gameSessions,
+    uniqueGamePlayers,
   ] = await Promise.all([
     store.countRegistrationsBetween(period.from, period.to),
     store.countVisitsBetween(period.from, period.to),
@@ -61,6 +65,8 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     store.sumActiveBonusLotRemaining(now),
     store.countStaffActionsBetween(period.from, period.to),
     store.countReferralsActivatedBetween(period.from, period.to),
+    store.countAcceptedGameSessionsBetween(period.from, period.to),
+    store.countUniqueGamePlayersBetween(period.from, period.to),
   ]);
 
   let bonusesCredited = 0;
@@ -97,6 +103,8 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     averageCheckRubles: checkCount > 0 ? Math.round(checkTotal / checkCount) : null,
     staffActions,
     referralActivations,
+    gameSessions,
+    uniqueGamePlayers,
   };
 };
 
@@ -219,7 +227,29 @@ export const formatStatsSummary = (summary: StatsSummary): string => {
     "",
     `Действий персонала: ${summary.staffActions}`,
     `Активаций рефералов: ${summary.referralActivations}`,
+    "",
+    `Игровых партий: ${summary.gameSessions}`,
+    `Уникальных игроков: ${summary.uniqueGamePlayers}`,
   ].join("\n");
+};
+
+export async function formatStatsDetails(store: Store, period: StatsPeriod): Promise<string> {
+  const [visitsSeries, staff] = await Promise.all([
+    getStatsTimeseries(store, { period, metric: "visits" }),
+    getStatsStaff(store, period),
+  ]);
+  const dayLines = visitsSeries.points
+    .filter((point) => point.value > 0)
+    .map((point) => `  ${point.date.slice(5)}: ${point.value} визитов`)
+    .join("\n");
+  const staffLines =
+    staff.rows.length === 0
+      ? "  —"
+      : staff.rows
+          .slice(0, 5)
+          .map((row, index) => `  ${index + 1}. ${row.name} — ${row.actions}`)
+          .join("\n");
+  return ["📈 По дням (визиты):", dayLines || "  —", "", "👥 Топ персонала:", staffLines].join("\n");
 };
 
 export const staffActionLabel = (action: StaffActionKind): string => {

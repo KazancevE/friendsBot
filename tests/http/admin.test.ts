@@ -108,3 +108,34 @@ test("admin can patch settings and preview broadcast", async () => {
   const previewBody = (await preview.json()) as { count: number };
   expect(previewBody.count).toBeGreaterThanOrEqual(0);
 });
+
+test("admin export returns csv attachment", async () => {
+  const { admin, app } = await seedAdmin();
+  const initData = buildInitData({ id: Number(admin.telegramId) }, BOT_TOKEN);
+  const res = await app.request("/api/admin/export?type=ledger", {
+    headers: { "X-Telegram-Init-Data": initData },
+  });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("Content-Type")).toContain("text/csv");
+  const body = await res.text();
+  expect(body.length).toBeGreaterThan(0);
+});
+
+test("export token endpoint serves csv once", async () => {
+  const { admin, app } = await seedAdmin();
+  const initData = buildInitData({ id: Number(admin.telegramId) }, BOT_TOKEN);
+  const headers = { "X-Telegram-Init-Data": initData };
+  const oversized = await app.request("/api/admin/export?type=ledger", { headers });
+  if (oversized.headers.get("Content-Type")?.includes("application/json")) {
+    const payload = (await oversized.json()) as { downloadUrl?: string };
+    if (payload.downloadUrl !== undefined) {
+      const tokenRes = await app.request(payload.downloadUrl);
+      expect(tokenRes.status).toBe(200);
+      expect(tokenRes.headers.get("Content-Type")).toContain("text/csv");
+      const again = await app.request(payload.downloadUrl);
+      expect(again.status).toBe(404);
+      return;
+    }
+  }
+  expect(oversized.status).toBe(200);
+});

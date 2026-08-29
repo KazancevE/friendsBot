@@ -55,7 +55,7 @@ export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParame
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");
     keyboard.row().text("Статистика").text("История персонала").text("Экспорт");
-    keyboard.row().text("Подозрительные партии").text("Викторина");
+    keyboard.row().text("Подозрительные партии").text("Викторина").text("Вопрос викторины");
     keyboard.row().text("Веб-админ");
   }
 

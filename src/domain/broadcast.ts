@@ -111,6 +111,7 @@ export async function sendBroadcastMessages(input: {
   api: Api;
   telegramIds: readonly bigint[];
   body: string;
+  photoId?: string;
 }): Promise<{ sent: number; failed: number }> {
   let sent = 0;
   let failed = 0;
@@ -119,7 +120,11 @@ export async function sendBroadcastMessages(input: {
     const results = await Promise.all(
       batch.map(async (telegramId) => {
         try {
-          await input.api.sendMessage(telegramId.toString(), input.body);
+          if (input.photoId !== undefined) {
+            await input.api.sendPhoto(telegramId.toString(), input.photoId, { caption: input.body });
+          } else {
+            await input.api.sendMessage(telegramId.toString(), input.body);
+          }
           return true;
         } catch {
           return false;
@@ -140,6 +145,7 @@ export async function runBroadcast(
     params?: BroadcastSegmentParams;
     body: string;
     showInFeed: boolean;
+    photoId?: string;
     now: Date;
   },
 ) {
@@ -149,7 +155,7 @@ export async function runBroadcast(
   }
   const promo = await store.createPromo({
     body,
-    photos: [],
+    photos: input.photoId === undefined ? [] : [input.photoId],
     showInFeed: input.showInFeed,
   });
   const telegramIds = await recipientsForSegment(store, {
@@ -161,6 +167,7 @@ export async function runBroadcast(
     api: input.api,
     telegramIds,
     body,
+    photoId: input.photoId,
   });
   return {
     promoId: promo.id,
