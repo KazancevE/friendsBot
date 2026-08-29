@@ -65,3 +65,46 @@ test("admin export returns csv attachment", async () => {
   const body = await res.text();
   expect(body.length).toBeGreaterThan(0);
 });
+
+test("admin can read stats timeseries and staff ranking", async () => {
+  const { admin, app } = await seedAdmin();
+  const initData = buildInitData({ id: Number(admin.telegramId) }, BOT_TOKEN);
+  const headers = { "X-Telegram-Init-Data": initData };
+
+  const series = await app.request("/api/admin/stats/timeseries?metric=visits", { headers });
+  expect(series.status).toBe(200);
+  const seriesBody = (await series.json()) as { points: ReadonlyArray<{ date: string; value: number }> };
+  expect(Array.isArray(seriesBody.points)).toBe(true);
+
+  const staff = await app.request("/api/admin/stats/staff", { headers });
+  expect(staff.status).toBe(200);
+  const staffBody = (await staff.json()) as { rows: ReadonlyArray<{ actorId: string; actions: number }> };
+  expect(Array.isArray(staffBody.rows)).toBe(true);
+});
+
+test("admin can patch settings and preview broadcast", async () => {
+  const { admin, app } = await seedAdmin();
+  const initData = buildInitData({ id: Number(admin.telegramId) }, BOT_TOKEN);
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Telegram-Init-Data": initData,
+  };
+
+  const settings = await app.request("/api/admin/settings", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ patch: { percent: 12 } }),
+  });
+  expect(settings.status).toBe(200);
+  const settingsBody = (await settings.json()) as { settings: { percent: number } };
+  expect(settingsBody.settings.percent).toBe(12);
+
+  const preview = await app.request("/api/admin/broadcast/preview", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ segment: "all" }),
+  });
+  expect(preview.status).toBe(200);
+  const previewBody = (await preview.json()) as { count: number };
+  expect(previewBody.count).toBeGreaterThanOrEqual(0);
+});

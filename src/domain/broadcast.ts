@@ -1,4 +1,6 @@
 import { DateTime } from "luxon";
+import type { Api } from "grammy";
+import { DomainError } from "./errors.ts";
 import { isBirthdayWeek } from "./birthday.ts";
 import type { BroadcastSegmentId } from "./types.ts";
 import { MOSCOW, weekStartMoscow } from "./week.ts";
@@ -8,6 +10,8 @@ export type BroadcastSegmentParams = {
   balanceMin?: number;
   weeklyTopPlace?: number;
 };
+
+const BROADCAST_BATCH_SIZE = 25;
 
 export async function recipientsForBroadcast(store: Store): Promise<bigint[]> {
   return recipientsForSegment(store, { segment: "all", now: new Date() });
@@ -101,4 +105,66 @@ export const broadcastSegmentLabel = (segment: BroadcastSegmentId): string => {
       return _exhaustive;
     }
   }
+};
+
+export async function sendBroadcastMessages(input: {
+  api: Api;
+  telegramIds: readonly bigint[];
+  body: string;
+}): Promise<{ sent: number; failed: number }> {
+  let sent = 0;
+  let failed = 0;
+  for (let index = 0; index < input.telegramIds.length; index += BROADCAST_BATCH_SIZE) {
+    const batch = input.telegramIds.slice(index, index + BROADCAST_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (telegramId) => {
+        try {
+          await input.api.sendMessage(telegramId.toString(), input.body);
+          return true;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    sent += results.filter(Boolean).length;
+    failed += results.filter((ok) => !ok).length;
+  }
+  return { sent, failed };
+}
+
+export async function runBroadcast(
+  store: Store,
+  input: {
+    api: Api;
+    segment: BroadcastSegmentId;
+    params?: BroadcastSegmentParams;
+    body: string;
+    showInFeed: boolean;
+    now: Date;
+  },
+) {
+  const body = input.body.trim();
+  if (body.length === 0) {
+    throw new DomainError("bad_request", "Текст рассылки не должен быть пустым");
+  }
+  const promo = await store.createPromo({
+    body,
+    photos: [],
+    showInFeed: input.showInFeed,
+  });
+  const telegramIds = await recipientsForSegment(store, {
+    segment: input.segment,
+    params: input.params,
+    now: input.now,
+  });
+  const delivery = await sendBroadcastMessages({
+    api: input.api,
+    telegramIds,
+    body,
+  });
+  return {
+    promoId: promo.id,
+    recipients: telegramIds.length,
+    ...delivery,
+  };
 };

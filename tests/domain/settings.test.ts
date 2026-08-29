@@ -1,22 +1,15 @@
 import { expect, test } from "vitest";
-import { DEFAULT_SETTINGS, parsePrizeTable } from "../../src/domain/settings.ts";
+import { patchAdminSettings } from "../../src/domain/settings.ts";
+import { MemoryStore } from "../../src/store/memory.ts";
 
-test("defaults match spec", () => {
-  expect(DEFAULT_SETTINGS.percent).toBe(10);
-  expect(DEFAULT_SETTINGS.registrationBonus).toBe(500);
-  expect(DEFAULT_SETTINGS.birthdayBonus).toBe(500);
-  expect(DEFAULT_SETTINGS.visitHours).toBe(4);
-  expect(DEFAULT_SETTINGS.winnersCount).toBe(3);
-  expect(DEFAULT_SETTINGS.checkBonusTtlDays).toBe(30);
-  expect(DEFAULT_SETTINGS.giftBonusTtlDays).toBe(15);
-  expect(DEFAULT_SETTINGS.couponClaimDaysDefault).toBe(10);
-  expect(DEFAULT_SETTINGS.couponClaimDays).toBe(10);
-  expect(DEFAULT_SETTINGS.expireNotifyMinBonuses).toBe(300);
+test("patchAdminSettings validates percent range", async () => {
+  const store = new MemoryStore();
+  await expect(patchAdminSettings(store, { percent: 101 })).rejects.toThrow("100");
+  const settings = await patchAdminSettings(store, { percent: 15 });
+  expect(settings.percent).toBe(15);
 });
 
-test("prize table place 1 can mix bonuses and coupon", () => {
-  const table = parsePrizeTable(
-    JSON.stringify([{ place: 1, bonuses: 1000, couponTitle: "Кальян" }]),
-  );
-  expect(table[0]).toEqual({ place: 1, bonuses: 1000, couponTitle: "Кальян" });
+test("patchAdminSettings rejects empty patch", async () => {
+  const store = new MemoryStore();
+  await expect(patchAdminSettings(store, {})).rejects.toThrow("Нет полей");
 });

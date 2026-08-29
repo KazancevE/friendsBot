@@ -100,6 +100,105 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
   };
 };
 
+export type StatsMetric = "visits" | "bonuses" | "checkins";
+
+export type StatsTimeseriesPoint = {
+  date: string;
+  value: number;
+};
+
+export type StatsStaffRow = {
+  actorId: string;
+  name: string;
+  actions: number;
+};
+
+const moscowDayKey = (date: Date) => DateTime.fromJSDate(date, { zone: MOSCOW }).toFormat("yyyy-MM-dd");
+
+const dayKeysInPeriod = (period: StatsPeriod): string[] => {
+  const start = DateTime.fromJSDate(period.from, { zone: MOSCOW }).startOf("day");
+  const end = DateTime.fromJSDate(period.to, { zone: MOSCOW }).startOf("day");
+  const keys: string[] = [];
+  let cursor = start;
+  while (cursor <= end) {
+    keys.push(cursor.toFormat("yyyy-MM-dd"));
+    cursor = cursor.plus({ days: 1 });
+  }
+  return keys;
+};
+
+export async function getStatsTimeseries(
+  store: Store,
+  input: { period: StatsPeriod; metric: StatsMetric },
+): Promise<{ points: StatsTimeseriesPoint[] }> {
+  const keys = dayKeysInPeriod(input.period);
+  const buckets = new Map(keys.map((key) => [key, 0]));
+
+  if (input.metric === "visits") {
+    const rows = await store.listVisitsBetween(input.period.from, input.period.to);
+    for (const row of rows) {
+      const key = moscowDayKey(row.startedAt);
+      if (buckets.has(key)) {
+        buckets.set(key, (buckets.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
+  if (input.metric === "checkins") {
+    const rows = await store.listCheckInsBetween(input.period.from, input.period.to);
+    for (const row of rows) {
+      const key = moscowDayKey(row.createdAt);
+      if (buckets.has(key)) {
+        buckets.set(key, (buckets.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
+  if (input.metric === "bonuses") {
+    const rows = await store.listLedgerBetween(input.period.from, input.period.to);
+    for (const row of rows) {
+      if (creditTypes.has(row.type) && row.amount > 0) {
+        const key = moscowDayKey(row.createdAt);
+        if (buckets.has(key)) {
+          buckets.set(key, (buckets.get(key) ?? 0) + row.amount);
+        }
+      }
+    }
+  }
+
+  return {
+    points: keys.map((date) => ({ date, value: buckets.get(date) ?? 0 })),
+  };
+}
+
+export async function getStatsStaff(
+  store: Store,
+  period: StatsPeriod,
+): Promise<{ rows: StatsStaffRow[] }> {
+  const logs = await store.listStaffActionLog({
+    from: period.from,
+    to: period.to,
+    limit: 10_000,
+    offset: 0,
+  });
+  const counts = new Map<string, number>();
+  for (const row of logs) {
+    counts.set(row.actorId, (counts.get(row.actorId) ?? 0) + 1);
+  }
+  const ranked = [...counts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 10);
+  const rows = await Promise.all(
+    ranked.map(async ([actorId, actions]) => {
+      const user = await store.findUserById(actorId);
+      const name =
+        user === null
+          ? actorId
+          : `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || actorId;
+      return { actorId, name, actions };
+    }),
+  );
+  return { rows };
+};
+
 export const formatStatsSummary = (summary: StatsSummary): string => {
   const from = DateTime.fromJSDate(summary.period.from, { zone: MOSCOW }).toFormat("dd.MM.yyyy");
   const to = DateTime.fromJSDate(summary.period.to, { zone: MOSCOW }).toFormat("dd.MM.yyyy HH:mm");

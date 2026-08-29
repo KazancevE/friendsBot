@@ -1,12 +1,15 @@
 import { Hono } from "hono";
-import { broadcastSegmentLabel, previewSegmentCount } from "../domain/broadcast.ts";
+import type { Api } from "grammy";
+import { broadcastSegmentLabel, previewSegmentCount, runBroadcast } from "../domain/broadcast.ts";
+import { addMenuItem } from "../domain/content.ts";
 import { exportCsv, type ExportType } from "../domain/export.ts";
 import { buildStaffGuestCard } from "../domain/guest-card.ts";
 import { listRejectedSessions } from "../domain/games.ts";
 import { searchGuestsByName } from "../domain/guest-search.ts";
 import { promoRuleKindLabelRu } from "../domain/promo-rules.ts";
-import { getLiveQuiz } from "../domain/quiz.ts";
-import { getStatsSummary, periodLastDays, periodToday } from "../domain/stats.ts";
+import { getLiveQuiz, startQuizSession } from "../domain/quiz.ts";
+import { patchAdminSettings } from "../domain/settings.ts";
+import { getStatsSummary, getStatsStaff, getStatsTimeseries, periodLastDays, periodToday } from "../domain/stats.ts";
 import { extendActiveVisit } from "../domain/visits.ts";
 import { DomainError } from "../domain/errors.ts";
 import type { BroadcastSegmentId, Role, Settings } from "../domain/types.ts";
@@ -16,6 +19,7 @@ import { resolveActor } from "./auth.ts";
 type CreateAdminRoutesParameters = {
   readonly store: Store;
   readonly botToken: string;
+  readonly botApi?: Api;
 };
 
 const isAdmin = (role: Role) => role === "admin";
@@ -97,12 +101,25 @@ const settingsToJson = (settings: Settings) => ({
   maxSessionsPerHour: settings.maxSessionsPerHour,
 });
 
-export const createAdminRoutes = ({ store, botToken }: CreateAdminRoutesParameters) => {
+const isBroadcastSegment = (value: string): value is BroadcastSegmentId => {
+  return (BROADCAST_SEGMENTS as readonly string[]).includes(value);
+};
+
+const readJsonBody = async (c: { req: { json(): Promise<unknown> } }) => {
+  const body: unknown = await c.req.json();
+  if (typeof body !== "object" || body === null) {
+    throw new DomainError("bad_request", "Некорректное тело");
+  }
+  return body;
+};
+
+export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutesParameters) => {
   const app = new Hono();
 
   app.onError((err, c) => {
     if (err instanceof DomainError) {
-      const status = err.code === "forbidden" ? 403 : 400;
+      const status =
+        err.code === "forbidden" ? 403 : err.code === "unavailable" ? 503 : err.code === "not_found" ? 404 : 400;
       return c.json({ code: err.code, message: err.message }, status);
     }
     const message = err instanceof Error ? err.message : "Ошибка";
@@ -116,6 +133,28 @@ export const createAdminRoutes = ({ store, botToken }: CreateAdminRoutesParamete
     const to = parseDate(c.req.query("to"), now);
     const summary = await getStatsSummary(store, { from, to }, now);
     return c.json(summary);
+  });
+
+  app.get("/api/admin/stats/timeseries", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const from = parseDate(c.req.query("from"), periodLastDays(now, 7).from);
+    const to = parseDate(c.req.query("to"), now);
+    const metricRaw = c.req.query("metric") ?? "visits";
+    if (metricRaw !== "visits" && metricRaw !== "bonuses" && metricRaw !== "checkins") {
+      throw new DomainError("bad_request", "Неизвестная метрика");
+    }
+    const series = await getStatsTimeseries(store, { period: { from, to }, metric: metricRaw });
+    return c.json(series);
+  });
+
+  app.get("/api/admin/stats/staff", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const from = parseDate(c.req.query("from"), periodLastDays(now, 7).from);
+    const to = parseDate(c.req.query("to"), now);
+    const staff = await getStatsStaff(store, { from, to });
+    return c.json(staff);
   });
 
   app.get("/api/admin/staff-log", async (c) => {
@@ -237,6 +276,160 @@ export const createAdminRoutes = ({ store, botToken }: CreateAdminRoutesParamete
         startedAt: live.session.startedAt.toISOString(),
         endsAt: live.session.endsAt.toISOString(),
         questionCount: live.questions.length,
+      },
+    });
+  });
+
+  app.post("/api/admin/broadcast/preview", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const segmentRaw = "segment" in body && typeof body.segment === "string" ? body.segment : null;
+    if (segmentRaw === null || !isBroadcastSegment(segmentRaw)) {
+      throw new DomainError("bad_request", "Неизвестный сегмент");
+    }
+    const params =
+      "params" in body && typeof body.params === "object" && body.params !== null
+        ? (body.params as { balanceMin?: number; weeklyTopPlace?: number })
+        : undefined;
+    const count = await previewSegmentCount(store, { segment: segmentRaw, params, now: new Date() });
+    return c.json({ count });
+  });
+
+  app.post("/api/admin/broadcast/send", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    if (botApi === undefined) {
+      throw new DomainError("unavailable", "Bot API недоступен");
+    }
+    const body = await readJsonBody(c);
+    const segmentRaw = "segment" in body && typeof body.segment === "string" ? body.segment : null;
+    const text = "body" in body && typeof body.body === "string" ? body.body : null;
+    if (segmentRaw === null || !isBroadcastSegment(segmentRaw) || text === null) {
+      throw new DomainError("bad_request", "Нужны segment и body");
+    }
+    const params =
+      "params" in body && typeof body.params === "object" && body.params !== null
+        ? (body.params as { balanceMin?: number; weeklyTopPlace?: number })
+        : undefined;
+    const showInFeed = "showInFeed" in body && body.showInFeed === true;
+    const result = await runBroadcast(store, {
+      api: botApi,
+      segment: segmentRaw,
+      params,
+      body: text,
+      showInFeed,
+      now: new Date(),
+    });
+    return c.json(result);
+  });
+
+  app.patch("/api/admin/settings", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const patch =
+      "patch" in body && typeof body.patch === "object" && body.patch !== null
+        ? (body.patch as Partial<Settings>)
+        : null;
+    if (patch === null) {
+      throw new DomainError("bad_request", "Нужен patch");
+    }
+    const settings = await patchAdminSettings(store, patch);
+    return c.json({ settings: settingsToJson(settings) });
+  });
+
+  app.post("/api/admin/quiz/start", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const durationMinutes =
+      "durationMinutes" in body && typeof body.durationMinutes === "number" ? body.durationMinutes : 30;
+    const quiz = await store.findActiveQuiz();
+    if (quiz === null) {
+      throw new DomainError("not_found", "Нет активной викторины");
+    }
+    const session = await startQuizSession(store, {
+      quizId: quiz.id,
+      durationMinutes,
+      now: new Date(),
+    });
+    return c.json({
+      sessionId: session.id,
+      endsAt: session.endsAt.toISOString(),
+    });
+  });
+
+  app.get("/api/admin/menu", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const rows = await store.listMenu();
+    return c.json({
+      rows: rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        priceRubles: row.priceRubles,
+        sort: row.sort,
+        active: row.active,
+      })),
+    });
+  });
+
+  app.post("/api/admin/menu", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const title = "title" in body && typeof body.title === "string" ? body.title.trim() : "";
+    const description = "description" in body && typeof body.description === "string" ? body.description : "";
+    const priceRubles =
+      "priceRubles" in body && (typeof body.priceRubles === "number" || body.priceRubles === null)
+        ? body.priceRubles
+        : null;
+    const item = await addMenuItem(store, {
+      actorId: admin.id,
+      title,
+      description,
+      priceRubles,
+    });
+    return c.json({
+      item: {
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        priceRubles: item.priceRubles,
+        sort: item.sort,
+        active: item.active,
+      },
+    });
+  });
+
+  app.patch("/api/admin/menu/:id", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const existing = (await store.listMenu()).find((row) => row.id === c.req.param("id"));
+    if (existing === undefined) {
+      throw new DomainError("not_found", "Позиция не найдена");
+    }
+    const body = await readJsonBody(c);
+    const title = "title" in body && typeof body.title === "string" ? body.title.trim() : existing.title;
+    const description =
+      "description" in body && typeof body.description === "string" ? body.description : existing.description;
+    const priceRubles =
+      "priceRubles" in body && (typeof body.priceRubles === "number" || body.priceRubles === null)
+        ? body.priceRubles
+        : existing.priceRubles;
+    const active = "active" in body && typeof body.active === "boolean" ? body.active : existing.active;
+    const item = await store.upsertMenuItem({
+      id: existing.id,
+      title,
+      description,
+      priceRubles,
+      imageFileId: existing.imageFileId,
+      sort: existing.sort,
+      active,
+    });
+    return c.json({
+      item: {
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        priceRubles: item.priceRubles,
+        sort: item.sort,
+        active: item.active,
       },
     });
   });

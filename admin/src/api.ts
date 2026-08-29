@@ -88,6 +88,47 @@ export const fetchStats = (days: number) => {
   return getJson(`/api/admin/stats/summary?${params.toString()}`, isStatsSummary);
 };
 
+const periodParams = (days: number) => {
+  const to = new Date();
+  const from = new Date(to.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+  return new URLSearchParams({
+    from: from.toISOString(),
+    to: to.toISOString(),
+  });
+};
+
+export type StatsTimeseriesPoint = {
+  date: string;
+  value: number;
+};
+
+const isTimeseries = (value: unknown): value is { points: StatsTimeseriesPoint[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { points: unknown }).points);
+};
+
+export type StatsMetric = "visits" | "bonuses" | "checkins";
+
+export const fetchTimeseries = (metric: StatsMetric, days: number) => {
+  const params = periodParams(days);
+  params.set("metric", metric);
+  return getJson(`/api/admin/stats/timeseries?${params.toString()}`, isTimeseries);
+};
+
+export type StatsStaffRow = {
+  actorId: string;
+  name: string;
+  actions: number;
+};
+
+const isStaffStats = (value: unknown): value is { rows: StatsStaffRow[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
+};
+
+export const fetchStaffStats = (days: number) => {
+  const params = periodParams(days);
+  return getJson(`/api/admin/stats/staff?${params.toString()}`, isStaffStats);
+};
+
 export type GuestHit = {
   id: string;
   firstName: string | null;
@@ -114,6 +155,13 @@ export type GuestCard = {
   birthdayWeek?: boolean;
   birthdayDaysUntil?: number | null;
   staffNote?: string | null;
+  visitActive?: boolean;
+  visitEndsAt?: string | null;
+  totalVisits?: number;
+  lastVisitAt?: string | null;
+  checkedInToday?: boolean;
+  coupons?: Array<{ id: string; title: string }>;
+  lotSummaries?: Array<{ category: string; remaining: number; expiresAt: string }>;
 };
 
 const isGuestCard = (value: unknown): value is GuestCard => {
@@ -149,7 +197,11 @@ const isStaffLog = (value: unknown): value is { rows: StaffLogRow[] } => {
   return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
 };
 
-export const fetchStaffLog = () => getJson("/api/admin/staff-log?limit=30", isStaffLog);
+export const fetchStaffLog = (days = 7) => {
+  const params = periodParams(days);
+  params.set("limit", "50");
+  return getJson(`/api/admin/staff-log?${params.toString()}`, isStaffLog);
+};
 
 export type RejectedSession = {
   slug: string;
@@ -266,3 +318,90 @@ export const downloadExport = async (type: string, days: number): Promise<ApiRes
   URL.revokeObjectURL(url);
   return { kind: "ok", data: null };
 };
+
+export const previewBroadcast = (segment: string, params?: { balanceMin?: number }) =>
+  postJson("/api/admin/broadcast/preview", { segment, params }, (value): value is { count: number } => {
+    return typeof value === "object" && value !== null && typeof (value as { count: number }).count === "number";
+  });
+
+export const sendBroadcast = (input: {
+  segment: string;
+  body: string;
+  showInFeed: boolean;
+  params?: { balanceMin?: number };
+}) =>
+  postJson("/api/admin/broadcast/send", input, (value): value is { sent: number; failed: number; recipients: number } => {
+    return typeof value === "object" && value !== null && typeof (value as { sent: number }).sent === "number";
+  });
+
+export const patchSettings = (patch: Partial<SettingsView>) =>
+  fetch("/api/admin/settings", {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ patch }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof body === "object" && body !== null && "message" in body && typeof body.message === "string"
+          ? body.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    const parsed: unknown = await res.json();
+    if (!isSettingsResponse(parsed)) {
+      return { kind: "error" as const, message: "Некорректный ответ" };
+    }
+    return { kind: "ok" as const, data: parsed.settings };
+  });
+
+export const startQuiz = (durationMinutes = 30) =>
+  postJson("/api/admin/quiz/start", { durationMinutes }, (value): value is { sessionId: string; endsAt: string } => {
+    return typeof value === "object" && value !== null && typeof (value as { sessionId: string }).sessionId === "string";
+  });
+
+export type MenuItem = {
+  id: string;
+  title: string;
+  description: string;
+  priceRubles: number | null;
+  sort: number;
+  active: boolean;
+};
+
+const isMenuList = (value: unknown): value is { rows: MenuItem[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
+};
+
+const isMenuItemResponse = (value: unknown): value is { item: MenuItem } => {
+  return typeof value === "object" && value !== null && typeof (value as { item: MenuItem }).item?.id === "string";
+};
+
+export const fetchMenu = () => getJson("/api/admin/menu", isMenuList);
+
+export const createMenuItem = (input: { title: string; description: string; priceRubles: number | null }) =>
+  postJson("/api/admin/menu", input, isMenuItemResponse);
+
+export const updateMenuItem = (
+  id: string,
+  patch: Partial<{ title: string; description: string; priceRubles: number | null; active: boolean }>,
+) =>
+  fetch(`/api/admin/menu/${id}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(patch),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof body === "object" && body !== null && "message" in body && typeof body.message === "string"
+          ? body.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    const parsed: unknown = await res.json();
+    if (!isMenuItemResponse(parsed)) {
+      return { kind: "error" as const, message: "Некорректный ответ" };
+    }
+    return { kind: "ok" as const, data: parsed.item };
+  });

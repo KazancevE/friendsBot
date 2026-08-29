@@ -1,4 +1,6 @@
+import { DomainError } from "./errors.ts";
 import type { PrizePlace, Settings } from "./types.ts";
+import type { Store } from "../store/types.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
   percent: 10,
@@ -43,4 +45,44 @@ export function parsePrizeTable(json: string): PrizePlace[] {
 
 export function calculateCheckBonus(checkRubles: number, percent: number): number {
   return Math.floor((checkRubles * percent) / 100);
+}
+
+const assertNonNegativeInt = (value: number, label: string) => {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new DomainError("bad_request", `${label} должно быть целым ≥ 0`);
+  }
+};
+
+export async function patchAdminSettings(store: Store, patch: Partial<Settings>): Promise<Settings> {
+  if (patch.percent !== undefined) {
+    assertNonNegativeInt(patch.percent, "Процент");
+    if (patch.percent > 100) {
+      throw new DomainError("bad_request", "Процент не больше 100");
+    }
+  }
+  if (patch.registrationBonus !== undefined) {
+    assertNonNegativeInt(patch.registrationBonus, "Бонус регистрации");
+  }
+  if (patch.birthdayBonus !== undefined) {
+    assertNonNegativeInt(patch.birthdayBonus, "Бонус ДР");
+  }
+  if (patch.visitHours !== undefined) {
+    assertNonNegativeInt(patch.visitHours, "Длительность визита");
+    if (patch.visitHours < 1 || patch.visitHours > 24) {
+      throw new DomainError("bad_request", "Визит от 1 до 24 часов");
+    }
+  }
+  if (patch.referralBonusReferrer !== undefined) {
+    assertNonNegativeInt(patch.referralBonusReferrer, "Реф. бонус пригласившему");
+  }
+  if (patch.referralBonusReferee !== undefined) {
+    assertNonNegativeInt(patch.referralBonusReferee, "Реф. бонус другу");
+  }
+  if (patch.maxSessionsPerHour !== undefined) {
+    assertNonNegativeInt(patch.maxSessionsPerHour, "Лимит сессий");
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new DomainError("bad_request", "Нет полей для обновления");
+  }
+  return store.updateSettings(patch);
 }

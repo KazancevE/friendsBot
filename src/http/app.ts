@@ -35,7 +35,7 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
   app.route("/", createCashierRoutes({ store, botToken }));
   app.route("/", createCheckInRoutes({ store, botToken, botApi: bot?.api }));
   app.route("/", createGameRoutes({ store, botToken }));
-  app.route("/", createAdminRoutes({ store, botToken }));
+  app.route("/", createAdminRoutes({ store, botToken, botApi: bot?.api }));
 
   if (bot !== undefined) {
     const handleUpdate = webhookCallback(bot, "hono");
