@@ -1,21 +1,38 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DomainError } from "./errors.ts";
 import type { MenuItemRecord } from "./types.ts";
 import type { Store } from "../store/types.ts";
+import { loadS3Config } from "../storage/s3-config.ts";
+import {
+  buildObjectKey,
+  deleteObject,
+  keyFromPublicUrl,
+  uploadObject,
+} from "../storage/object-storage.ts";
 
 const MENU_UPLOAD_DIR = join(process.cwd(), "uploads", "menu");
 const ALLOWED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+
+const contentTypeForExtension = (ext: string) => {
+  if (ext === ".jpg" || ext === ".jpeg") {
+    return "image/jpeg";
+  }
+  if (ext === ".png") {
+    return "image/png";
+  }
+  if (ext === ".webp") {
+    return "image/webp";
+  }
+  return "application/octet-stream";
+};
 
 export const menuUploadDir = () => MENU_UPLOAD_DIR;
 
 export const menuImagePublicPath = (filename: string) => `/uploads/menu/${filename}`;
 
-export async function saveMenuUpload(input: {
-  bytes: Uint8Array;
-  originalName: string;
-}): Promise<string> {
+const validateUpload = (input: { bytes: Uint8Array; originalName: string }) => {
   const ext = extname(input.originalName).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext)) {
     throw new DomainError("bad_request", "Формат: JPG, PNG или WebP");
@@ -23,11 +40,71 @@ export async function saveMenuUpload(input: {
   if (input.bytes.length > 8 * 1024 * 1024) {
     throw new DomainError("bad_request", "Файл не больше 8 МБ");
   }
+  return ext;
+};
 
+async function saveMenuUploadLocal(input: { bytes: Uint8Array; originalName: string }): Promise<string> {
+  const ext = validateUpload(input);
   await mkdir(MENU_UPLOAD_DIR, { recursive: true });
   const filename = `${randomUUID()}${ext}`;
   await writeFile(join(MENU_UPLOAD_DIR, filename), input.bytes);
   return menuImagePublicPath(filename);
+}
+
+async function saveMenuUploadS3(input: { bytes: Uint8Array; originalName: string }): Promise<string> {
+  const s3 = loadS3Config();
+  if (s3 === null) {
+    throw new Error("S3 is not configured");
+  }
+  const ext = validateUpload(input);
+  const filename = `${randomUUID()}${ext}`;
+  const key = buildObjectKey(s3.keyPrefix, filename);
+  return uploadObject(s3, {
+    key,
+    bytes: input.bytes,
+    contentType: contentTypeForExtension(ext),
+  });
+}
+
+export async function saveMenuUpload(input: {
+  bytes: Uint8Array;
+  originalName: string;
+}): Promise<string> {
+  if (loadS3Config() !== null) {
+    return saveMenuUploadS3(input);
+  }
+  return saveMenuUploadLocal(input);
+}
+
+async function deleteStoredMenuUpload(imageUrl: string | null) {
+  if (imageUrl === null) {
+    return;
+  }
+
+  const s3 = loadS3Config();
+  if (imageUrl.startsWith("http") && s3 !== null) {
+    const key = keyFromPublicUrl(s3, imageUrl);
+    if (key !== null) {
+      try {
+        await deleteObject(s3, key);
+      } catch {
+        // ignore missing objects
+      }
+    }
+    return;
+  }
+
+  if (imageUrl.startsWith("/uploads/menu/")) {
+    const filename = imageUrl.slice("/uploads/menu/".length);
+    if (filename.length === 0 || filename.includes("/") || filename.includes("..")) {
+      return;
+    }
+    try {
+      await unlink(join(MENU_UPLOAD_DIR, filename));
+    } catch {
+      // ignore missing files
+    }
+  }
 }
 
 export const isGalleryMenuItem = (item: MenuItemRecord) => {
@@ -106,5 +183,6 @@ export async function removeMenuGalleryImage(store: Store, input: { actorId: str
     throw new DomainError("not_found", "Фото не найдено");
   }
 
+  await deleteStoredMenuUpload(item.imageUrl);
   await store.deleteMenuItem(item.id);
 }
