@@ -321,10 +321,12 @@ test("admin broadcast success restores the main keyboard", async () => {
 
   await sendText(bot, { userId: ADMIN_ID, text: "/start", updateId: 1 });
   await sendText(bot, { userId: ADMIN_ID, text: "Рассылка", updateId: 2 });
-  await sendText(bot, { userId: ADMIN_ID, text: "Скидка на кальян", updateId: 3 });
-  await sendText(bot, { userId: ADMIN_ID, text: "пропустить", updateId: 4 });
-  await sendText(bot, { userId: ADMIN_ID, text: "да", updateId: 5 });
-  await sendText(bot, { userId: ADMIN_ID, text: "нет", updateId: 6 });
+  await sendText(bot, { userId: ADMIN_ID, text: "1", updateId: 3 });
+  await sendText(bot, { userId: ADMIN_ID, text: "Скидка на кальян", updateId: 4 });
+  await sendText(bot, { userId: ADMIN_ID, text: "пропустить", updateId: 5 });
+  await sendText(bot, { userId: ADMIN_ID, text: "да", updateId: 6 });
+  await sendText(bot, { userId: ADMIN_ID, text: "нет", updateId: 7 });
+  await sendText(bot, { userId: ADMIN_ID, text: "нет", updateId: 8 });
 
   const promos = await store.listFeedPromos();
   expect(promos).toHaveLength(1);

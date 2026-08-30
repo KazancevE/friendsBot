@@ -1,4 +1,5 @@
 import { DomainError } from "./errors.ts";
+import { tryActivateReferral } from "./referral.ts";
 import type { CheckInMethod } from "./types.ts";
 import { openOrExtendVisit } from "./visits.ts";
 import { resolveVenueCodeForCheckIn } from "./venue-code.ts";
@@ -14,7 +15,7 @@ export async function guestCheckIn(
     now: Date;
   },
 ) {
-  return store.withTransaction(async (tx) => {
+  const result = await store.withTransaction(async (tx) => {
     const guest = await tx.findUserById(input.userId);
     if (guest === null) {
       throw new DomainError("not_found", "Пользователь не найден");
@@ -42,6 +43,12 @@ export async function guestCheckIn(
       method: input.method,
       createdAt: input.now,
     });
-    return { visit, venueCode };
+    return { visit, venueCode, visitId: visit.id };
   });
+  await tryActivateReferral(store, {
+    guestId: input.userId,
+    now: input.now,
+    visitId: result.visitId,
+  });
+  return { visit: result.visit, venueCode: result.venueCode };
 }

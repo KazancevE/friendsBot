@@ -1,11 +1,18 @@
 import { DateTime } from "luxon";
 import type { Store } from "../store/types.ts";
+import {
+  anticheatErrorFromVerdict,
+  evaluateGameSession,
+  logGameSession,
+  type SessionTiming,
+} from "./game-anticheat.ts";
 import { DomainError } from "./errors.ts";
 import type { Role } from "./types.ts";
 import { rankScores } from "./score-ranking.ts";
 import { weekStartMoscow } from "./week.ts";
 
 const LEADERBOARD_TOP = 10;
+const QUIZ_SLUG = "quiz";
 
 const DEFAULT_GAME_RULES_BODY =
   "Каждую неделю мы подводим итоги игр в «Друзьях». Очки из всех игр складываются в общий зачёт — призы получают лучшие по сумме. В каждой игре есть отдельный рейтинг, чтобы видеть свои успехи. Очки начисляются только во время визита. В конце недели лучшие гости получают бонусы и купоны по таблице призов. Играйте честно и возвращайтесь снова!";
@@ -15,6 +22,15 @@ type SubmitScoreParameters = {
   readonly slug: string;
   readonly points: number;
   readonly now: Date;
+  readonly sessionStartedAt?: Date;
+  readonly sessionEndedAt?: Date;
+};
+
+const sessionTiming = (input: SubmitScoreParameters): SessionTiming | null => {
+  if (input.sessionStartedAt === undefined || input.sessionEndedAt === undefined) {
+    return null;
+  }
+  return { startedAt: input.sessionStartedAt, endedAt: input.sessionEndedAt };
 };
 
 const validateGameAndPoints = async (
@@ -42,11 +58,33 @@ export const submitScoreOrPractice = async (store: Store, input: SubmitScorePara
     if (visit === null) {
       throw new DomainError("no_visit", "Игры доступны во время визита в «Друзьях»");
     }
-    await validateGameAndPoints(store, input.slug, input.points);
-    const game = await store.findGameBySlug(input.slug);
+    const game = await validateGameAndPoints(store, input.slug, input.points);
+    const timing = sessionTiming(input);
+    const verdict = await evaluateGameSession(store, {
+      userId: user.id,
+      gameId: game.id,
+      slug: input.slug,
+      points: input.points,
+      maxScorePerSession: game.maxScorePerSession,
+      timing,
+      now: input.now,
+    });
+    await logGameSession(store, {
+      userId: user.id,
+      gameId: game.id,
+      slug: input.slug,
+      points: input.points,
+      maxScorePerSession: game.maxScorePerSession,
+      timing,
+      now: input.now,
+      verdict,
+    });
+    if (!verdict.accepted) {
+      throw anticheatErrorFromVerdict(verdict);
+    }
     const weekStart = weekStartMoscow(DateTime.fromJSDate(input.now)).toJSDate();
     const score = await store.withTransaction(async (tx) => {
-      const week = await tx.getOrCreateOpenWeek(game!.id, weekStart);
+      const week = await tx.getOrCreateOpenWeek(game.id, weekStart);
       return tx.addScore(week.id, user.id, input.points, input.now);
     });
     return { points: score.points, counted: true as const };
@@ -148,12 +186,15 @@ export const getLeaderboard = async (store: Store, input: GetLeaderboardParamete
   return buildLeaderboard(store, await store.listWeekScores(week.id), input);
 };
 
-export const listGames = async (store: Store) => {
+export const listGames = async (store: Store, now = new Date()) => {
   const games = await store.listActiveGames();
-  return games.map((game) => ({
-    slug: game.slug,
-    title: game.title,
-  }));
+  const liveQuiz = await store.getLiveQuizSession(now);
+  return games
+    .filter((game) => game.slug !== QUIZ_SLUG || liveQuiz !== null)
+    .map((game) => ({
+      slug: game.slug,
+      title: game.title,
+    }));
 };
 
 export const getGameRules = async (store: Store) => {
@@ -164,4 +205,8 @@ export const getGameRules = async (store: Store) => {
     prizeTable: settings.prizeTable,
     body: page?.body ?? DEFAULT_GAME_RULES_BODY,
   };
+};
+
+export const listRejectedSessions = async (store: Store, limit = 20) => {
+  return store.listRejectedGameSessionLogs(limit);
 };

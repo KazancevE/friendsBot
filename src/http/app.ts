@@ -15,11 +15,18 @@ type CreateHttpAppParameters = {
 };
 
 const MINIAPP_INDEX = "miniapp/dist/index.html";
+const ADMIN_INDEX = "admin/dist/index.html";
 
 const rewriteMiniAppPath = (path: string) => {
   const stripped = path.replace(/^\/app\/?/, "");
   const file = stripped === "" ? "index.html" : stripped;
   return `miniapp/dist/${file}`;
+};
+
+const rewriteAdminPath = (path: string) => {
+  const stripped = path.replace(/^\/admin\/?/, "");
+  const file = stripped === "" ? "index.html" : stripped;
+  return `admin/dist/${file}`;
 };
 
 export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters) => {
@@ -28,7 +35,7 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
   app.route("/", createCashierRoutes({ store, botToken }));
   app.route("/", createCheckInRoutes({ store, botToken, botApi: bot?.api }));
   app.route("/", createGameRoutes({ store, botToken }));
-  app.route("/", createAdminRoutes({ store, botToken }));
+  app.route("/", createAdminRoutes({ store, botToken, botApi: bot?.api }));
 
   if (bot !== undefined) {
     const handleUpdate = webhookCallback(bot, "hono");
@@ -48,6 +55,16 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
     serveStatic({
       root: ".",
       rewriteRequestPath: rewriteMiniAppPath,
+    }),
+  );
+
+  app.use("/admin", serveStatic({ root: ".", path: ADMIN_INDEX }));
+  app.use("/admin/", serveStatic({ root: ".", path: ADMIN_INDEX }));
+  app.use(
+    "/admin/*",
+    serveStatic({
+      root: ".",
+      rewriteRequestPath: rewriteAdminPath,
     }),
   );
 

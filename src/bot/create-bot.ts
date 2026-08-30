@@ -4,6 +4,7 @@ import { Bot, session } from "grammy";
 import type { Store } from "../store/types.ts";
 import {
   addMenuItemConversation,
+  addQuizQuestionConversation,
   assignRoleConversation,
   createPromoConversation,
   editContactsConversation,
@@ -87,6 +88,7 @@ export function createBot(
   bot.use(createConversation(setWeeklyPrizesConversation, "setWeeklyPrizes"));
   bot.use(createConversation(assignRoleConversation, "assignRole"));
   bot.use(createConversation(addMenuItemConversation, "addMenuItem"));
+  bot.use(createConversation(addQuizQuestionConversation, "addQuizQuestion"));
   bot.use(createConversation(editContactsConversation, "editContacts"));
   bot.use(createConversation(editDirectionsConversation, "editDirections"));
   bot.use(createConversation(createPromoConversation, "createPromo"));

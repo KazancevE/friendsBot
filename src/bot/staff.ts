@@ -147,6 +147,14 @@ export async function staffCheckConversation(conversation: BotConversation, ctx:
   }
 
   const checkRubles = await askInt(conversation, ctx, "Сумма чека в рублях");
+  await ctx.reply("Промокод? (отправьте «пропустить», если нет)");
+  const promoRaw = (
+    await conversation.waitFor(":text", {
+      otherwise: (c) => c.reply("Отправьте промокод или «пропустить»"),
+    })
+  ).msg.text.trim();
+  const promoCode =
+    promoRaw.toLowerCase() === "пропустить" || promoRaw === "-" ? null : promoRaw;
   const result = await conversation.external(async (outer) => {
     const actor = outer.dbUser;
     const guestId = outer.session.staffGuestId;
@@ -162,6 +170,7 @@ export async function staffCheckConversation(conversation: BotConversation, ctx:
         actorId: actor.id,
         checkRubles,
         now: new Date(),
+        promoCode,
       });
       return { ok: true as const, bonus: applied.bonus, balance: applied.user.balance };
     } catch (err) {

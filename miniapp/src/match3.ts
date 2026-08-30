@@ -57,6 +57,7 @@ const animateCountUp = (
 };
 
 export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
+  const sessionStartedAt = new Date();
   let board: Board = createBoard();
   let score = 0;
   let moves = MOVES_PER_GAME;
@@ -178,7 +179,12 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
     status.replaceWith(display);
     await animateCountUp(display, 0, score, 400);
 
-    const result = await submitGameScore({ slug: MATCH3_SLUG, points: score });
+    const result = await submitGameScore({
+      slug: MATCH3_SLUG,
+      points: score,
+      sessionStartedAt,
+      sessionEndedAt: new Date(),
+    });
     const resultLine = document.createElement("p");
     resultLine.className = "status";
     if (result.kind === "error") {

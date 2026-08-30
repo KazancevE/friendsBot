@@ -10,6 +10,11 @@ import { MemoryStore } from "../../src/store/memory.ts";
 const duringWeek = new Date("2026-08-22T12:00:00+03:00");
 const mondayAfter = new Date("2026-08-24T00:00:00+03:00");
 
+const sessionTiming = (at: Date, durationSeconds: number) => ({
+  sessionStartedAt: new Date(at.getTime() - durationSeconds * 1000),
+  sessionEndedAt: at,
+});
+
 const seedGuest = async (store: MemoryStore, telegramId: bigint, phone: string) => {
   return registerGuest(store, {
     telegramId,
@@ -48,9 +53,9 @@ test("awards top N prizes, coupon, and is idempotent", async () => {
   await openVisit(store, first.id, staff.id, duringWeek);
   await openVisit(store, second.id, staff.id, duringWeek);
   await openVisit(store, third.id, staff.id, duringWeek);
-  await submitScore(store, { userId: first.id, slug: "match3", points: 300, now: duringWeek });
-  await submitScore(store, { userId: second.id, slug: "match3", points: 200, now: duringWeek });
-  await submitScore(store, { userId: third.id, slug: "match3", points: 50, now: duringWeek });
+  await submitScore(store, { userId: first.id, slug: "match3", points: 300, now: duringWeek, ...sessionTiming(duringWeek, 15) });
+  await submitScore(store, { userId: second.id, slug: "match3", points: 200, now: duringWeek, ...sessionTiming(duringWeek, 15) });
+  await submitScore(store, { userId: third.id, slug: "match3", points: 50, now: duringWeek, ...sessionTiming(duringWeek, 15) });
 
   const weekStart = weekStartMoscow(DateTime.fromJSDate(duringWeek)).toJSDate();
 
@@ -91,8 +96,8 @@ test("tie ranks earlier updatedAt higher", async () => {
   const t2 = new Date("2026-08-22T12:01:00+03:00");
   await openVisit(store, earlier.id, staff.id, t1);
   await openVisit(store, later.id, staff.id, t1);
-  await submitScore(store, { userId: earlier.id, slug: "match3", points: 100, now: t1 });
-  await submitScore(store, { userId: later.id, slug: "match3", points: 100, now: t2 });
+  await submitScore(store, { userId: earlier.id, slug: "match3", points: 100, now: t1, ...sessionTiming(t1, 15) });
+  await submitScore(store, { userId: later.id, slug: "match3", points: 100, now: t2, ...sessionTiming(t2, 15) });
 
   await closeOpenWeeks(store, mondayAfter);
 
@@ -129,8 +134,8 @@ test("skips staff in week rankings when awarding prizes", async () => {
   await store.addScore(week.id, staff.id, 999, duringWeek);
   await openVisit(store, first.id, staff.id, duringWeek);
   await openVisit(store, second.id, staff.id, duringWeek);
-  await submitScore(store, { userId: first.id, slug: "match3", points: 300, now: duringWeek });
-  await submitScore(store, { userId: second.id, slug: "match3", points: 200, now: duringWeek });
+  await submitScore(store, { userId: first.id, slug: "match3", points: 300, now: duringWeek, ...sessionTiming(duringWeek, 15) });
+  await submitScore(store, { userId: second.id, slug: "match3", points: 200, now: duringWeek, ...sessionTiming(duringWeek, 15) });
 
   await closeOpenWeeks(store, mondayAfter);
 
@@ -160,9 +165,9 @@ test("awards overall ranking across multiple games once per week", async () => {
   });
   await openVisit(store, leader.id, staff.id, duringWeek);
   await openVisit(store, specialist.id, staff.id, duringWeek);
-  await submitScore(store, { userId: leader.id, slug: "match3", points: 200, now: duringWeek });
-  await submitScore(store, { userId: leader.id, slug: "blockblast", points: 150, now: duringWeek });
-  await submitScore(store, { userId: specialist.id, slug: "match3", points: 300, now: duringWeek });
+  await submitScore(store, { userId: leader.id, slug: "match3", points: 200, now: duringWeek, ...sessionTiming(duringWeek, 15) });
+  await submitScore(store, { userId: leader.id, slug: "blockblast", points: 150, now: duringWeek, ...sessionTiming(duringWeek, 15) });
+  await submitScore(store, { userId: specialist.id, slug: "match3", points: 300, now: duringWeek, ...sessionTiming(duringWeek, 15) });
 
   await closeOpenWeeks(store, mondayAfter);
 

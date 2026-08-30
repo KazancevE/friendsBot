@@ -6,6 +6,8 @@ import type { Store } from "../store/types.ts";
 
 export type ExportType = "ledger" | "visits" | "checkins" | "coupons" | "staff_log";
 
+export const EXPORT_ROW_LIMIT = 10_000;
+
 const escapeCsv = (value: string | number | null | undefined) => {
   const text = value === null || value === undefined ? "" : String(value);
   if (/[",\n]/.test(text)) {
@@ -33,6 +35,28 @@ export async function exportCsv(
       return exportCoupons(store, input.from, input.to);
     case "staff_log":
       return exportStaffLog(store, input.from, input.to);
+    default: {
+      const _exhaustive: never = input.type;
+      throw new Error(`Unknown export type: ${_exhaustive}`);
+    }
+  }
+}
+
+export async function exportRowCount(
+  store: Store,
+  input: { type: ExportType; from: Date; to: Date },
+): Promise<number> {
+  switch (input.type) {
+    case "ledger":
+      return (await store.listLedgerBetween(input.from, input.to)).length;
+    case "visits":
+      return (await store.listVisitsBetween(input.from, input.to)).length;
+    case "checkins":
+      return (await store.listCheckInsBetween(input.from, input.to)).length;
+    case "coupons":
+      return (await store.listCouponsBetween(input.from, input.to)).length;
+    case "staff_log":
+      return store.countStaffActionsBetween(input.from, input.to);
     default: {
       const _exhaustive: never = input.type;
       throw new Error(`Unknown export type: ${_exhaustive}`);

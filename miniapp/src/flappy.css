@@ -1,0 +1,35 @@
+.flappy-wrap {
+  display: grid;
+  gap: 12px;
+}
+
+.flappy-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.flappy-canvas {
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  display: block;
+  border-radius: 12px;
+  background: #1a2633;
+  touch-action: none;
+}
+
+.flappy-hud {
+  text-align: center;
+}
+
+.flappy-done-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.flappy-done-actions .secondary {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}

@@ -18,6 +18,9 @@ test("health check is public", async () => {
 test("serves mini app index at /app and /app/", async () => {
   await mkdir(dirname(INDEX), { recursive: true });
   await writeFile(INDEX, "<!doctype html><title>касса</title>", "utf8");
+  const adminIndex = join(ROOT, "admin/dist/index.html");
+  await mkdir(dirname(adminIndex), { recursive: true });
+  await writeFile(adminIndex, "<!doctype html><title>admin</title>", "utf8");
   const app = createHttpApp({ store: new MemoryStore(), botToken: "test-token" });
 
   const slash = await app.request("/app/");
@@ -27,4 +30,8 @@ test("serves mini app index at /app and /app/", async () => {
   const bare = await app.request("/app");
   expect(bare.status).toBe(200);
   expect(await bare.text()).toContain("касса");
+
+  const admin = await app.request("/admin/");
+  expect(admin.status).toBe(200);
+  expect(await admin.text()).toContain("admin");
 });

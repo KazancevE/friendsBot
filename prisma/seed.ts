@@ -63,6 +63,84 @@ async function main() {
     },
     update: {},
   });
+
+  await prisma.game.upsert({
+    where: { slug: "game2048" },
+    create: {
+      slug: "game2048",
+      title: "2048",
+      active: true,
+      maxScorePerSession: 50000,
+    },
+    update: {},
+  });
+
+  await prisma.game.upsert({
+    where: { slug: "flappy" },
+    create: {
+      slug: "flappy",
+      title: "Flappy",
+      active: true,
+      maxScorePerSession: 500,
+    },
+    update: {},
+  });
+
+  await prisma.game.upsert({
+    where: { slug: "quiz" },
+    create: {
+      slug: "quiz",
+      title: "Викторина",
+      active: true,
+      maxScorePerSession: 5000,
+    },
+    update: {},
+  });
+
+  const quiz = await prisma.quiz.upsert({
+    where: { id: "default-quiz" },
+    create: {
+      id: "default-quiz",
+      title: "Друзья — викторина",
+      active: true,
+      showInHub: false,
+    },
+    update: { active: true },
+  });
+
+  const demoQuestions = [
+    {
+      sort: 1,
+      text: "Что можно заказать в «Друзья»?",
+      options: ["Кальян", "Суши", "Пицца", "Бургеры"],
+      correctIndex: 0,
+    },
+    {
+      sort: 2,
+      text: "Бонусы начисляются за…",
+      options: ["Чек", "Парковку", "Wi‑Fi", "Отзыв"],
+      correctIndex: 0,
+    },
+  ];
+
+  for (const question of demoQuestions) {
+    await prisma.quizQuestion.upsert({
+      where: { id: `default-quiz-q${question.sort}` },
+      create: {
+        id: `default-quiz-q${question.sort}`,
+        quizId: quiz.id,
+        sort: question.sort,
+        text: question.text,
+        options: question.options,
+        correctIndex: question.correctIndex,
+      },
+      update: {
+        text: question.text,
+        options: question.options,
+        correctIndex: question.correctIndex,
+      },
+    });
+  }
 }
 
 main()

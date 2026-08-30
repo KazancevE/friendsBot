@@ -1,6 +1,7 @@
 import type { Conversation } from "@grammyjs/conversations";
 import { DomainError } from "../domain/errors.ts";
 import { registerGuest } from "../domain/users.ts";
+import { parseReferralStartPayload, resolveReferrerByCode } from "../domain/referral.ts";
 import type { BotContext } from "./context.ts";
 import { contactKeyboard, mainKeyboard } from "./keyboards.ts";
 
@@ -39,12 +40,22 @@ export async function registerGuestConversation(
 
   const result = await conversation.external(async (outer) => {
     try {
+      let referredByUserId: string | null = null;
+      const pendingCode = outer.session.pendingReferralCode;
+      if (pendingCode !== undefined) {
+        const referrer = await resolveReferrerByCode(outer.store, pendingCode);
+        if (referrer !== null && referrer.telegramId !== BigInt(fromId)) {
+          referredByUserId = referrer.id;
+        }
+        delete outer.session.pendingReferralCode;
+      }
       const user = await registerGuest(outer.store, {
         telegramId: BigInt(fromId),
         firstName,
         lastName,
         birthday,
         phone: contact.phone_number,
+        referredByUserId,
       });
       return { ok: true as const, balance: user.balance, role: user.role };
     } catch (err) {

@@ -290,9 +290,79 @@ export const fetchGames = () => {
   return getJson("/api/games", isGameCatalog);
 };
 
+export type LiveQuizQuestion = {
+  readonly id: string;
+  readonly sort: number;
+  readonly text: string;
+  readonly options: ReadonlyArray<string>;
+};
+
+export type LiveQuiz = {
+  readonly sessionId: string;
+  readonly questions: ReadonlyArray<LiveQuizQuestion>;
+};
+
+const isLiveQuizQuestion = (value: unknown): value is LiveQuizQuestion => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.sort === "number" &&
+    typeof value.text === "string" &&
+    Array.isArray(value.options) &&
+    value.options.every((option) => typeof option === "string")
+  );
+};
+
+const isLiveQuiz = (value: unknown): value is LiveQuiz => {
+  if (!isRecord(value) || !Array.isArray(value.questions)) {
+    return false;
+  }
+  return typeof value.sessionId === "string" && value.questions.every(isLiveQuizQuestion);
+};
+
+const isNullableLiveQuiz = (value: unknown): value is LiveQuiz | null => {
+  return value === null || isLiveQuiz(value);
+};
+
+export const fetchLiveQuiz = () => {
+  return getJson("/api/quiz/live", isNullableLiveQuiz);
+};
+
+type SubmitQuizAnswerParameters = {
+  readonly sessionId: string;
+  readonly questionId: string;
+  readonly optionIndex: number;
+  readonly elapsedMs: number;
+};
+
+export type SubmitQuizAnswerResult = {
+  readonly correct: boolean;
+  readonly points: number;
+  readonly sessionTotal: number;
+};
+
+const isSubmitQuizAnswerResult = (value: unknown): value is SubmitQuizAnswerResult => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.correct === "boolean" &&
+    typeof value.points === "number" &&
+    typeof value.sessionTotal === "number"
+  );
+};
+
+export const submitQuizAnswer = (body: SubmitQuizAnswerParameters) => {
+  return postJson("/api/quiz/answer", body, isSubmitQuizAnswerResult);
+};
+
 type SubmitGameScoreParameters = {
   readonly slug: string;
   readonly points: number;
+  readonly sessionStartedAt: Date;
+  readonly sessionEndedAt: Date;
 };
 
 export type SubmitGameScoreResult = {
@@ -307,8 +377,22 @@ const isSubmitGameScoreResult = (value: unknown): value is SubmitGameScoreResult
   return typeof value.points === "number" && typeof value.counted === "boolean";
 };
 
-export const submitGameScore = ({ slug, points }: SubmitGameScoreParameters) => {
-  return postJson("/api/games/score", { slug, points }, isSubmitGameScoreResult);
+export const submitGameScore = ({
+  slug,
+  points,
+  sessionStartedAt,
+  sessionEndedAt,
+}: SubmitGameScoreParameters) => {
+  return postJson(
+    "/api/games/score",
+    {
+      slug,
+      points,
+      sessionStartedAt: sessionStartedAt.toISOString(),
+      sessionEndedAt: sessionEndedAt.toISOString(),
+    },
+    isSubmitGameScoreResult,
+  );
 };
 
 type LookupGuestParameters = {

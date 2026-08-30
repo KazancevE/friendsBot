@@ -8,7 +8,9 @@ export type LedgerType =
   | "weekly_prize"
   | "redeem"
   | "coupon_redeem"
-  | "expire";
+  | "expire"
+  | "referral"
+  | "promo_bonus";
 
 export type BonusLotCategory = "gift" | "check";
 
@@ -32,6 +34,57 @@ export type Settings = {
   expireNotifyMinBonuses: number;
   checkInNotifyEnabled: boolean;
   checkInNotifyTelegramIds: bigint[];
+  referralBonusReferrer: number;
+  referralBonusReferee: number;
+  referralActivationDays: number;
+  referralEnabled: boolean;
+  birthdayNotifyDaysBefore: number;
+  birthdayCouponTitle: string | null;
+  birthdayCouponClaimDays: number;
+  maxSessionsPerHour: number;
+};
+
+export type BroadcastSegmentId =
+  | "all"
+  | "inactive_30d"
+  | "active_7d"
+  | "balance_gt"
+  | "has_coupon"
+  | "birthday_week"
+  | "referrers"
+  | "weekly_top";
+
+export type PromoRuleKind =
+  | "double_check_bonus"
+  | "min_check_bonus"
+  | "weekday_multiplier"
+  | "promo_code";
+
+export type PromoRuleRecord = {
+  id: string;
+  promoId: string | null;
+  kind: PromoRuleKind;
+  params: Record<string, unknown>;
+  active: boolean;
+  validFrom: Date | null;
+  validUntil: Date | null;
+  priority: number;
+};
+
+export type ReferralActivationRecord = {
+  id: string;
+  referrerId: string;
+  refereeId: string;
+  activatedAt: Date;
+  visitId: string | null;
+  ledgerIdReferrer: string | null;
+  ledgerIdReferee: string | null;
+};
+
+export type ReferralStats = {
+  invited: number;
+  activated: number;
+  bonusesEarned: number;
 };
 
 export type StaffActionKind =
@@ -79,6 +132,10 @@ export type UserRecord = {
   qrToken: string;
   broadcastOptOut: boolean;
   staffNote: string | null;
+  referralCode: string | null;
+  referredByUserId: string | null;
+  birthdayWarnedYear: number | null;
+  birthdayGreetedYear: number | null;
   createdAt: Date;
 };
 
@@ -201,6 +258,56 @@ export type PromoRecord = {
   body: string;
   photos: string[];
   showInFeed: boolean;
+  createdAt: Date;
+};
+
+export type GameSessionLogRecord = {
+  id: string;
+  userId: string;
+  gameId: string;
+  slug: string;
+  points: number;
+  startedAt: Date;
+  endedAt: Date;
+  accepted: boolean;
+  rejectReason: string | null;
+  createdAt: Date;
+};
+
+export type QuizSessionStatus = "draft" | "live" | "closed";
+
+export type QuizRecord = {
+  id: string;
+  title: string;
+  active: boolean;
+  showInHub: boolean;
+};
+
+export type QuizQuestionRecord = {
+  id: string;
+  quizId: string;
+  sort: number;
+  text: string;
+  options: string[];
+  correctIndex: number;
+};
+
+export type QuizSessionRecord = {
+  id: string;
+  quizId: string;
+  startedAt: Date;
+  endsAt: Date;
+  status: QuizSessionStatus;
+};
+
+export type QuizAnswerRecord = {
+  id: string;
+  sessionId: string;
+  questionId: string;
+  userId: string;
+  optionIndex: number;
+  elapsedMs: number;
+  points: number;
   createdAt: Date;
 };
 

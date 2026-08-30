@@ -22,6 +22,15 @@ enum LedgerType {
   redeem
   coupon_redeem
   expire
+  referral
+  promo_bonus
+}
+
+enum PromoRuleKind {
+  double_check_bonus
+  min_check_bonus
+  weekday_multiplier
+  promo_code
 }
 
 enum CouponStatus {
@@ -57,33 +66,82 @@ enum BookingStatus {
   completed
 }
 
+enum QuizSessionStatus {
+  draft
+  live
+  closed
+}
+
 model User {
-  id               String    @id @default(uuid())
-  telegramId       BigInt    @unique
-  role             Role      @default(guest)
-  firstName        String?
-  lastName         String?
-  birthday         DateTime? @db.Date
-  phone            String?   @unique
-  balance          Int       @default(0)
-  qrToken          String    @unique
-  broadcastOptOut  Boolean   @default(false)
-  staffNote        String?
-  createdAt        DateTime  @default(now())
-  ledger           Ledger[]  @relation("UserLedger")
-  actedLedger      Ledger[]  @relation("ActorLedger")
-  bonusLots        BonusLot[]
-  visits           Visit[]   @relation("VisitGuest")
-  openedVisits     Visit[]   @relation("VisitOpener")
-  coupons          Coupon[]
-  scores           GameScore[]
-  awards           WeeklyAward[]
-  checkIns         CheckInLog[]
-  venueCodes       VenueCode[] @relation("VenueCodeCreator")
-  staffActions     StaffActionLog[] @relation("StaffActor")
-  guestActions     StaffActionLog[] @relation("StaffGuest")
-  bookings         BookingRequest[] @relation("BookingGuest")
-  handledBookings  BookingRequest[] @relation("BookingHandler")
+  id                  String    @id @default(uuid())
+  telegramId          BigInt    @unique
+  role                Role      @default(guest)
+  firstName           String?
+  lastName            String?
+  birthday            DateTime? @db.Date
+  phone               String?   @unique
+  balance             Int       @default(0)
+  qrToken             String    @unique
+  broadcastOptOut     Boolean   @default(false)
+  staffNote           String?
+  referralCode        String?   @unique
+  referredByUserId    String?
+  referrer            User?     @relation("UserReferrals", fields: [referredByUserId], references: [id])
+  referrals           User[]    @relation("UserReferrals")
+  birthdayWarnedYear  Int?
+  birthdayGreetedYear Int?
+  createdAt           DateTime  @default(now())
+  ledger              Ledger[]  @relation("UserLedger")
+  actedLedger         Ledger[]  @relation("ActorLedger")
+  bonusLots           BonusLot[]
+  visits              Visit[]   @relation("VisitGuest")
+  openedVisits        Visit[]   @relation("VisitOpener")
+  coupons             Coupon[]
+  scores              GameScore[]
+  awards              WeeklyAward[]
+  checkIns            CheckInLog[]
+  venueCodes          VenueCode[] @relation("VenueCodeCreator")
+  staffActions        StaffActionLog[] @relation("StaffActor")
+  guestActions        StaffActionLog[] @relation("StaffGuest")
+  bookings            BookingRequest[] @relation("BookingGuest")
+  handledBookings     BookingRequest[] @relation("BookingHandler")
+  referralActivations ReferralActivation[] @relation("ReferralReferrer")
+  referredActivation  ReferralActivation? @relation("ReferralReferee")
+  gameSessionLogs     GameSessionLog[]
+  quizAnswers         QuizAnswer[]
+}
+
+model ReferralActivation {
+  id               String   @id @default(uuid())
+  referrer         User     @relation("ReferralReferrer", fields: [referrerId], references: [id])
+  referrerId       String
+  referee          User     @relation("ReferralReferee", fields: [refereeId], references: [id])
+  refereeId        String   @unique
+  activatedAt      DateTime
+  visitId          String?
+  ledgerIdReferrer String?
+  ledgerIdReferee  String?
+}
+
+model PromoRule {
+  id         String        @id @default(uuid())
+  promo      Promo?        @relation(fields: [promoId], references: [id])
+  promoId    String?
+  kind       PromoRuleKind
+  params     Json          @default("{}")
+  active     Boolean       @default(true)
+  validFrom  DateTime?
+  validUntil DateTime?
+  priority   Int           @default(0)
+}
+
+model Promo {
+  id         String   @id @default(uuid())
+  body       String
+  photos     String[]
+  showInFeed Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  rules      PromoRule[]
 }
 
 model StaffActionLog {
@@ -199,21 +257,14 @@ model MenuItem {
   active       Boolean @default(true)
 }
 
-model Promo {
-  id         String   @id @default(uuid())
-  body       String
-  photos     String[]
-  showInFeed Boolean  @default(true)
-  createdAt  DateTime @default(now())
-}
-
 model Game {
-  id                  String     @id @default(uuid())
-  slug                String     @unique
+  id                  String           @id @default(uuid())
+  slug                String           @unique
   title               String
-  active              Boolean    @default(true)
+  active              Boolean          @default(true)
   maxScorePerSession  Int
   weeks               GameWeek[]
+  sessionLogs         GameSessionLog[]
 }
 
 model GameWeek {
@@ -256,4 +307,68 @@ model WeeklyAward {
   userId    String
   place     Int
   @@id([weekStart, userId])
+}
+
+model GameSessionLog {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  game         Game     @relation(fields: [gameId], references: [id])
+  gameId       String
+  slug         String
+  points       Int
+  startedAt    DateTime
+  endedAt      DateTime
+  accepted     Boolean
+  rejectReason String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, gameId, createdAt])
+  @@index([accepted, createdAt])
+}
+
+model Quiz {
+  id        String         @id @default(uuid())
+  title     String
+  active    Boolean        @default(true)
+  showInHub Boolean        @default(false)
+  questions QuizQuestion[]
+  sessions  QuizSession[]
+}
+
+model QuizQuestion {
+  id           String       @id @default(uuid())
+  quiz         Quiz         @relation(fields: [quizId], references: [id])
+  quizId       String
+  sort         Int
+  text         String
+  options      Json
+  correctIndex Int
+  answers      QuizAnswer[]
+}
+
+model QuizSession {
+  id        String            @id @default(uuid())
+  quiz      Quiz              @relation(fields: [quizId], references: [id])
+  quizId    String
+  startedAt DateTime
+  endsAt    DateTime
+  status    QuizSessionStatus @default(draft)
+  answers   QuizAnswer[]
+}
+
+model QuizAnswer {
+  id          String       @id @default(uuid())
+  session     QuizSession  @relation(fields: [sessionId], references: [id])
+  sessionId   String
+  question    QuizQuestion @relation(fields: [questionId], references: [id])
+  questionId  String
+  user        User         @relation(fields: [userId], references: [id])
+  userId      String
+  optionIndex Int
+  elapsedMs   Int
+  points      Int
+  createdAt   DateTime     @default(now())
+
+  @@unique([sessionId, questionId, userId])
 }

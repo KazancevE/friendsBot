@@ -9,6 +9,11 @@ import { MemoryStore } from "../../src/store/memory.ts";
 
 const now = new Date("2026-08-22T12:00:00+03:00");
 
+const sessionTiming = (at: Date, durationSeconds: number) => ({
+  sessionStartedAt: new Date(at.getTime() - durationSeconds * 1000),
+  sessionEndedAt: at,
+});
+
 async function seed() {
   const store = new MemoryStore();
   const user = await registerGuest(store, {
@@ -33,7 +38,7 @@ async function seed() {
 test("rejects score without visit", async () => {
   const { store, user } = await seed();
   await expect(
-    submitScoreOrPractice(store, { userId: user.id, slug: "match3", points: 100, now }),
+    submitScoreOrPractice(store, { userId: user.id, slug: "match3", points: 100, now, ...sessionTiming(now, 15) }),
   ).rejects.toMatchObject({ code: "no_visit" });
 });
 
@@ -50,6 +55,7 @@ test("master practice score succeeds without persisting", async () => {
     slug: "match3",
     points: 100,
     now,
+    ...sessionTiming(now, 15),
   });
   expect(result).toEqual({ points: 100, counted: false });
   const game = await store.findGameBySlug("match3");
@@ -69,7 +75,7 @@ test("rejects score above cap after visit opened", async () => {
     now,
   });
   await expect(
-    submitScoreOrPractice(store, { userId: user.id, slug: "match3", points: 50001, now }),
+    submitScoreOrPractice(store, { userId: user.id, slug: "match3", points: 50001, now, ...sessionTiming(now, 15) }),
   ).rejects.toMatchObject({ code: "score_cap" });
 });
 
@@ -82,7 +88,7 @@ test("adds 120 points and does not change balance", async () => {
     now,
   });
   const before = (await store.findUserById(user.id))!.balance;
-  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now });
+  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now, ...sessionTiming(now, 15) });
   expect((await store.findUserById(user.id))!.balance).toBe(before);
   const game = await store.findGameBySlug("match3");
   const week = await store.getOrCreateOpenWeek(
@@ -103,7 +109,7 @@ test("staff getLeaderboard includes displayName for top entries", async () => {
     checkRubles: 100,
     now,
   });
-  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now });
+  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now, ...sessionTiming(now, 15) });
   const board = await getLeaderboard(store, {
     userId: staff.id,
     slug: "match3",
@@ -123,8 +129,8 @@ test("getOverallLeaderboard sums points across games", async () => {
     checkRubles: 100,
     now,
   });
-  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now });
-  await submitScore(store, { userId: user.id, slug: "blockblast", points: 80, now });
+  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now, ...sessionTiming(now, 15) });
+  await submitScore(store, { userId: user.id, slug: "blockblast", points: 80, now, ...sessionTiming(now, 15) });
   const board = await getOverallLeaderboard(store, {
     userId: user.id,
     now,

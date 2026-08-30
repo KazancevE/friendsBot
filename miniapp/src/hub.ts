@@ -12,8 +12,11 @@ import {
   type Role,
 } from "./api.ts";
 import { renderBlockBlast } from "./block-blast.ts";
+import { renderFlappy } from "./flappy.ts";
+import { renderGame2048 } from "./game2048.ts";
 import { formatWeekCountdown } from "./hub-week.ts";
 import { renderMatch3 } from "./match3.ts";
+import { renderQuiz } from "./quiz.ts";
 
 import { renderCheckIn } from "./check-in.ts";
 
@@ -22,6 +25,9 @@ const STAFF_ROLES = new Set<Role>(["master", "admin"]);
 const GAME_ICONS: Record<string, string> = {
   match3: "🔥💧",
   blockblast: "🧱",
+  game2048: "🪨",
+  flappy: "🐦",
+  quiz: "❓",
 };
 
 type RenderHubOptions = {
@@ -331,6 +337,18 @@ const launchGame = (
   }
   if (slug === "blockblast") {
     renderBlockBlast({ root, onBack });
+    return;
+  }
+  if (slug === "game2048") {
+    renderGame2048({ root, onBack });
+    return;
+  }
+  if (slug === "flappy") {
+    renderFlappy({ root, onBack });
+    return;
+  }
+  if (slug === "quiz") {
+    renderQuiz({ root, onBack });
     return;
   }
   root.innerHTML = `

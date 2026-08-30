@@ -1,7 +1,11 @@
 import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard } from "grammy";
 import type { Api, Bot } from "grammy";
-import { recipientsForBroadcast } from "../domain/broadcast.ts";
+import { recipientsForSegment, broadcastSegmentLabel, previewSegmentCount } from "../domain/broadcast.ts";
+import { listRejectedSessions } from "../domain/games.ts";
+import { promoRuleKindLabelRu } from "../domain/promo-rules.ts";
+import { startQuizSession, notifyActiveGuestsOfQuiz, addQuizQuestion } from "../domain/quiz.ts";
+import type { BroadcastSegmentId, PromoRuleKind } from "../domain/types.ts";
 import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
@@ -23,6 +27,117 @@ import { enterConversation } from "./enter-conversation.ts";
 import { cancelKeyboard } from "./keyboards.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
+
+const BROADCAST_SEGMENTS: BroadcastSegmentId[] = [
+  "all",
+  "inactive_30d",
+  "active_7d",
+  "balance_gt",
+  "has_coupon",
+  "birthday_week",
+  "referrers",
+  "weekly_top",
+];
+
+const parseBroadcastSegment = (raw: string): BroadcastSegmentId | null => {
+  const trimmed = raw.trim();
+  const byIndex = Number(trimmed);
+  if (Number.isInteger(byIndex) && byIndex >= 1 && byIndex <= BROADCAST_SEGMENTS.length) {
+    return BROADCAST_SEGMENTS[byIndex - 1] ?? null;
+  }
+  if ((BROADCAST_SEGMENTS as readonly string[]).includes(trimmed)) {
+    return trimmed as BroadcastSegmentId;
+  }
+  return null;
+};
+
+const segmentMenuText = () => {
+  return BROADCAST_SEGMENTS.map((segment, index) => `${index + 1}. ${broadcastSegmentLabel(segment)}`).join("\n");
+};
+
+const parsePromoRuleKind = (raw: string): PromoRuleKind | null => {
+  const trimmed = raw.trim();
+  const kinds: PromoRuleKind[] = [
+    "double_check_bonus",
+    "min_check_bonus",
+    "weekday_multiplier",
+    "promo_code",
+  ];
+  const byIndex = Number(trimmed);
+  if (Number.isInteger(byIndex) && byIndex >= 1 && byIndex <= kinds.length) {
+    return kinds[byIndex - 1] ?? null;
+  }
+  if ((kinds as readonly string[]).includes(trimmed)) {
+    return trimmed as PromoRuleKind;
+  }
+  return null;
+};
+
+const promoRuleMenuText = () => {
+  const kinds: PromoRuleKind[] = [
+    "double_check_bonus",
+    "min_check_bonus",
+    "weekday_multiplier",
+    "promo_code",
+  ];
+  return kinds.map((kind, index) => `${index + 1}. ${promoRuleKindLabelRu(kind)}`).join("\n");
+};
+
+const askPromoRuleParams = async (
+  conversation: BotConversation,
+  ctx: BotContext,
+  kind: PromoRuleKind,
+): Promise<Record<string, unknown>> => {
+  switch (kind) {
+    case "double_check_bonus":
+      return {};
+    case "min_check_bonus": {
+      const minRubles = await askCancellableInt({
+        conversation,
+        ctx,
+        prompt: "Минимальная сумма чека (₽)",
+      });
+      const bonus = await askCancellableInt({
+        conversation,
+        ctx,
+        prompt: "Дополнительный бонус",
+      });
+      return { minRubles, bonus };
+    }
+    case "weekday_multiplier": {
+      const weekday = await askCancellableInt({
+        conversation,
+        ctx,
+        prompt: "День недели (0=пн … 6=вс)",
+      });
+      const multiplier = await askCancellableInt({
+        conversation,
+        ctx,
+        prompt: "Множитель (целое число, например 2)",
+      });
+      return { weekday, multiplier };
+    }
+    case "promo_code": {
+      const code = (
+        await waitCancellableText({
+          conversation,
+          ctx,
+          otherwise: "Введите промокод",
+        })
+      ).trim();
+      const bonus = await askCancellableInt({
+        conversation,
+        ctx,
+        prompt: "Бонус за промокод",
+      });
+      return { code: code.toUpperCase(), bonus };
+    }
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+};
 
 const ADMIN_ONLY = "Только для админа";
 const BROADCAST_BATCH_SIZE = 25;
@@ -749,6 +864,43 @@ export async function createPromoConversation(
   await runCancellable({
     ctx,
     body: async () => {
+      await ctx.reply("Кому отправить?\n" + segmentMenuText(), { reply_markup: cancelKeyboard() });
+      let segment: BroadcastSegmentId | undefined;
+      while (segment === undefined) {
+        const raw = (
+          await waitCancellableText({
+            conversation,
+            ctx,
+            otherwise: "Выберите сегмент номером или id",
+          })
+        ).trim();
+        const parsed = parseBroadcastSegment(raw);
+        if (parsed === null) {
+          await ctx.reply("Неизвестный сегмент. Попробуйте снова", { reply_markup: cancelKeyboard() });
+          continue;
+        }
+        segment = parsed;
+      }
+
+      let balanceMin: number | undefined;
+      if (segment === "balance_gt") {
+        balanceMin = await askCancellableInt({
+          conversation,
+          ctx,
+          prompt: "Минимальный баланс для сегмента",
+        });
+      }
+
+      const preview = await conversation.external(async (outer) => {
+        const count = await previewSegmentCount(outer.store, {
+          segment,
+          params: { balanceMin },
+          now: new Date(),
+        });
+        return count;
+      });
+      await ctx.reply(`Получателей: ${preview}`, { reply_markup: cancelKeyboard() });
+
       await ctx.reply("Текст акции", { reply_markup: cancelKeyboard() });
       let body: string | undefined;
       while (body === undefined) {
@@ -788,22 +940,32 @@ export async function createPromoConversation(
           return { ok: false as const, message: ADMIN_ONLY };
         }
         try {
-          await outer.store.createPromo({
+          const promo = await outer.store.createPromo({
             body,
             photos: photoId === undefined ? [] : [photoId],
             showInFeed,
           });
           if (!sendNow) {
-            return { ok: true as const, sent: 0, failed: 0, skippedSend: true as const };
+            return {
+              ok: true as const,
+              sent: 0,
+              failed: 0,
+              skippedSend: true as const,
+              promoId: promo.id,
+            };
           }
-          const telegramIds = await recipientsForBroadcast(outer.store);
+          const telegramIds = await recipientsForSegment(outer.store, {
+            segment,
+            params: { balanceMin },
+            now: new Date(),
+          });
           const stats = await sendBroadcast({
             api: outer.api,
             telegramIds,
             body,
             photoId,
           });
-          return { ok: true as const, ...stats, skippedSend: false as const };
+          return { ok: true as const, ...stats, skippedSend: false as const, promoId: promo.id };
         } catch (err) {
           if (err instanceof DomainError) {
             return { ok: false as const, message: err.message };
@@ -816,6 +978,42 @@ export async function createPromoConversation(
         await replyMainMenu({ ctx, text: result.message });
         return;
       }
+
+      const addRule = await askCancellableYesNo({
+        conversation,
+        ctx,
+        prompt: "Добавить условие начисления к акции? да/нет",
+      });
+      if (addRule) {
+        await ctx.reply("Тип условия:\n" + promoRuleMenuText(), { reply_markup: cancelKeyboard() });
+        let kind: PromoRuleKind | undefined;
+        while (kind === undefined) {
+          const raw = (
+            await waitCancellableText({
+              conversation,
+              ctx,
+              otherwise: "Выберите тип условия",
+            })
+          ).trim();
+          const parsed = parsePromoRuleKind(raw);
+          if (parsed === null) {
+            await ctx.reply("Неизвестный тип. Попробуйте снова", { reply_markup: cancelKeyboard() });
+            continue;
+          }
+          kind = parsed;
+        }
+        const params = await askPromoRuleParams(conversation, ctx, kind);
+        await conversation.external(async (outer) => {
+          await outer.store.createPromoRule({
+            promoId: result.promoId,
+            kind,
+            params,
+            active: true,
+          });
+        });
+        await ctx.reply(`Условие «${promoRuleKindLabelRu(kind)}» добавлено`);
+      }
+
       if (result.skippedSend) {
         await replyMainMenu({ ctx, text: "Акция сохранена" });
         return;
@@ -826,6 +1024,50 @@ export async function createPromoConversation(
       });
     },
   });
+}
+
+export async function addQuizQuestionConversation(conversation: BotConversation, ctx: BotContext) {
+  if (!(await requireAdminOrReply(ctx))) {
+    return;
+  }
+  const quiz = await conversation.external((outer) => outer.store.findActiveQuiz());
+  if (quiz === null) {
+    await ctx.reply("Нет активной викторины");
+    return;
+  }
+  await ctx.reply("Текст вопроса", { reply_markup: cancelKeyboard() });
+  const text = (await waitCancellableText({ conversation, ctx, otherwise: "Отправьте текст" })).trim();
+  const options: string[] = [];
+  for (let index = 1; index <= 4; index += 1) {
+    await ctx.reply(`Вариант ${index}`, { reply_markup: cancelKeyboard() });
+    options.push((await waitCancellableText({ conversation, ctx, otherwise: "Отправьте вариант" })).trim());
+  }
+  await ctx.reply("Номер правильного варианта (1-4)", { reply_markup: cancelKeyboard() });
+  const correctRaw = Number(
+    (await waitCancellableText({ conversation, ctx, otherwise: "Отправьте число 1-4" })).trim(),
+  );
+  const correctIndex = correctRaw - 1;
+  const result = await conversation.external(async (outer) => {
+    try {
+      const question = await addQuizQuestion(outer.store, {
+        quizId: quiz.id,
+        text,
+        options,
+        correctIndex,
+      });
+      return { ok: true as const, sort: question.sort };
+    } catch (err) {
+      if (err instanceof DomainError) {
+        return { ok: false as const, message: err.message };
+      }
+      throw err;
+    }
+  });
+  if (!result.ok) {
+    await ctx.reply(result.message);
+    return;
+  }
+  await ctx.reply(`Вопрос #${result.sort} добавлен`);
 }
 
 export function wireAdminHandlers(bot: Bot<BotContext>) {
@@ -849,6 +1091,71 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
       return;
     }
     await enterConversation(ctx, "createPromo");
+  });
+
+  bot.hears("Подозрительные партии", async (ctx) => {
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    const rows = await listRejectedSessions(ctx.store, 15);
+    if (rows.length === 0) {
+      await ctx.reply("Подозрительных партий нет");
+      return;
+    }
+    const lines = rows.map(
+      (row) =>
+        `${row.slug}: ${row.points} (${row.rejectReason ?? "reject"}) · ${row.createdAt.toISOString()}`,
+    );
+    await ctx.reply(["Последние отклонённые партии:", ...lines].join("\n"));
+  });
+
+  bot.hears("Викторина", async (ctx) => {
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    const quiz = await ctx.store.findActiveQuiz();
+    if (quiz === null) {
+      await ctx.reply("Нет активной викторины в каталоге");
+      return;
+    }
+    try {
+      const now = new Date();
+      const session = await startQuizSession(ctx.store, {
+        quizId: quiz.id,
+        durationMinutes: 30,
+        now,
+      });
+      const notified = await notifyActiveGuestsOfQuiz(ctx.store, ctx.api, {
+        quizTitle: quiz.title,
+        now,
+      });
+      await ctx.reply(
+        `Викторина «${quiz.title}» запущена до ${session.endsAt.toISOString()}\nУведомлено гостей с визитом: ${notified}`,
+      );
+    } catch (err) {
+      if (err instanceof DomainError) {
+        await ctx.reply(err.message);
+        return;
+      }
+      throw err;
+    }
+  });
+
+  bot.hears("Вопрос викторины", async (ctx) => {
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    await enterConversation(ctx, "addQuizQuestion");
+  });
+
+  bot.hears("Веб-админ", async (ctx) => {
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    const origin = ctx.config.publicUrl.replace(/\/$/, "");
+    await ctx.reply("Откройте панель администратора", {
+      reply_markup: new InlineKeyboard().webApp("Открыть веб-админ", `${origin}/admin/`),
+    });
   });
 
   bot.callbackQuery(

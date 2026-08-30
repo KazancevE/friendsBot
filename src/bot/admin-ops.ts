@@ -1,14 +1,17 @@
 import { DateTime } from "luxon";
 import type { Conversation } from "@grammyjs/conversations";
-import { InputFile } from "grammy";
+import { InlineKeyboard, InputFile } from "grammy";
 import type { Bot } from "grammy";
-import { exportCsv, type ExportType } from "../domain/export.ts";
+import { createExportToken } from "../domain/export-token.ts";
+import { exportCsv, exportRowCount, EXPORT_ROW_LIMIT, type ExportType } from "../domain/export.ts";
 import {
+  formatStatsDetails,
   formatStatsSummary,
   getStatsSummary,
   periodLastDays,
   periodToday,
   staffActionLabel,
+  type StatsPeriod,
 } from "../domain/stats.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
@@ -26,6 +29,16 @@ const requireAdminOrReply = async (ctx: BotContext) => {
   }
   await ctx.reply(ADMIN_ONLY);
   return false;
+};
+
+const periodFromKey = (key: string, now: Date): StatsPeriod => {
+  if (key === "7") {
+    return periodLastDays(now, 7);
+  }
+  if (key === "30") {
+    return periodLastDays(now, 30);
+  }
+  return periodToday(now);
 };
 
 const formatStaffLogLine = async (ctx: BotContext, row: Awaited<ReturnType<typeof ctx.store.listStaffActionLog>>[number]) => {
@@ -54,19 +67,19 @@ export async function adminStatsConversation(conversation: BotConversation, ctx:
     })
   ).msg.text.trim().toLowerCase();
 
+  const periodKey =
+    raw === "7" || raw === "7d" ? "7" : raw === "30" || raw === "30d" ? "30" : "today";
+
   const result = await conversation.external(async (outer) => {
     const now = new Date();
-    const period =
-      raw === "7" || raw === "7d"
-        ? periodLastDays(now, 7)
-        : raw === "30" || raw === "30d"
-          ? periodLastDays(now, 30)
-          : periodToday(now);
+    const period = periodFromKey(periodKey, now);
     const summary = await getStatsSummary(outer.store, period, now);
     return formatStatsSummary(summary);
   });
 
-  await ctx.reply(result);
+  await ctx.reply(result, {
+    reply_markup: new InlineKeyboard().text("Подробнее", `admin:statsDetail:${periodKey}`),
+  });
 }
 
 export async function adminStaffLogConversation(conversation: BotConversation, ctx: BotContext) {
@@ -105,13 +118,27 @@ export async function adminExportConversation(conversation: BotConversation, ctx
     })
   ).msg.text.trim() as ExportType;
 
-  const csv = await conversation.external(async (outer) => {
+  const exportResult = await conversation.external(async (outer) => {
     const now = new Date();
     const period = periodLastDays(now, 7);
-    return exportCsv(outer.store, { type: typeRaw, from: period.from, to: now });
+    const count = await exportRowCount(outer.store, { type: typeRaw, from: period.from, to: now });
+    if (count > EXPORT_ROW_LIMIT) {
+      const token = createExportToken({ type: typeRaw, from: period.from, to: now, now });
+      return { kind: "link" as const, count, token };
+    }
+    const csv = await exportCsv(outer.store, { type: typeRaw, from: period.from, to: now });
+    return { kind: "file" as const, csv };
   });
 
-  await ctx.replyWithDocument(new InputFile(Buffer.from(csv, "utf-8"), `${typeRaw}.csv`));
+  if (exportResult.kind === "link") {
+    const origin = ctx.config.publicUrl.replace(/\/$/, "");
+    await ctx.reply(
+      `Слишком много строк (${exportResult.count}). Скачайте по ссылке (15 мин):\n${origin}/api/admin/export.csv?token=${exportResult.token}`,
+    );
+    return;
+  }
+
+  await ctx.replyWithDocument(new InputFile(Buffer.from(exportResult.csv, "utf-8"), `${typeRaw}.csv`));
 }
 
 export function wireAdminOpsHandlers(bot: Bot<BotContext>) {
@@ -134,5 +161,16 @@ export function wireAdminOpsHandlers(bot: Bot<BotContext>) {
       return;
     }
     await enterConversation(ctx, "adminExport");
+  });
+
+  bot.callbackQuery(/^admin:statsDetail:(today|7|30)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!(await requireAdminOrReply(ctx))) {
+      return;
+    }
+    const key = ctx.match[1] ?? "today";
+    const now = new Date();
+    const details = await formatStatsDetails(ctx.store, periodFromKey(key, now));
+    await ctx.reply(details);
   });
 }

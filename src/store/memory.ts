@@ -9,12 +9,22 @@ import type {
   CouponRecord,
   GameRecord,
   GameScoreRecord,
+  GameSessionLogRecord,
   GameWeekRecord,
   LedgerRecord,
   LedgerType,
   MenuItemRecord,
   PromoRecord,
+  PromoRuleKind,
+  PromoRuleRecord,
+  ReferralActivationRecord,
+  ReferralStats,
   Settings,
+  QuizAnswerRecord,
+  QuizQuestionRecord,
+  QuizRecord,
+  QuizSessionRecord,
+  QuizSessionStatus,
   StaffActionKind,
   StaffActionLogRecord,
   UserRecord,
@@ -22,7 +32,7 @@ import type {
   VisitRecord,
 } from "../domain/types.ts";
 import { MOSCOW, moscowCalendarYear } from "../domain/week.ts";
-import type { NewUser, Store } from "./types.ts";
+import type { BroadcastGuestCandidate, NewUser, Store } from "./types.ts";
 
 export class MemoryStore implements Store {
   settings: Settings = structuredClone(DEFAULT_SETTINGS);
@@ -34,12 +44,19 @@ export class MemoryStore implements Store {
   menu = new Map<string, MenuItemRecord>();
   pages = new Map<string, ContentPageRecord>();
   promos = new Map<string, PromoRecord>();
+  promoRules = new Map<string, PromoRuleRecord>();
+  referralActivations = new Map<string, ReferralActivationRecord>();
+  gameSessionLogs: GameSessionLogRecord[] = [];
+  quizzes = new Map<string, QuizRecord>();
+  quizQuestions = new Map<string, QuizQuestionRecord>();
+  quizSessions = new Map<string, QuizSessionRecord>();
+  quizAnswers = new Map<string, QuizAnswerRecord>();
   games = new Map<string, GameRecord>();
   weeks = new Map<string, GameWeekRecord>();
   scores = new Map<string, GameScoreRecord>();
   coupons = new Map<string, CouponRecord>();
   bonusLots = new Map<string, BonusLotRecord>();
-  awards = new Set<string>();
+  awards = new Map<string, number>();
   staffActionLogs: StaffActionLogRecord[] = [];
   bookings = new Map<string, BookingRequestRecord>();
 
@@ -59,6 +76,37 @@ export class MemoryStore implements Store {
       title: "Блоки",
       active: true,
       maxScorePerSession: 50000,
+    });
+    const game2048Id = crypto.randomUUID();
+    this.games.set(game2048Id, {
+      id: game2048Id,
+      slug: "game2048",
+      title: "2048",
+      active: true,
+      maxScorePerSession: 50000,
+    });
+    const flappyId = crypto.randomUUID();
+    this.games.set(flappyId, {
+      id: flappyId,
+      slug: "flappy",
+      title: "Flappy",
+      active: true,
+      maxScorePerSession: 500,
+    });
+    const quizGameId = crypto.randomUUID();
+    this.games.set(quizGameId, {
+      id: quizGameId,
+      slug: "quiz",
+      title: "Викторина",
+      active: true,
+      maxScorePerSession: 5000,
+    });
+    const defaultQuizId = crypto.randomUUID();
+    this.quizzes.set(defaultQuizId, {
+      id: defaultQuizId,
+      title: "Викторина",
+      active: true,
+      showInHub: false,
     });
   }
 
@@ -87,6 +135,10 @@ export class MemoryStore implements Store {
       qrToken: input.qrToken,
       broadcastOptOut: false,
       staffNote: null,
+      referralCode: null,
+      referredByUserId: null,
+      birthdayWarnedYear: null,
+      birthdayGreetedYear: null,
       createdAt: new Date(),
     };
     this.users.set(user.id, user);
@@ -106,6 +158,9 @@ export class MemoryStore implements Store {
   async findUserByQrToken(token: string) {
     return [...this.users.values()].find((u) => u.qrToken === token) ?? null;
   }
+  async findUserByReferralCode(code: string) {
+    return [...this.users.values()].find((u) => u.referralCode === code.toUpperCase()) ?? null;
+  }
   async updateUser(id: string, patch: Partial<UserRecord>) {
     const cur = this.users.get(id);
     if (!cur) throw new Error("user missing");
@@ -114,9 +169,52 @@ export class MemoryStore implements Store {
     return { ...next };
   }
   async listGuestTelegramIdsForBroadcast() {
+    return (await this.listBroadcastGuestCandidates()).map((guest) => guest.telegramId);
+  }
+  async listBroadcastGuestCandidates(): Promise<BroadcastGuestCandidate[]> {
     return [...this.users.values()]
-      .filter((u) => u.role === "guest" && !u.broadcastOptOut)
-      .map((u) => u.telegramId);
+      .filter((u) => u.role === "guest")
+      .map((u) => ({
+        id: u.id,
+        telegramId: u.telegramId,
+        balance: u.balance,
+        birthday: u.birthday,
+        broadcastOptOut: u.broadcastOptOut,
+      }));
+  }
+  async listGuestIdsActiveSince(since: Date) {
+    const visitIds = new Set(
+      [...this.visits.values()].filter((v) => v.startedAt >= since).map((v) => v.userId),
+    );
+    for (const log of this.checkInLogs) {
+      if (log.createdAt >= since) {
+        visitIds.add(log.userId);
+      }
+    }
+    return [...visitIds];
+  }
+  async listGuestIdsWithActiveCoupons(now: Date) {
+    const ids = new Set<string>();
+    for (const coupon of this.coupons.values()) {
+      if (coupon.status === "active" && coupon.expiresAt > now) {
+        ids.add(coupon.userId);
+      }
+    }
+    return [...ids];
+  }
+  async listReferrerGuestIds() {
+    return [...new Set([...this.referralActivations.values()].map((row) => row.referrerId))];
+  }
+  async listWeeklyAwardUserIds(weekStart: Date, maxPlace: number) {
+    const ids: string[] = [];
+    for (const [key, place] of this.awards) {
+      if (!key.startsWith(`${weekStart.getTime()}:`) || place > maxPlace) {
+        continue;
+      }
+      const userId = key.slice(key.indexOf(":") + 1);
+      ids.push(userId);
+    }
+    return ids;
   }
   async listStaffTelegramIds() {
     return [...this.users.values()]
@@ -485,6 +583,71 @@ export class MemoryStore implements Store {
     return [...this.promos.values()].filter((p) => p.showInFeed);
   }
 
+  async createPromoRule(input: {
+    promoId: string | null;
+    kind: PromoRuleKind;
+    params: Record<string, unknown>;
+    active?: boolean;
+    validFrom?: Date | null;
+    validUntil?: Date | null;
+    priority?: number;
+  }) {
+    const row: PromoRuleRecord = {
+      id: crypto.randomUUID(),
+      promoId: input.promoId,
+      kind: input.kind,
+      params: input.params,
+      active: input.active ?? true,
+      validFrom: input.validFrom ?? null,
+      validUntil: input.validUntil ?? null,
+      priority: input.priority ?? 0,
+    };
+    this.promoRules.set(row.id, row);
+    return { ...row };
+  }
+
+  async listActivePromoRules(_now: Date) {
+    return [...this.promoRules.values()]
+      .filter((rule) => rule.active)
+      .map((rule) => ({ ...rule }));
+  }
+
+  async hasReferralActivation(refereeId: string) {
+    return [...this.referralActivations.values()].some((row) => row.refereeId === refereeId);
+  }
+
+  async createReferralActivation(input: {
+    referrerId: string;
+    refereeId: string;
+    activatedAt: Date;
+    visitId: string | null;
+    ledgerIdReferrer: string | null;
+    ledgerIdReferee: string | null;
+  }) {
+    const row: ReferralActivationRecord = { id: crypto.randomUUID(), ...input };
+    this.referralActivations.set(row.id, row);
+    return { ...row };
+  }
+
+  async getReferralStats(userId: string): Promise<ReferralStats> {
+    const referred = [...this.users.values()].filter((u) => u.referredByUserId === userId);
+    const activations = [...this.referralActivations.values()].filter((row) => row.referrerId === userId);
+    const bonusesEarned = this.ledger
+      .filter((row) => row.userId === userId && row.type === "referral" && row.amount > 0)
+      .reduce((sum, row) => sum + row.amount, 0);
+    return {
+      invited: referred.length,
+      activated: activations.length,
+      bonusesEarned,
+    };
+  }
+
+  async countReferralsActivatedBetween(from: Date, to: Date) {
+    return [...this.referralActivations.values()].filter(
+      (row) => row.activatedAt >= from && row.activatedAt <= to,
+    ).length;
+  }
+
   async listActiveGames() {
     return [...this.games.values()].filter((g) => g.active);
   }
@@ -557,8 +720,172 @@ export class MemoryStore implements Store {
   async hasWeeklyAward(weekStart: Date, userId: string) {
     return this.awards.has(`${weekStart.getTime()}:${userId}`);
   }
-  async addWeeklyAward(weekStart: Date, userId: string, _place: number) {
-    this.awards.add(`${weekStart.getTime()}:${userId}`);
+  async addWeeklyAward(weekStart: Date, userId: string, place: number) {
+    this.awards.set(`${weekStart.getTime()}:${userId}`, place);
+  }
+
+  async createGameSessionLog(input: {
+    userId: string;
+    gameId: string;
+    slug: string;
+    points: number;
+    startedAt: Date;
+    endedAt: Date;
+    accepted: boolean;
+    rejectReason: string | null;
+  }) {
+    const row: GameSessionLogRecord = {
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      ...input,
+    };
+    this.gameSessionLogs.push(row);
+    return { ...row };
+  }
+
+  async listRecentGameSessionLogs(userId: string, gameId: string, limit: number) {
+    return this.gameSessionLogs
+      .filter((row) => row.userId === userId && row.gameId === gameId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit)
+      .map((row) => ({ ...row }));
+  }
+
+  async countGameSessionsSince(userId: string, since: Date) {
+    return this.gameSessionLogs.filter(
+      (row) => row.userId === userId && row.createdAt >= since,
+    ).length;
+  }
+
+  async getWeeklyGameScore(userId: string, gameId: string, weekStart: Date) {
+    const week = [...this.weeks.values()].find(
+      (row) => row.gameId === gameId && row.weekStart.getTime() === weekStart.getTime(),
+    );
+    if (week === undefined) {
+      return null;
+    }
+    const score = this.scores.get(`${week.id}:${userId}`);
+    return score?.points ?? null;
+  }
+
+  async listRejectedGameSessionLogs(limit: number) {
+    return this.gameSessionLogs
+      .filter((row) => !row.accepted)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit)
+      .map((row) => ({ ...row }));
+  }
+
+  async countAcceptedGameSessionsBetween(from: Date, to: Date) {
+    return this.gameSessionLogs.filter(
+      (row) => row.accepted && row.createdAt >= from && row.createdAt <= to,
+    ).length;
+  }
+
+  async countUniqueGamePlayersBetween(from: Date, to: Date) {
+    const ids = new Set(
+      this.gameSessionLogs
+        .filter((row) => row.accepted && row.createdAt >= from && row.createdAt <= to)
+        .map((row) => row.userId),
+    );
+    return ids.size;
+  }
+
+  async findActiveQuiz() {
+    return [...this.quizzes.values()].find((quiz) => quiz.active) ?? null;
+  }
+
+  async findQuizById(id: string) {
+    const row = this.quizzes.get(id);
+    return row ? { ...row } : null;
+  }
+
+  async listQuizQuestions(quizId: string) {
+    return [...this.quizQuestions.values()]
+      .filter((question) => question.quizId === quizId)
+      .sort((a, b) => a.sort - b.sort)
+      .map((question) => ({ ...question }));
+  }
+
+  async createQuizQuestion(input: {
+    quizId: string;
+    sort: number;
+    text: string;
+    options: string[];
+    correctIndex: number;
+  }) {
+    const row: QuizQuestionRecord = { id: crypto.randomUUID(), ...input };
+    this.quizQuestions.set(row.id, row);
+    return { ...row };
+  }
+
+  async deleteQuizQuestion(id: string) {
+    this.quizQuestions.delete(id);
+  }
+
+  async getLiveQuizSession(now: Date) {
+    return (
+      [...this.quizSessions.values()].find(
+        (session) =>
+          session.status === "live" && session.startedAt <= now && session.endsAt >= now,
+      ) ?? null
+    );
+  }
+
+  async findQuizSessionById(id: string) {
+    const row = this.quizSessions.get(id);
+    return row ? { ...row } : null;
+  }
+
+  async createQuizSession(input: {
+    quizId: string;
+    startedAt: Date;
+    endsAt: Date;
+    status: QuizSessionStatus;
+  }) {
+    const row: QuizSessionRecord = { id: crypto.randomUUID(), ...input };
+    this.quizSessions.set(row.id, row);
+    return { ...row };
+  }
+
+  async updateQuizSession(id: string, patch: Partial<Pick<QuizSessionRecord, "status">>) {
+    const cur = this.quizSessions.get(id);
+    if (cur === undefined) {
+      throw new Error("quiz session missing");
+    }
+    const next = { ...cur, ...patch, id: cur.id };
+    this.quizSessions.set(id, next);
+    return { ...next };
+  }
+
+  async hasQuizAnswer(sessionId: string, questionId: string, userId: string) {
+    return [...this.quizAnswers.values()].some(
+      (row) =>
+        row.sessionId === sessionId && row.questionId === questionId && row.userId === userId,
+    );
+  }
+
+  async createQuizAnswer(input: {
+    sessionId: string;
+    questionId: string;
+    userId: string;
+    optionIndex: number;
+    elapsedMs: number;
+    points: number;
+  }) {
+    const row: QuizAnswerRecord = {
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      ...input,
+    };
+    this.quizAnswers.set(row.id, row);
+    return { ...row };
+  }
+
+  async sumQuizSessionPoints(sessionId: string, userId: string) {
+    return [...this.quizAnswers.values()]
+      .filter((row) => row.sessionId === sessionId && row.userId === userId)
+      .reduce((sum, row) => sum + row.points, 0);
   }
 
   async createCoupon(input: {

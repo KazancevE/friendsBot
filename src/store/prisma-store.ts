@@ -6,12 +6,19 @@ import type {
   ContentPage,
   Coupon,
   Game,
+  GameSessionLog,
   GameScore,
   GameWeek,
   Ledger,
   MenuItem,
   Prisma,
   Promo,
+  PromoRule,
+  Quiz,
+  QuizAnswer,
+  QuizQuestion,
+  QuizSession,
+  ReferralActivation,
   StaffActionLog,
   User,
   VenueCode,
@@ -30,11 +37,21 @@ import type {
   CouponRecord,
   GameRecord,
   GameScoreRecord,
+  GameSessionLogRecord,
   GameWeekRecord,
   LedgerRecord,
   LedgerType,
   MenuItemRecord,
   PromoRecord,
+  PromoRuleKind,
+  PromoRuleRecord,
+  QuizAnswerRecord,
+  QuizQuestionRecord,
+  QuizRecord,
+  QuizSessionRecord,
+  QuizSessionStatus,
+  ReferralActivationRecord,
+  ReferralStats,
   Role,
   Settings,
   StaffActionKind,
@@ -45,7 +62,7 @@ import type {
 } from "../domain/types.ts";
 import { moscowYearStart, MOSCOW } from "../domain/week.ts";
 import { DateTime } from "luxon";
-import type { NewUser, Store } from "./types.ts";
+import type { BroadcastGuestCandidate, NewUser, Store } from "./types.ts";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -63,6 +80,14 @@ const SETTING_KEYS = [
   "expireNotifyMinBonuses",
   "checkInNotifyEnabled",
   "checkInNotifyTelegramIds",
+  "referralBonusReferrer",
+  "referralBonusReferee",
+  "referralActivationDays",
+  "referralEnabled",
+  "birthdayNotifyDaysBefore",
+  "birthdayCouponTitle",
+  "birthdayCouponClaimDays",
+  "maxSessionsPerHour",
 ] as const;
 
 const parseTelegramIds = (raw: string | undefined): bigint[] => {
@@ -117,6 +142,33 @@ export class PrismaStore implements Store {
         (map.get("checkInNotifyEnabled") ?? String(DEFAULT_SETTINGS.checkInNotifyEnabled)) ===
         "true",
       checkInNotifyTelegramIds: parseTelegramIds(map.get("checkInNotifyTelegramIds")),
+      referralBonusReferrer: Number(
+        map.get("referralBonusReferrer") ?? DEFAULT_SETTINGS.referralBonusReferrer,
+      ),
+      referralBonusReferee: Number(
+        map.get("referralBonusReferee") ?? DEFAULT_SETTINGS.referralBonusReferee,
+      ),
+      referralActivationDays: Number(
+        map.get("referralActivationDays") ?? DEFAULT_SETTINGS.referralActivationDays,
+      ),
+      referralEnabled:
+        (map.get("referralEnabled") ?? String(DEFAULT_SETTINGS.referralEnabled)) === "true",
+      birthdayNotifyDaysBefore: Number(
+        map.get("birthdayNotifyDaysBefore") ?? DEFAULT_SETTINGS.birthdayNotifyDaysBefore,
+      ),
+      birthdayCouponTitle: (() => {
+        const raw = map.get("birthdayCouponTitle");
+        if (raw === undefined || raw.length === 0) {
+          return null;
+        }
+        return raw;
+      })(),
+      birthdayCouponClaimDays: Number(
+        map.get("birthdayCouponClaimDays") ?? DEFAULT_SETTINGS.birthdayCouponClaimDays,
+      ),
+      maxSessionsPerHour: Number(
+        map.get("maxSessionsPerHour") ?? DEFAULT_SETTINGS.maxSessionsPerHour,
+      ),
     };
   }
 
@@ -138,6 +190,14 @@ export class PrismaStore implements Store {
       checkInNotifyTelegramIds: JSON.stringify(
         next.checkInNotifyTelegramIds.map((id) => id.toString()),
       ),
+      referralBonusReferrer: String(next.referralBonusReferrer),
+      referralBonusReferee: String(next.referralBonusReferee),
+      referralActivationDays: String(next.referralActivationDays),
+      referralEnabled: String(next.referralEnabled),
+      birthdayNotifyDaysBefore: String(next.birthdayNotifyDaysBefore),
+      birthdayCouponTitle: next.birthdayCouponTitle ?? "",
+      birthdayCouponClaimDays: String(next.birthdayCouponClaimDays),
+      maxSessionsPerHour: String(next.maxSessionsPerHour),
     };
     await Promise.all(
       SETTING_KEYS.map((key) =>
@@ -186,6 +246,11 @@ export class PrismaStore implements Store {
     return row ? toUser(row) : null;
   }
 
+  async findUserByReferralCode(code: string): Promise<UserRecord | null> {
+    const row = await this.prisma.user.findUnique({ where: { referralCode: code.toUpperCase() } });
+    return row ? toUser(row) : null;
+  }
+
   async updateUser(id: string, patch: Partial<UserRecord>): Promise<UserRecord> {
     const row = await this.prisma.user.update({
       where: { id },
@@ -200,17 +265,79 @@ export class PrismaStore implements Store {
         qrToken: patch.qrToken,
         broadcastOptOut: patch.broadcastOptOut,
         staffNote: patch.staffNote,
+        referralCode: patch.referralCode,
+        referredByUserId: patch.referredByUserId,
+        birthdayWarnedYear: patch.birthdayWarnedYear,
+        birthdayGreetedYear: patch.birthdayGreetedYear,
       },
     });
     return toUser(row);
   }
 
   async listGuestTelegramIdsForBroadcast(): Promise<bigint[]> {
+    const rows = await this.listBroadcastGuestCandidates();
+    return rows.filter((guest) => !guest.broadcastOptOut).map((guest) => guest.telegramId);
+  }
+
+  async listBroadcastGuestCandidates(): Promise<BroadcastGuestCandidate[]> {
     const rows = await this.prisma.user.findMany({
-      where: { role: "guest", broadcastOptOut: false },
-      select: { telegramId: true },
+      where: { role: "guest" },
+      select: {
+        id: true,
+        telegramId: true,
+        balance: true,
+        birthday: true,
+        broadcastOptOut: true,
+      },
     });
-    return rows.map((row) => row.telegramId);
+    return rows.map((row) => ({
+      id: row.id,
+      telegramId: row.telegramId,
+      balance: row.balance,
+      birthday: row.birthday,
+      broadcastOptOut: row.broadcastOptOut,
+    }));
+  }
+
+  async listGuestIdsActiveSince(since: Date): Promise<string[]> {
+    const [visitRows, checkInRows] = await Promise.all([
+      this.prisma.visit.findMany({
+        where: { startedAt: { gte: since } },
+        select: { userId: true },
+        distinct: ["userId"],
+      }),
+      this.prisma.checkInLog.findMany({
+        where: { createdAt: { gte: since } },
+        select: { userId: true },
+        distinct: ["userId"],
+      }),
+    ]);
+    return [...new Set([...visitRows.map((row) => row.userId), ...checkInRows.map((row) => row.userId)])];
+  }
+
+  async listGuestIdsWithActiveCoupons(now: Date): Promise<string[]> {
+    const rows = await this.prisma.coupon.findMany({
+      where: { status: "active", expiresAt: { gt: now } },
+      select: { userId: true },
+      distinct: ["userId"],
+    });
+    return rows.map((row) => row.userId);
+  }
+
+  async listReferrerGuestIds(): Promise<string[]> {
+    const rows = await this.prisma.referralActivation.findMany({
+      select: { referrerId: true },
+      distinct: ["referrerId"],
+    });
+    return rows.map((row) => row.referrerId);
+  }
+
+  async listWeeklyAwardUserIds(weekStart: Date, maxPlace: number): Promise<string[]> {
+    const rows = await this.prisma.weeklyAward.findMany({
+      where: { weekStart, place: { lte: maxPlace } },
+      select: { userId: true },
+    });
+    return rows.map((row) => row.userId);
   }
 
   async listStaffTelegramIds(): Promise<bigint[]> {
@@ -703,6 +830,79 @@ export class PrismaStore implements Store {
     return rows.map(toPromo);
   }
 
+  async createPromoRule(input: {
+    promoId: string | null;
+    kind: PromoRuleKind;
+    params: Record<string, unknown>;
+    active?: boolean;
+    validFrom?: Date | null;
+    validUntil?: Date | null;
+    priority?: number;
+  }): Promise<PromoRuleRecord> {
+    const row = await this.prisma.promoRule.create({
+      data: {
+        promoId: input.promoId,
+        kind: input.kind,
+        params: input.params as Prisma.InputJsonValue,
+        active: input.active ?? true,
+        validFrom: input.validFrom ?? null,
+        validUntil: input.validUntil ?? null,
+        priority: input.priority ?? 0,
+      },
+    });
+    return toPromoRule(row);
+  }
+
+  async listActivePromoRules(now: Date): Promise<PromoRuleRecord[]> {
+    const rows = await this.prisma.promoRule.findMany({
+      where: {
+        active: true,
+        OR: [{ validFrom: null }, { validFrom: { lte: now } }],
+        AND: [{ OR: [{ validUntil: null }, { validUntil: { gte: now } }] }],
+      },
+    });
+    return rows.map(toPromoRule);
+  }
+
+  async hasReferralActivation(refereeId: string): Promise<boolean> {
+    const row = await this.prisma.referralActivation.findUnique({ where: { refereeId } });
+    return row !== null;
+  }
+
+  async createReferralActivation(input: {
+    referrerId: string;
+    refereeId: string;
+    activatedAt: Date;
+    visitId: string | null;
+    ledgerIdReferrer: string | null;
+    ledgerIdReferee: string | null;
+  }): Promise<ReferralActivationRecord> {
+    const row = await this.prisma.referralActivation.create({ data: input });
+    return toReferralActivation(row);
+  }
+
+  async getReferralStats(userId: string): Promise<ReferralStats> {
+    const [invited, activated, bonusRows] = await Promise.all([
+      this.prisma.user.count({ where: { referredByUserId: userId } }),
+      this.prisma.referralActivation.count({ where: { referrerId: userId } }),
+      this.prisma.ledger.findMany({
+        where: { userId, type: "referral", amount: { gt: 0 } },
+        select: { amount: true },
+      }),
+    ]);
+    return {
+      invited,
+      activated,
+      bonusesEarned: bonusRows.reduce((sum, row) => sum + row.amount, 0),
+    };
+  }
+
+  async countReferralsActivatedBetween(from: Date, to: Date): Promise<number> {
+    return this.prisma.referralActivation.count({
+      where: { activatedAt: { gte: from, lte: to } },
+    });
+  }
+
   async listActiveGames(): Promise<GameRecord[]> {
     const rows = await this.prisma.game.findMany({ where: { active: true } });
     return rows.map(toGame);
@@ -791,6 +991,187 @@ export class PrismaStore implements Store {
     });
   }
 
+  async createGameSessionLog(input: {
+    userId: string;
+    gameId: string;
+    slug: string;
+    points: number;
+    startedAt: Date;
+    endedAt: Date;
+    accepted: boolean;
+    rejectReason: string | null;
+  }): Promise<GameSessionLogRecord> {
+    const row = await this.prisma.gameSessionLog.create({ data: input });
+    return toGameSessionLog(row);
+  }
+
+  async listRecentGameSessionLogs(
+    userId: string,
+    gameId: string,
+    limit: number,
+  ): Promise<GameSessionLogRecord[]> {
+    const rows = await this.prisma.gameSessionLog.findMany({
+      where: { userId, gameId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    return rows.map(toGameSessionLog);
+  }
+
+  async countGameSessionsSince(userId: string, since: Date): Promise<number> {
+    return this.prisma.gameSessionLog.count({
+      where: { userId, createdAt: { gte: since } },
+    });
+  }
+
+  async getWeeklyGameScore(
+    userId: string,
+    gameId: string,
+    weekStart: Date,
+  ): Promise<number | null> {
+    const week = await this.prisma.gameWeek.findFirst({
+      where: { gameId, weekStart },
+    });
+    if (week === null) {
+      return null;
+    }
+    const score = await this.prisma.gameScore.findUnique({
+      where: { weekId_userId: { weekId: week.id, userId } },
+    });
+    return score?.points ?? null;
+  }
+
+  async listRejectedGameSessionLogs(limit: number): Promise<GameSessionLogRecord[]> {
+    const rows = await this.prisma.gameSessionLog.findMany({
+      where: { accepted: false },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    return rows.map(toGameSessionLog);
+  }
+
+  async countAcceptedGameSessionsBetween(from: Date, to: Date): Promise<number> {
+    return this.prisma.gameSessionLog.count({
+      where: { accepted: true, createdAt: { gte: from, lte: to } },
+    });
+  }
+
+  async countUniqueGamePlayersBetween(from: Date, to: Date): Promise<number> {
+    const rows = await this.prisma.gameSessionLog.findMany({
+      where: { accepted: true, createdAt: { gte: from, lte: to } },
+      distinct: ["userId"],
+      select: { userId: true },
+    });
+    return rows.length;
+  }
+
+  async findActiveQuiz(): Promise<QuizRecord | null> {
+    const row = await this.prisma.quiz.findFirst({ where: { active: true } });
+    return row ? toQuiz(row) : null;
+  }
+
+  async findQuizById(id: string): Promise<QuizRecord | null> {
+    const row = await this.prisma.quiz.findUnique({ where: { id } });
+    return row ? toQuiz(row) : null;
+  }
+
+  async listQuizQuestions(quizId: string): Promise<QuizQuestionRecord[]> {
+    const rows = await this.prisma.quizQuestion.findMany({
+      where: { quizId },
+      orderBy: { sort: "asc" },
+    });
+    return rows.map(toQuizQuestion);
+  }
+
+  async createQuizQuestion(input: {
+    quizId: string;
+    sort: number;
+    text: string;
+    options: string[];
+    correctIndex: number;
+  }): Promise<QuizQuestionRecord> {
+    const row = await this.prisma.quizQuestion.create({
+      data: {
+        quizId: input.quizId,
+        sort: input.sort,
+        text: input.text,
+        options: input.options,
+        correctIndex: input.correctIndex,
+      },
+    });
+    return toQuizQuestion(row);
+  }
+
+  async deleteQuizQuestion(id: string): Promise<void> {
+    await this.prisma.quizQuestion.delete({ where: { id } });
+  }
+
+  async getLiveQuizSession(now: Date): Promise<QuizSessionRecord | null> {
+    const row = await this.prisma.quizSession.findFirst({
+      where: {
+        status: "live",
+        startedAt: { lte: now },
+        endsAt: { gte: now },
+      },
+    });
+    return row ? toQuizSession(row) : null;
+  }
+
+  async findQuizSessionById(id: string): Promise<QuizSessionRecord | null> {
+    const row = await this.prisma.quizSession.findUnique({ where: { id } });
+    return row ? toQuizSession(row) : null;
+  }
+
+  async createQuizSession(input: {
+    quizId: string;
+    startedAt: Date;
+    endsAt: Date;
+    status: QuizSessionStatus;
+  }): Promise<QuizSessionRecord> {
+    const row = await this.prisma.quizSession.create({ data: input });
+    return toQuizSession(row);
+  }
+
+  async updateQuizSession(
+    id: string,
+    patch: Partial<Pick<QuizSessionRecord, "status">>,
+  ): Promise<QuizSessionRecord> {
+    const row = await this.prisma.quizSession.update({
+      where: { id },
+      data: { status: patch.status },
+    });
+    return toQuizSession(row);
+  }
+
+  async hasQuizAnswer(sessionId: string, questionId: string, userId: string): Promise<boolean> {
+    const row = await this.prisma.quizAnswer.findUnique({
+      where: {
+        sessionId_questionId_userId: { sessionId, questionId, userId },
+      },
+    });
+    return row !== null;
+  }
+
+  async createQuizAnswer(input: {
+    sessionId: string;
+    questionId: string;
+    userId: string;
+    optionIndex: number;
+    elapsedMs: number;
+    points: number;
+  }): Promise<QuizAnswerRecord> {
+    const row = await this.prisma.quizAnswer.create({ data: input });
+    return toQuizAnswer(row);
+  }
+
+  async sumQuizSessionPoints(sessionId: string, userId: string): Promise<number> {
+    const result = await this.prisma.quizAnswer.aggregate({
+      where: { sessionId, userId },
+      _sum: { points: true },
+    });
+    return result._sum.points ?? 0;
+  }
+
   async createCoupon(input: {
     userId: string;
     title: string;
@@ -846,7 +1227,9 @@ function toLedgerType(value: string): LedgerType {
     value === "weekly_prize" ||
     value === "redeem" ||
     value === "coupon_redeem" ||
-    value === "expire"
+    value === "expire" ||
+    value === "referral" ||
+    value === "promo_bonus"
   ) {
     return value;
   }
@@ -866,6 +1249,113 @@ function toUser(row: User): UserRecord {
     qrToken: row.qrToken,
     broadcastOptOut: row.broadcastOptOut,
     staffNote: row.staffNote,
+    referralCode: row.referralCode,
+    referredByUserId: row.referredByUserId,
+    birthdayWarnedYear: row.birthdayWarnedYear,
+    birthdayGreetedYear: row.birthdayGreetedYear,
+    createdAt: row.createdAt,
+  };
+}
+
+function toPromoRuleKind(value: string): PromoRuleKind {
+  if (
+    value === "double_check_bonus" ||
+    value === "min_check_bonus" ||
+    value === "weekday_multiplier" ||
+    value === "promo_code"
+  ) {
+    return value;
+  }
+  throw new Error(`unknown promo rule kind: ${value}`);
+}
+
+function toPromoRule(row: PromoRule): PromoRuleRecord {
+  return {
+    id: row.id,
+    promoId: row.promoId,
+    kind: toPromoRuleKind(row.kind),
+    params: (row.params as Record<string, unknown>) ?? {},
+    active: row.active,
+    validFrom: row.validFrom,
+    validUntil: row.validUntil,
+    priority: row.priority,
+  };
+}
+
+function toReferralActivation(row: ReferralActivation): ReferralActivationRecord {
+  return {
+    id: row.id,
+    referrerId: row.referrerId,
+    refereeId: row.refereeId,
+    activatedAt: row.activatedAt,
+    visitId: row.visitId,
+    ledgerIdReferrer: row.ledgerIdReferrer,
+    ledgerIdReferee: row.ledgerIdReferee,
+  };
+}
+
+function toGameSessionLog(row: GameSessionLog): GameSessionLogRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    gameId: row.gameId,
+    slug: row.slug,
+    points: row.points,
+    startedAt: row.startedAt,
+    endedAt: row.endedAt,
+    accepted: row.accepted,
+    rejectReason: row.rejectReason,
+    createdAt: row.createdAt,
+  };
+}
+
+function toQuizSessionStatus(value: string): QuizSessionStatus {
+  if (value === "draft" || value === "live" || value === "closed") {
+    return value;
+  }
+  throw new Error(`unknown quiz session status: ${value}`);
+}
+
+function toQuiz(row: Quiz): QuizRecord {
+  return {
+    id: row.id,
+    title: row.title,
+    active: row.active,
+    showInHub: row.showInHub,
+  };
+}
+
+function toQuizQuestion(row: QuizQuestion): QuizQuestionRecord {
+  const options = row.options as unknown;
+  return {
+    id: row.id,
+    quizId: row.quizId,
+    sort: row.sort,
+    text: row.text,
+    options: Array.isArray(options) ? options.map(String) : [],
+    correctIndex: row.correctIndex,
+  };
+}
+
+function toQuizSession(row: QuizSession): QuizSessionRecord {
+  return {
+    id: row.id,
+    quizId: row.quizId,
+    startedAt: row.startedAt,
+    endsAt: row.endsAt,
+    status: toQuizSessionStatus(row.status),
+  };
+}
+
+function toQuizAnswer(row: QuizAnswer): QuizAnswerRecord {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    questionId: row.questionId,
+    userId: row.userId,
+    optionIndex: row.optionIndex,
+    elapsedMs: row.elapsedMs,
+    points: row.points,
     createdAt: row.createdAt,
   };
 }
