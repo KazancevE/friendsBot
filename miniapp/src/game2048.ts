@@ -1,4 +1,5 @@
-import { submitGameScore } from "./api.ts";
+import { showGameOver } from "./game-over.ts";
+import { fetchGameSkin, tileImageUrl, type GameSkin } from "./theme-client.ts";
 import "./game2048.css";
 
 const SLUG = "game2048";
@@ -127,16 +128,42 @@ const tileLabel = (value: number) => {
   return String(value);
 };
 
+const tileSkinIndex = (value: number) => {
+  if (value <= 0) {
+    return -1;
+  }
+  return Math.min(3, Math.round(Math.log2(value)) - 1);
+};
+
 export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
   const sessionStartedAt = new Date();
   let board = emptyBoard();
   let score = 0;
   let finished = false;
+  let skin: GameSkin | null = null;
   spawnTile(board);
   spawnTile(board);
 
   let scoreElement: HTMLElement | undefined;
   let boardElement: HTMLElement | undefined;
+
+  const applyCellVisual = (cell: HTMLElement, value: number) => {
+    cell.className = "game2048-cell";
+    cell.style.backgroundImage = "";
+    if (value <= 0) {
+      cell.textContent = "";
+      return;
+    }
+    cell.dataset.value = String(value);
+    const url = tileImageUrl(skin, tileSkinIndex(value));
+    if (url === null) {
+      cell.textContent = tileLabel(value);
+    } else {
+      cell.classList.add("game2048-cell--skin");
+      cell.style.backgroundImage = `url("${url}")`;
+      cell.textContent = "";
+    }
+  };
 
   const syncBoard = () => {
     if (boardElement === undefined) {
@@ -146,11 +173,7 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
     for (const row of board) {
       for (const value of row) {
         const cell = document.createElement("div");
-        cell.className = "game2048-cell";
-        if (value > 0) {
-          cell.dataset.value = String(value);
-          cell.textContent = tileLabel(value);
-        }
+        applyCellVisual(cell, value);
         boardElement.append(cell);
       }
     }
@@ -164,41 +187,18 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
       return;
     }
     finished = true;
-    const panel = document.createElement("div");
-    panel.className = "game2048-done panel";
-    panel.innerHTML = `<p>${won ? "2048! Отличная партия" : "Ходы закончились"}</p><p class="status">Отправка очков…</p>`;
-    root.append(panel);
-    const status = panel.querySelector(".status");
-    if (score < 1) {
-      panel.querySelector(".status")!.textContent = "Нет очков для отправки";
-      return;
-    }
-    const result = await submitGameScore({
+    await showGameOver({
+      root,
       slug: SLUG,
-      points: score,
+      score,
       sessionStartedAt,
-      sessionEndedAt: new Date(),
+      headline: won ? "2048! Отличная партия" : "Ходы закончились",
+      celebrate: won,
+      onRestart: () => {
+        renderGame2048({ root, onBack });
+      },
+      onBack,
     });
-    if (status instanceof HTMLElement) {
-      status.textContent =
-        result.kind === "error"
-          ? result.message
-          : result.data.counted
-            ? `Очки отправлены: ${score}`
-            : "Тренировочная партия";
-      if (result.kind === "error") {
-        status.classList.add("error");
-      }
-    }
-    const actions = document.createElement("div");
-    actions.className = "game2048-done-actions";
-    actions.innerHTML =
-      '<button type="button" data-restart>Играть снова</button><button type="button" class="secondary" data-back>К таблице</button>';
-    panel.append(actions);
-    actions.querySelector("[data-restart]")?.addEventListener("click", () => {
-      renderGame2048({ root, onBack });
-    });
-    actions.querySelector("[data-back]")?.addEventListener("click", onBack);
   };
 
   const handleMove = (direction: "up" | "down" | "left" | "right") => {
@@ -222,7 +222,9 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
     }
   };
 
-  root.innerHTML = `
+  const mount = async () => {
+    skin = await fetchGameSkin(SLUG);
+    root.innerHTML = `
     <header class="game2048-header">
       <button type="button" class="game2048-back" data-back aria-label="Назад">←</button>
       <div>
@@ -239,6 +241,10 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
 
   scoreElement = root.querySelector("[data-score]") ?? undefined;
   boardElement = root.querySelector("[data-board]") ?? undefined;
+  if (skin?.boardBackgroundUrl !== null && skin?.boardBackgroundUrl !== undefined && boardElement instanceof HTMLElement) {
+    boardElement.style.backgroundImage = `url("${skin.boardBackgroundUrl}")`;
+    boardElement.style.backgroundSize = "cover";
+  }
   root.querySelector("[data-back]")?.addEventListener("click", onBack);
 
   syncBoard();
@@ -280,4 +286,7 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
     if (event.key === "ArrowLeft") handleMove("left");
     if (event.key === "ArrowRight") handleMove("right");
   });
+  };
+
+  void mount();
 };

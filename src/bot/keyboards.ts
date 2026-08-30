@@ -1,6 +1,6 @@
 import { Keyboard } from "grammy";
 import type { Role } from "../domain/types.ts";
-import { miniAppUrl } from "../web-app-url.ts";
+import { adminAppUrl, miniAppUrl } from "../web-app-url.ts";
 
 export const CANCEL_TEXT = "Отмена";
 
@@ -20,8 +20,25 @@ export const contactOrCancelKeyboard = (): Keyboard => {
     .oneTime();
 };
 
-export const MINI_APP_GUEST_LABEL = "Игры";
-export const MINI_APP_STAFF_LABEL = "Приложение";
+export const MINI_APP_GUEST_LABEL = "🎮 Игры";
+export const MINI_APP_STAFF_LABEL = "📱 Приложение";
+
+export const BTN_BALANCE = "💰 Баланс";
+export const BTN_QR = "📱 QR";
+export const BTN_BALANCE_QR_LEGACY = "Баланс и QR";
+export const BTN_HISTORY = "История";
+export const BTN_PROFILE = "👤 Профиль";
+export const BTN_MENU = "📋 Меню";
+export const BTN_PROMOS = "🎁 Акции";
+export const BTN_DIRECTIONS = "📍 Как доехать";
+export const BTN_CONTACTS = "☎️ Контакты";
+export const BTN_BOOK = "📅 Забронировать";
+export const BTN_REFERRAL = "👥 Пригласить друга";
+export const BTN_MORE = "⚙️ Ещё…";
+export const BTN_FIND_GUEST = "🔍 Найти гостя";
+export const BTN_VENUE_CODE = "🏷️ Код зала";
+export const BTN_BOOKINGS_TODAY = "📅 Брони сегодня";
+export const BTN_WEB_ADMIN = "🖥 Веб-админ";
 
 export const miniAppButtonLabel = (role: Role) => {
   return role === "guest" ? MINI_APP_GUEST_LABEL : MINI_APP_STAFF_LABEL;
@@ -32,35 +49,63 @@ type MainKeyboardParameters = {
   readonly publicUrl: string;
 };
 
+const guestKeyboard = (appUrl: string) => {
+  return new Keyboard()
+    .text(BTN_BALANCE)
+    .text(BTN_QR)
+    .row()
+    .webApp(MINI_APP_GUEST_LABEL, appUrl)
+    .row()
+    .text(BTN_MENU)
+    .text(BTN_PROMOS)
+    .row()
+    .text(BTN_PROFILE)
+    .text(BTN_DIRECTIONS)
+    .text(BTN_CONTACTS)
+    .row()
+    .text(BTN_BOOK)
+    .text(BTN_REFERRAL)
+    .row()
+    .text(BTN_MORE)
+    .resized()
+    .persistent();
+};
+
+const masterKeyboard = (appUrl: string) => {
+  return new Keyboard()
+    .text(BTN_FIND_GUEST)
+    .row()
+    .webApp(MINI_APP_STAFF_LABEL, appUrl)
+    .row()
+    .text(BTN_VENUE_CODE)
+    .text(BTN_BOOKINGS_TODAY)
+    .row()
+    .webApp(MINI_APP_GUEST_LABEL, appUrl)
+    .resized()
+    .persistent();
+};
+
+const adminKeyboard = (appUrl: string, adminUrl: string) => {
+  return new Keyboard()
+    .text(BTN_FIND_GUEST)
+    .row()
+    .webApp(MINI_APP_STAFF_LABEL, appUrl)
+    .row()
+    .text(BTN_VENUE_CODE)
+    .text(BTN_BOOKINGS_TODAY)
+    .row()
+    .webApp(BTN_WEB_ADMIN, adminUrl)
+    .resized()
+    .persistent();
+};
+
 export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
   const appUrl = miniAppUrl(publicUrl);
-  const keyboard = new Keyboard()
-    .text("Баланс и QR")
-    .text("История")
-    .row()
-    .text("Профиль")
-    .text("Меню")
-    .row()
-    .text("Акции")
-    .text("Как доехать")
-    .row()
-    .text("Контакты")
-    .webApp(miniAppButtonLabel(role), appUrl);
-
   if (role === "guest") {
-    keyboard.row().text("Отключить рассылку").text("Забронировать");
-    keyboard.row().text("Пригласить друга");
+    return guestKeyboard(appUrl);
   }
-  if (role === "master" || role === "admin") {
-    keyboard.row().text("Найти гостя").text("Код зала");
-    keyboard.row().text("Брони сегодня");
+  if (role === "master") {
+    return masterKeyboard(appUrl);
   }
-  if (role === "admin") {
-    keyboard.row().text("Настройки").text("Роли").text("Рассылка");
-    keyboard.row().text("Статистика").text("История персонала").text("Экспорт");
-    keyboard.row().text("Подозрительные партии").text("Викторина").text("Вопрос викторины");
-    keyboard.row().text("Веб-админ");
-  }
-
-  return keyboard.resized().persistent();
+  return adminKeyboard(appUrl, adminAppUrl(publicUrl));
 };

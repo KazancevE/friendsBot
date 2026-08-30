@@ -51,6 +51,7 @@ export const renderCashier = (root: HTMLElement) => {
     </section>
     <div data-guest-panel hidden>
       ${guestActionsMarkup()}
+      <button type="button" class="cashier-find-another" data-find-another hidden>Найти другого гостя</button>
     </div>
     <p data-status class="status"></p>
   `;
@@ -71,11 +72,42 @@ export const renderCashier = (root: HTMLElement) => {
     },
   });
 
+  const searchResults = root.querySelector("[data-search-results]");
+
   const showGuest = (card: GuestCard) => {
     current = card;
     guestPanel.hidden = false;
     guestUi.showGuest(card);
+    const findAnother = root.querySelector("[data-find-another]");
+    if (findAnother instanceof HTMLButtonElement) {
+      findAnother.hidden = false;
+    }
   };
+
+  const resetGuestPanel = () => {
+    current = undefined;
+    guestPanel.hidden = true;
+    const findAnother = root.querySelector("[data-find-another]");
+    if (findAnother instanceof HTMLButtonElement) {
+      findAnother.hidden = true;
+    }
+    if (searchResults instanceof HTMLElement) {
+      searchResults.hidden = true;
+      searchResults.replaceChildren();
+    }
+    const lookupForm = root.querySelector("[data-lookup]");
+    if (lookupForm instanceof HTMLFormElement) {
+      lookupForm.reset();
+    }
+    setStatus(root, "");
+  };
+
+  const findAnotherButton = root.querySelector("[data-find-another]");
+  if (findAnotherButton instanceof HTMLButtonElement) {
+    findAnotherButton.addEventListener("click", () => {
+      resetGuestPanel();
+    });
+  }
 
   const lookup = async (query: GuestQuery) => {
     setStatus(root, "Ищем…");
@@ -93,7 +125,6 @@ export const renderCashier = (root: HTMLElement) => {
     setStatus(root, "Гость найден");
   };
 
-  const searchResults = root.querySelector("[data-search-results]");
   const renderSearchResults = (hits: ReadonlyArray<GuestSearchHit>) => {
     if (!(searchResults instanceof HTMLElement)) {
       return;

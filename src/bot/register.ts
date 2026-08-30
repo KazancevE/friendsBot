@@ -1,9 +1,11 @@
 import type { Conversation } from "@grammyjs/conversations";
+import { InputFile } from "grammy";
 import { DomainError } from "../domain/errors.ts";
 import { registerGuest } from "../domain/users.ts";
 import { parseReferralStartPayload, resolveReferrerByCode } from "../domain/referral.ts";
 import type { BotContext } from "./context.ts";
 import { contactKeyboard, mainKeyboard } from "./keyboards.ts";
+import { qrPngBuffer } from "./qr.ts";
 
 const BIRTHDAY_RE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
 
@@ -17,23 +19,33 @@ export async function registerGuestConversation(
     return;
   }
 
-  await ctx.reply("Как вас зовут? (имя)");
+  if (ctx.session?.pendingReferralCode !== undefined) {
+    await ctx.reply("👋 Вы пришли по приглашению друга! Бонусы начислятся после первого визита.");
+  }
+
+  await ctx.reply(
+    "🌫️ Добро пожаловать в «Друзья»!\n\nРегистрация займёт минуту: бонусы за чеки, игры недели и призы.\n\nШаг 1/4 — как вас зовут?",
+  );
   const firstName = (
     await conversation.waitFor(":text", {
       otherwise: (c) => c.reply("Отправьте имя текстом"),
     })
   ).msg.text.trim();
 
-  await ctx.reply("Фамилия?");
+  await ctx.reply("Шаг 2/4 — фамилия?");
   const lastName = (
     await conversation.waitFor(":text", {
       otherwise: (c) => c.reply("Отправьте фамилию текстом"),
     })
   ).msg.text.trim();
 
+  await ctx.reply("Шаг 3/4 — дата рождения");
   const birthday = await askBirthday(conversation, ctx);
 
-  await ctx.reply("Поделитесь контактом", { reply_markup: contactKeyboard() });
+  await ctx.reply(
+    "Шаг 4/4 — телефон\n\n📱 Нужен для начисления бонусов и быстрого поиска на кассе.",
+    { reply_markup: contactKeyboard() },
+  );
   const contact = await conversation.form.contact({
     otherwise: (c) => c.reply("Нажмите кнопку «Поделиться контактом»"),
   });
@@ -57,7 +69,7 @@ export async function registerGuestConversation(
         phone: contact.phone_number,
         referredByUserId,
       });
-      return { ok: true as const, balance: user.balance, role: user.role };
+      return { ok: true as const, balance: user.balance, role: user.role, qrToken: user.qrToken };
     } catch (err) {
       if (err instanceof DomainError) {
         return { ok: false as const, message: err.message };
@@ -71,10 +83,12 @@ export async function registerGuestConversation(
     return;
   }
 
-  await ctx.reply(`Добро пожаловать в Друзья\nБаланс: ${result.balance}`, {
+  const buf = await qrPngBuffer(result.qrToken);
+  await ctx.replyWithPhoto(new InputFile(buf), {
+    caption: `✅ Регистрация завершена!\n\n💰 Баланс: ${result.balance} бонусов\n📱 Ваш QR для кассы — на фото\n\n🎮 Отметьтесь в зале, чтобы открыть игры недели.`,
     reply_markup: mainKeyboard({ role: result.role, publicUrl: ctx.config.publicUrl }),
   });
-}
+};
 
 export async function askBirthday(
   conversation: Conversation<BotContext, BotContext>,

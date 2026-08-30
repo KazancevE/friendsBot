@@ -3,9 +3,12 @@ import { initData } from "./telegram.ts";
 export type Role = "guest" | "master" | "admin";
 
 export type Me = {
+  readonly id: string;
   readonly role: Role;
   readonly balance: number;
   readonly visitActive: boolean;
+  readonly checkedInToday: boolean;
+  readonly visitEndsAt: string | null;
 };
 
 export type GuestCoupon = {
@@ -81,9 +84,12 @@ const isMe = (value: unknown): value is Me => {
     return false;
   }
   return (
+    typeof value.id === "string" &&
     isRole(value.role) &&
     typeof value.balance === "number" &&
-    typeof value.visitActive === "boolean"
+    typeof value.visitActive === "boolean" &&
+    (typeof value.checkedInToday === "boolean" || value.checkedInToday === undefined) &&
+    (typeof value.visitEndsAt === "string" || value.visitEndsAt === null || value.visitEndsAt === undefined)
   );
 };
 
@@ -192,6 +198,7 @@ export type Leaderboard = {
   readonly me: {
     readonly place: number | null;
     readonly points: number;
+    readonly playedToday?: boolean;
   };
   readonly top: ReadonlyArray<LeaderboardEntry>;
 };

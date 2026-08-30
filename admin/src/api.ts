@@ -87,6 +87,10 @@ const isStatsSummary = (value: unknown): value is StatsSummary => {
 export const fetchStats = (days: number) => {
   const to = new Date();
   const from = new Date(to.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+  return fetchStatsBetween(from, to);
+};
+
+export const fetchStatsBetween = (from: Date, to: Date) => {
   const params = new URLSearchParams({
     from: from.toISOString(),
     to: to.toISOString(),
@@ -1011,6 +1015,206 @@ export const saveFloorElement = (input: {
 
 export const deleteFloorElement = (id: string) =>
   fetch(`/api/admin/floor-elements/${id}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initData() },
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export type ThemePack = {
+  id: string;
+  name: string;
+  activeFrom: string | null;
+  activeTo: string | null;
+  isManualActive: boolean;
+  assets: {
+    logoUrl: string | null;
+    interiorUrls: string[];
+    hubBackgroundUrl: string | null;
+    heroBannerUrl: string | null;
+    decorUrl: string | null;
+  };
+  colors: {
+    accent: string | null;
+    bg: string | null;
+  };
+  updatedAt: string;
+};
+
+export type GameSkin = {
+  gameSlug: string;
+  tiles: Array<{ index: number; imageUrl: string; label?: string | null }>;
+  boardBackgroundUrl: string | null;
+  trayBackgroundUrl: string | null;
+  updatedAt: string;
+};
+
+const isThemePack = (value: unknown): value is ThemePack => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const raw = value as Record<string, unknown>;
+  return typeof raw.id === "string" && typeof raw.name === "string";
+};
+
+const isThemeState = (value: unknown): value is { packs: ThemePack[]; activeId: string | null } => {
+  if (typeof value !== "object" || value === null || !("packs" in value)) {
+    return false;
+  }
+  const raw = value as { packs: unknown; activeId?: unknown };
+  return Array.isArray(raw.packs) && raw.packs.every(isThemePack);
+};
+
+const isGameSkin = (value: unknown): value is GameSkin => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const raw = value as Record<string, unknown>;
+  return typeof raw.gameSlug === "string" && Array.isArray(raw.tiles);
+};
+
+export const fetchThemePacks = () => getJson("/api/admin/theme", isThemeState);
+
+export const createThemePack = (input: { name: string }) =>
+  postJson<{ pack: ThemePack }>("/api/admin/theme", input, (value): value is { pack: ThemePack } => {
+    return typeof value === "object" && value !== null && "pack" in value && isThemePack((value as { pack: unknown }).pack);
+  }).then((result) =>
+    result.kind === "ok" ? { kind: "ok" as const, data: result.data.pack } : result,
+  );
+
+export const updateThemePack = (input: {
+  id: string;
+  name: string;
+  activeFrom?: string | null;
+  activeTo?: string | null;
+  isManualActive?: boolean;
+  accent?: string | null;
+  bg?: string | null;
+}) =>
+  postJson<{ pack: ThemePack }>("/api/admin/theme", input, (value): value is { pack: ThemePack } => {
+    return typeof value === "object" && value !== null && "pack" in value && isThemePack((value as { pack: unknown }).pack);
+  }).then((result) =>
+    result.kind === "ok" ? { kind: "ok" as const, data: result.data.pack } : result,
+  );
+
+export const activateThemePack = (packId: string) =>
+  fetch("/api/admin/theme/active", {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ packId }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const clearActiveTheme = () =>
+  fetch("/api/admin/theme/active", {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ clear: true }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const uploadThemeAsset = async (packId: string, kind: string, file: File) => {
+  const form = new FormData();
+  form.append("kind", kind);
+  form.append("file", file);
+  const res = await fetch(`/api/admin/theme/${encodeURIComponent(packId)}/upload`, {
+    method: "POST",
+    headers: { "X-Telegram-Init-Data": initData() },
+    body: form,
+  });
+  if (!res.ok) {
+    const parsed: unknown = await res.json().catch(() => ({}));
+    const message =
+      typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+        ? parsed.message
+        : "Ошибка загрузки";
+    return { kind: "error" as const, message };
+  }
+  return { kind: "ok" as const, data: null };
+};
+
+export const deleteThemeInterior = (packId: string, url: string) =>
+  fetch(`/api/admin/theme/${encodeURIComponent(packId)}/interior`, {
+    method: "DELETE",
+    headers: headers(),
+    body: JSON.stringify({ url }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const deleteThemePack = (packId: string) =>
+  fetch(`/api/admin/theme/${encodeURIComponent(packId)}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initData() },
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const fetchGameSkins = () =>
+  getJson("/api/admin/game-skins", (value): value is { skins: GameSkin[] } => {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      "skins" in value &&
+      Array.isArray((value as { skins: unknown }).skins) &&
+      (value as { skins: unknown[] }).skins.every(isGameSkin)
+    );
+  }).then((result) =>
+    result.kind === "ok" ? { kind: "ok" as const, data: result.data.skins } : result,
+  );
+
+export const uploadGameSkinAsset = async (
+  slug: string,
+  kind: "tile" | "boardBg" | "trayBg",
+  file: File,
+  index?: number,
+) => {
+  const form = new FormData();
+  form.append("kind", kind);
+  form.append("file", file);
+  if (kind === "tile" && index !== undefined) {
+    form.append("index", String(index));
+  }
+  const res = await fetch(`/api/admin/game-skins/${encodeURIComponent(slug)}/upload`, {
+    method: "POST",
+    headers: { "X-Telegram-Init-Data": initData() },
+    body: form,
+  });
+  if (!res.ok) {
+    const parsed: unknown = await res.json().catch(() => ({}));
+    const message =
+      typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+        ? parsed.message
+        : "Ошибка загрузки";
+    return { kind: "error" as const, message };
+  }
+  return { kind: "ok" as const, data: null };
+};
+
+export const deleteGameSkin = (slug: string) =>
+  fetch(`/api/admin/game-skins/${encodeURIComponent(slug)}`, {
     method: "DELETE",
     headers: { "X-Telegram-Init-Data": initData() },
   }).then(async (res) => {

@@ -8,6 +8,7 @@ import {
 import { MOSCOW } from "../domain/week.ts";
 import type { Role } from "../domain/types.ts";
 import type { BotContext } from "./context.ts";
+import { BTN_VENUE_CODE } from "./keyboards.ts";
 import { qrPngBuffer } from "./qr.ts";
 
 const isStaffRole = (role: Role | undefined): boolean => {
@@ -49,7 +50,7 @@ export const sendVenueCodeCard = async (ctx: BotContext) => {
 };
 
 export function wireVenueCodeHandlers(bot: Bot<BotContext>) {
-  bot.hears("Код зала", async (ctx) => {
+  bot.hears([BTN_VENUE_CODE, "Код зала"], async (ctx) => {
     await sendVenueCodeCard(ctx);
   });
 

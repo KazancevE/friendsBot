@@ -9,7 +9,7 @@ import {
 import { DomainError } from "./errors.ts";
 import type { Role } from "./types.ts";
 import { rankScores } from "./score-ranking.ts";
-import { weekStartMoscow } from "./week.ts";
+import { MOSCOW, weekStartMoscow } from "./week.ts";
 
 const LEADERBOARD_TOP = 10;
 const QUIZ_SLUG = "quiz";
@@ -165,9 +165,20 @@ const buildLeaderboard = async (
   const meScore = meIndex === -1 ? undefined : ranked[meIndex];
   const me =
     meScore === undefined
-      ? { place: null, points: 0 }
-      : { place: meIndex + 1, points: meScore.points };
+      ? { place: null, points: 0, playedToday: false }
+      : { place: meIndex + 1, points: meScore.points, playedToday: false };
   return { me, top };
+};
+
+const playedGameToday = async (
+  store: Store,
+  userId: string,
+  gameId: string,
+  now: Date,
+) => {
+  const dayStart = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
+  const logs = await store.listRecentGameSessionLogs(userId, gameId, 12);
+  return logs.some((log) => log.accepted && log.createdAt >= dayStart);
 };
 
 export const getOverallLeaderboard = async (store: Store, input: LeaderboardParameters) => {
@@ -183,7 +194,12 @@ export const getLeaderboard = async (store: Store, input: GetLeaderboardParamete
   }
   const weekStart = weekStartMoscow(DateTime.fromJSDate(input.now)).toJSDate();
   const week = await store.getOrCreateOpenWeek(game.id, weekStart);
-  return buildLeaderboard(store, await store.listWeekScores(week.id), input);
+  const board = await buildLeaderboard(store, await store.listWeekScores(week.id), input);
+  const playedToday = await playedGameToday(store, input.userId, game.id, input.now);
+  return {
+    ...board,
+    me: { ...board.me, playedToday },
+  };
 };
 
 export const listGames = async (store: Store, now = new Date()) => {

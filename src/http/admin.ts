@@ -16,6 +16,26 @@ import { getGuestVisitPattern } from "../domain/visit-pattern.ts";
 import { getStatsSummary, getStatsHeatmap, getStatsStaff, getStatsTimeseries, periodLastDays, periodToday } from "../domain/stats.ts";
 import { assignRole } from "../domain/roles.ts";
 import { addMenuGalleryImage, isGalleryMenuItem, removeMenuGalleryImage, reorderMenuGallery, saveMenuUpload } from "../domain/menu-gallery.ts";
+import {
+  saveAssetUpload,
+  themeAssetFolder,
+  themeAssetMaxBytes,
+  type ThemeAssetKind,
+} from "../domain/asset-upload.ts";
+import {
+  deleteGameSkin,
+  listGameSkins,
+  patchGameSkin,
+  upsertGameSkinTile,
+} from "../domain/game-skin.ts";
+import {
+  deleteThemePack,
+  listThemePacks,
+  removeThemeInterior,
+  setActiveThemeId,
+  updateThemeAsset,
+  upsertThemePack,
+} from "../domain/theme.ts";
 import { handleBookingRequest, formatBookingSlot, assignTableToBooking, moveBookingTable, swapBookingTables, markBookingSeated } from "../domain/booking.ts";
 import { getActiveFloorPlanView, saveFloorPlan, saveVenueTable, removeVenueTable, saveFloorElement, removeFloorElement } from "../domain/floor-plan.ts";
 import { moscowDayRange } from "../domain/booking-slots.ts";
@@ -1319,6 +1339,140 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
     const guest = await store.updateUser(guestId, { staffNote: note.length === 0 ? null : note });
     const card = await buildStaffGuestCard(store, guest, new Date());
     return c.json({ card });
+  });
+
+  app.get("/api/admin/theme", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const state = await listThemePacks(store);
+    return c.json(state);
+  });
+
+  app.post("/api/admin/theme", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const pack = await upsertThemePack(store, {
+      id: typeof body.id === "string" ? body.id : undefined,
+      name: typeof body.name === "string" ? body.name : "",
+      activeFrom: typeof body.activeFrom === "string" ? body.activeFrom : body.activeFrom === null ? null : undefined,
+      activeTo: typeof body.activeTo === "string" ? body.activeTo : body.activeTo === null ? null : undefined,
+      isManualActive: typeof body.isManualActive === "boolean" ? body.isManualActive : undefined,
+      colors: {
+        accent: typeof body.accent === "string" ? body.accent : body.accent === null ? null : undefined,
+        bg: typeof body.bg === "string" ? body.bg : body.bg === null ? null : undefined,
+      },
+    });
+    return c.json({ pack });
+  });
+
+  app.patch("/api/admin/theme/active", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    if (body.clear === true) {
+      await setActiveThemeId(store, null);
+      return c.json({ activeId: null });
+    }
+    const packId = typeof body.packId === "string" ? body.packId : null;
+    if (packId === null) {
+      throw new DomainError("bad_request", "Нужен packId или clear");
+    }
+    await setActiveThemeId(store, packId);
+    return c.json({ activeId: packId });
+  });
+
+  app.post("/api/admin/theme/:id/upload", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await c.req.parseBody();
+    const kindRaw = typeof body.kind === "string" ? body.kind : "";
+    const kindMap: Record<string, ThemeAssetKind> = {
+      logo: "logo",
+      interior: "interior",
+      hubBg: "hubBg",
+      heroBanner: "heroBanner",
+      decor: "decor",
+    };
+    const kind = kindMap[kindRaw];
+    if (kind === undefined) {
+      throw new DomainError("bad_request", "Некорректный kind");
+    }
+    const file = body.file;
+    if (!(file instanceof File)) {
+      throw new DomainError("bad_request", "Нужен файл");
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const url = await saveAssetUpload({
+      folder: themeAssetFolder(kind),
+      bytes,
+      originalName: file.name,
+      maxBytes: themeAssetMaxBytes(kind),
+    });
+    const packId = c.req.param("id");
+    const pack = await updateThemeAsset(store, {
+      packId,
+      kind: kind === "interior" ? "interiorAppend" : kind === "logo" ? "logoUrl" : kind === "hubBg" ? "hubBackgroundUrl" : kind === "heroBanner" ? "heroBannerUrl" : "decorUrl",
+      url,
+    });
+    return c.json({ pack, url });
+  });
+
+  app.delete("/api/admin/theme/:id/interior", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const url = typeof body.url === "string" ? body.url : "";
+    if (url.length === 0) {
+      throw new DomainError("bad_request", "Нужен url");
+    }
+    const pack = await removeThemeInterior(store, c.req.param("id"), url);
+    return c.json({ pack });
+  });
+
+  app.delete("/api/admin/theme/:id", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    await deleteThemePack(store, c.req.param("id"));
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/admin/game-skins", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const skins = await listGameSkins(store);
+    return c.json({ skins: Object.values(skins) });
+  });
+
+  app.post("/api/admin/game-skins/:slug/upload", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const slug = c.req.param("slug");
+    const body = await c.req.parseBody();
+    const kind = typeof body.kind === "string" ? body.kind : "";
+    const file = body.file;
+    if (!(file instanceof File)) {
+      throw new DomainError("bad_request", "Нужен файл");
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const url = await saveAssetUpload({
+      folder: themeAssetFolder("gameTile"),
+      bytes,
+      originalName: file.name,
+      maxBytes: themeAssetMaxBytes("gameTile"),
+    });
+    if (kind === "tile") {
+      const index = Number(body.index);
+      const skin = await upsertGameSkinTile(store, { gameSlug: slug, index, imageUrl: url });
+      return c.json({ skin, url });
+    }
+    if (kind === "boardBg") {
+      const skin = await patchGameSkin(store, slug, { boardBackgroundUrl: url });
+      return c.json({ skin, url });
+    }
+    if (kind === "trayBg") {
+      const skin = await patchGameSkin(store, slug, { trayBackgroundUrl: url });
+      return c.json({ skin, url });
+    }
+    throw new DomainError("bad_request", "kind: tile | boardBg | trayBg");
+  });
+
+  app.delete("/api/admin/game-skins/:slug", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    await deleteGameSkin(store, c.req.param("slug"));
+    return c.json({ ok: true });
   });
 
   return app;

@@ -16,6 +16,7 @@ import { DomainError } from "../domain/errors.ts";
 import { listOnDutyStaffTelegramIds } from "../domain/staff-schedule.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
+import { BTN_BOOK, BTN_BOOKINGS_TODAY } from "./keyboards.ts";
 import { MOSCOW } from "../domain/week.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
@@ -167,7 +168,7 @@ export async function guestBookingConversation(conversation: BotConversation, ct
 }
 
 export function wireBookingHandlers(bot: Bot<BotContext>) {
-  bot.hears("Брони сегодня", async (ctx) => {
+  bot.hears([BTN_BOOKINGS_TODAY, "Брони сегодня"], async (ctx) => {
     if (!isStaffRole(ctx.dbUser?.role)) {
       await ctx.reply("Недостаточно прав");
       return;
@@ -193,7 +194,7 @@ export function wireBookingHandlers(bot: Bot<BotContext>) {
     await ctx.reply(["Брони на сегодня:", ...lines].join("\n"));
   });
 
-  bot.hears("Забронировать", async (ctx) => {
+  bot.hears([BTN_BOOK, "Забронировать"], async (ctx) => {
     if (!ctx.dbUser) {
       await enterConversation(ctx, "registerGuest");
       return;

@@ -18,7 +18,14 @@ import { formatWeekCountdown } from "./hub-week.ts";
 import { renderMatch3 } from "./match3.ts";
 import { renderQuiz } from "./quiz.ts";
 
-import { renderCheckIn } from "./check-in.ts";
+import { getCachedTheme, fetchGameSkin, gameCoverUrl } from "./theme-client.ts";
+import { bindMainButton, hideMainButton } from "./telegram.ts";
+import {
+  myRowInTop,
+  renderLeaderboardItemHtml,
+  renderMyStandingHtml,
+  type LeaderboardRenderOptions,
+} from "./hub-leaderboard.ts";
 
 const STAFF_ROLES = new Set<Role>(["master", "admin"]);
 
@@ -39,6 +46,7 @@ type RenderHubOptions = {
 type GameBoard = {
   readonly game: GameCatalogEntry;
   readonly board: Leaderboard;
+  readonly coverUrl: string | null;
 };
 
 type HubViewModel = {
@@ -48,6 +56,8 @@ type HubViewModel = {
   readonly rules: GameRules;
   readonly hubOptions: RenderHubOptions;
   readonly staffViewer: boolean;
+  readonly visitLocked: boolean;
+  readonly myUserId: string;
 };
 
 const escapeHtml = (text: string) => {
@@ -78,12 +88,68 @@ const isStaffViewer = (role: Role, staffMode: boolean) => {
   return staffMode || STAFF_ROLES.has(role);
 };
 
+const leaderboardOptions = (
+  viewModel: HubViewModel,
+): LeaderboardRenderOptions => {
+  return {
+    staffViewer: viewModel.staffViewer,
+    myUserId: viewModel.myUserId,
+    winnersCount: viewModel.rules.winnersCount,
+  };
+};
+
+const formatVisitEndTime = (iso: string | null) => {
+  if (iso === null) {
+    return "";
+  }
+  const date = new Date(iso);
+  return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+};
+
+const renderHubSkeleton = () => {
+  return `
+    <div class="hub hub--loading">
+      <div class="skeleton skeleton-title"></div>
+      <div class="skeleton skeleton-hero"></div>
+      <div class="skeleton skeleton-row"></div>
+      <div class="game-grid">
+        ${Array.from({ length: 4 }, () => `<div class="skeleton skeleton-card"></div>`).join("")}
+      </div>
+    </div>
+  `;
+};
+
+const renderVisitEndedBanner = () => {
+  return `
+    <section class="hub-visit-ended panel">
+      <p class="hub-visit-ended-title">Спасибо за визит!</p>
+      <p class="muted">Очки сохранены до конца недели. Следите за общим зачётом ниже.</p>
+    </section>
+  `;
+};
+
+const renderCheckInBanner = () => {
+  return `
+    <aside class="hub-check-in-banner panel" data-check-in-banner>
+      <div>
+        <p class="hub-check-in-banner-title">Отметьтесь в зале</p>
+        <p class="muted hub-check-in-banner-text">Игры доступны во время визита. Рейтинги и правила — уже здесь.</p>
+      </div>
+      <button type="button" class="hub-check-in-banner-btn" data-open-check-in>Отметиться</button>
+    </aside>
+  `;
+};
 const renderStatusRow = (me: Me, overallBoard: Leaderboard, staffViewer: boolean) => {
+  const visitEnd = formatVisitEndTime(me.visitEndsAt);
   const visitLabel = staffViewer
     ? "Режим персонала"
     : me.visitActive
-      ? "🟢 Вы в зале"
-      : "Визит не активен";
+      ? visitEnd.length > 0
+        ? `🟢 Вы в зале до ${visitEnd}`
+        : "🟢 Вы в зале"
+      : me.checkedInToday
+        ? "⚪ Визит завершён"
+        : "⚪ Не в зале";
   const overallLabel = `Общий зачёт: ${formatPlaceShort(overallBoard.me.place)} · ${overallBoard.me.points} очков`;
 
   return `
@@ -103,20 +169,34 @@ const renderStatusRow = (me: Me, overallBoard: Leaderboard, staffViewer: boolean
   `;
 };
 
-const renderLeaderboardItem = (row: Leaderboard["top"][number], staffViewer: boolean) => {
-  if (staffViewer) {
-    const name = row.displayName ?? "—";
-    return `<li>${row.place}. ${escapeHtml(name)} — ${row.points} очков</li>`;
-  }
-  return `<li>${row.place}. ${row.points} очков</li>`;
-};
-
 const renderHero = (rules: GameRules, now: Date) => {
+  const theme = getCachedTheme();
   const countdown = formatWeekCountdown(now);
+  const bannerStyle =
+    theme?.assets.heroBannerUrl !== null && theme?.assets.heroBannerUrl !== undefined
+      ? ` style="background-image:url('${escapeHtml(theme.assets.heroBannerUrl)}')"`
+      : "";
+  const logoHtml =
+    theme?.assets.logoUrl !== null && theme?.assets.logoUrl !== undefined
+      ? `<img class="hub-hero-logo" src="${escapeHtml(theme.assets.logoUrl)}" alt="" />`
+      : "";
+  const interiorHtml =
+    theme !== null && theme.assets.interiorUrls.length > 0
+      ? `<div class="hub-hero-interior">${theme.assets.interiorUrls
+          .slice(0, 3)
+          .map((url) => `<img src="${escapeHtml(url)}" alt="" loading="lazy" />`)
+          .join("")}</div>`
+      : "";
+  const themeName =
+    theme?.name !== null && theme?.name !== undefined && theme.name.length > 0
+      ? escapeHtml(theme.name)
+      : "🌫️ Неделя в «Друзьях»";
   return `
-    <section class="hub-hero panel">
-      <p class="hub-hero-kicker">🌫️ Неделя в «Друзьях»</p>
+    <section class="hub-hero panel"${bannerStyle}>
+      ${logoHtml}
+      <p class="hub-hero-kicker">${themeName}</p>
       <p class="hub-hero-lead">Соревнуйтесь за бонусы и купоны</p>
+      ${interiorHtml}
       <div class="hub-hero-meta">
         <span>⏱ До итогов: ${escapeHtml(countdown)}</span>
         <span>🏆 ${rules.winnersCount} призовых мест</span>
@@ -134,26 +214,37 @@ const renderHubLinks = () => {
   `;
 };
 
-const renderCompactGameCard = ({ game, board }: GameBoard) => {
+const renderCompactGameCard = ({ game, board, coverUrl }: GameBoard, visitLocked: boolean) => {
+  const lockedClass = visitLocked ? " game-card-compact--locked" : "";
+  const playedClass = board.me.playedToday === true ? " game-card-compact--played" : "";
+  const playLabel = visitLocked ? "🔒 Отметиться" : "Играть";
+  const playData = visitLocked ? 'data-open-check-in' : `data-play="${escapeHtml(game.slug)}"`;
+  const playedBadge =
+    board.me.playedToday === true ? '<span class="game-card-badge">Сегодня ✓</span>' : "";
+  const coverHtml =
+    coverUrl !== null
+      ? `<img class="game-card-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy" />`
+      : `<span class="game-card-icon" aria-hidden="true">${gameIcon(game.slug)}</span>`;
   return `
-    <article class="game-card-compact panel" data-game-detail="${escapeHtml(game.slug)}">
-      <span class="game-card-icon" aria-hidden="true">${gameIcon(game.slug)}</span>
+    <article class="game-card-compact panel${lockedClass}${playedClass}" data-game-detail="${escapeHtml(game.slug)}">
+      ${coverHtml}
+      ${playedBadge}
       <h3 class="game-card-title">${escapeHtml(game.title)}</h3>
       <p class="game-card-stats">
         <strong class="game-card-place">${formatPlaceShort(board.me.place)}</strong>
         <span>· ${board.me.points} очков</span>
       </p>
-      <button type="button" class="game-card-play" data-play="${escapeHtml(game.slug)}">Играть</button>
+      <button type="button" class="game-card-play" ${playData}>${playLabel}</button>
     </article>
   `;
 };
 
-const renderGameGrid = (gameBoards: ReadonlyArray<GameBoard>) => {
+const renderGameGrid = (gameBoards: ReadonlyArray<GameBoard>, visitLocked: boolean) => {
   return `
     <section class="hub-games" aria-label="Игры">
       <h2 class="hub-section-title">Выберите игру</h2>
       <div class="game-grid">
-        ${gameBoards.map((entry) => renderCompactGameCard(entry)).join("")}
+        ${gameBoards.map((entry) => renderCompactGameCard(entry, visitLocked)).join("")}
       </div>
     </section>
   `;
@@ -175,27 +266,32 @@ const renderRulesSheetContent = (rules: GameRules) => {
   `;
 };
 
+const renderLeaderboardSection = (
+  board: Leaderboard,
+  options: LeaderboardRenderOptions,
+) => {
+  const inTop = myRowInTop(board.top, options.myUserId);
+  const standing = renderMyStandingHtml(board.me.place, board.me.points, inTop);
+  const top =
+    board.top.length === 0
+      ? "<p class=\"muted\">Пока нет результатов</p>"
+      : `<ol class="leaderboard">${board.top.map((row) => renderLeaderboardItemHtml(row, options)).join("")}</ol>`;
+  return `${standing}${top}`;
+};
+
 const renderLeaderboardsSheetContent = (
   overallBoard: Leaderboard,
   gameBoards: ReadonlyArray<GameBoard>,
-  staffViewer: boolean,
+  viewModel: HubViewModel,
 ) => {
-  const overallTop =
-    overallBoard.top.length === 0
-      ? "<p class=\"muted\">Пока нет результатов</p>"
-      : `<ol class="leaderboard">${overallBoard.top.map((row) => renderLeaderboardItem(row, staffViewer)).join("")}</ol>`;
-
+  const options = leaderboardOptions(viewModel);
   const sections = gameBoards
     .map(({ game, board }) => {
-      const top =
-        board.top.length === 0
-          ? "<p class=\"muted\">Пока нет результатов</p>"
-          : `<ol class="leaderboard">${board.top.map((row) => renderLeaderboardItem(row, staffViewer)).join("")}</ol>`;
       return `
         <section class="hub-sheet-game">
           <h3>${escapeHtml(game.title)}</h3>
           <p class="hub-sheet-me">Ваше место: ${formatPlaceShort(board.me.place)} · ${board.me.points} очков</p>
-          ${top}
+          ${renderLeaderboardSection(board, options)}
         </section>
       `;
     })
@@ -206,7 +302,7 @@ const renderLeaderboardsSheetContent = (
     <section class="hub-sheet-game hub-sheet-game--overall">
       <h3>Общий зачёт</h3>
       <p class="hub-sheet-me">Ваше место: ${formatPlaceShort(overallBoard.me.place)} · ${overallBoard.me.points} очков</p>
-      ${overallTop}
+      ${renderLeaderboardSection(overallBoard, options)}
     </section>
     ${sections}
   `;
@@ -229,10 +325,15 @@ const renderGameDetail = (
   viewModel: HubViewModel,
 ) => {
   const { board, game } = entry;
-  const top =
-    board.top.length === 0
-      ? "<p class=\"muted\">Пока нет результатов</p>"
-      : `<ol class="leaderboard">${board.top.map((row) => renderLeaderboardItem(row, viewModel.staffViewer)).join("")}</ol>`;
+  const options = leaderboardOptions(viewModel);
+  const playAttrs = viewModel.visitLocked
+    ? 'data-open-check-in'
+    : `data-play="${escapeHtml(game.slug)}"`;
+  const playLabel = viewModel.visitLocked ? "🔒 Отметиться" : "Играть";
+  const coverHtml =
+    entry.coverUrl !== null
+      ? `<img class="game-detail-cover" src="${escapeHtml(entry.coverUrl)}" alt="" loading="lazy" />`
+      : `<div class="game-detail-cover game-detail-cover--emoji" aria-hidden="true">${gameIcon(game.slug)}</div>`;
 
   root.innerHTML = `
     <div class="game-detail">
@@ -240,25 +341,36 @@ const renderGameDetail = (
         <button type="button" class="game-detail-back" data-hub-back aria-label="Назад">←</button>
         <div>
           <h1>${escapeHtml(game.title)}</h1>
-          <p class="muted game-detail-sub">${gameIcon(game.slug)} Рейтинг недели</p>
+          <p class="muted game-detail-sub">Рейтинг недели</p>
         </div>
       </header>
+      ${coverHtml}
       <section class="panel game-detail-stats">
         <p>Ваше место: <strong class="hub-status-accent">${formatPlaceShort(board.me.place)}</strong></p>
         <p>Очки недели: <strong class="hub-status-accent">${board.me.points}</strong></p>
+        ${board.me.playedToday === true ? '<p class="game-detail-played">✓ Уже играли сегодня</p>' : ""}
       </section>
       <section class="panel">
         <h2>Топ недели</h2>
-        ${top}
+        ${renderLeaderboardSection(board, options)}
       </section>
-      <button type="button" class="game-detail-play" data-play="${escapeHtml(game.slug)}">Играть</button>
+      <button type="button" class="game-detail-play" ${playAttrs}>${playLabel}</button>
     </div>
   `;
 
-  bindPlayButtons(root, viewModel.hubOptions);
+  bindHubActions(root, viewModel);
+  const unbindMain = bindMainButton(playLabel, () => {
+    if (viewModel.visitLocked) {
+      openCheckInSheet(root, viewModel);
+      return;
+    }
+    launchGame(game.slug, root, viewModel.hubOptions);
+  });
   const back = root.querySelector("[data-hub-back]");
   if (back instanceof HTMLButtonElement) {
     back.addEventListener("click", () => {
+      unbindMain();
+      hideMainButton();
       renderBoard(root, viewModel);
     });
   }
@@ -301,7 +413,7 @@ const bindSheetControls = (root: HTMLElement, viewModel: HubViewModel) => {
       if (sheet === "leaderboards") {
         openSheet(
           root,
-          renderLeaderboardsSheetContent(viewModel.overallBoard, viewModel.gameBoards, viewModel.staffViewer),
+          renderLeaderboardsSheetContent(viewModel.overallBoard, viewModel.gameBoards, viewModel),
         );
       }
     });
@@ -367,7 +479,23 @@ const launchGame = (
   }
 };
 
-const bindPlayButtons = (root: HTMLElement, hubOptions: RenderHubOptions) => {
+const openCheckInSheet = (root: HTMLElement, viewModel: HubViewModel) => {
+  openSheet(root, `<div data-check-in-host></div>`);
+  const host = root.querySelector("[data-check-in-host]");
+  if (!(host instanceof HTMLElement)) {
+    return;
+  }
+  renderCheckIn({
+    root: host,
+    compact: true,
+    onSuccess: () => {
+      closeSheet(root);
+      void renderHub(root, viewModel.hubOptions);
+    },
+  });
+};
+
+const bindPlayButtons = (root: HTMLElement, viewModel: HubViewModel) => {
   for (const play of root.querySelectorAll("[data-play]")) {
     if (!(play instanceof HTMLButtonElement)) {
       continue;
@@ -376,10 +504,27 @@ const bindPlayButtons = (root: HTMLElement, hubOptions: RenderHubOptions) => {
       event.stopPropagation();
       const slug = play.dataset.play;
       if (slug !== undefined && slug.length > 0) {
-        launchGame(slug, root, hubOptions);
+        launchGame(slug, root, viewModel.hubOptions);
       }
     });
   }
+};
+
+const bindCheckInTriggers = (root: HTMLElement, viewModel: HubViewModel) => {
+  for (const trigger of root.querySelectorAll("[data-open-check-in]")) {
+    if (!(trigger instanceof HTMLButtonElement)) {
+      continue;
+    }
+    trigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openCheckInSheet(root, viewModel);
+    });
+  }
+};
+
+const bindHubActions = (root: HTMLElement, viewModel: HubViewModel) => {
+  bindPlayButtons(root, viewModel);
+  bindCheckInTriggers(root, viewModel);
 };
 
 const bindGameCards = (root: HTMLElement, viewModel: HubViewModel) => {
@@ -388,8 +533,10 @@ const bindGameCards = (root: HTMLElement, viewModel: HubViewModel) => {
       continue;
     }
     card.addEventListener("click", (event) => {
-      if (event.target instanceof HTMLButtonElement && event.target.dataset.play !== undefined) {
-        return;
+      if (event.target instanceof HTMLButtonElement) {
+        if (event.target.dataset.play !== undefined || event.target.dataset.openCheckIn !== undefined) {
+          return;
+        }
       }
       const slug = card.dataset.gameDetail;
       if (slug === undefined || slug.length === 0) {
@@ -405,33 +552,39 @@ const bindGameCards = (root: HTMLElement, viewModel: HubViewModel) => {
 };
 
 const renderBoard = (root: HTMLElement, viewModel: HubViewModel) => {
-  const { gameBoards, overallBoard, rules, hubOptions, staffViewer, me } = viewModel;
+  hideMainButton();
+  const { gameBoards, overallBoard, rules, staffViewer, me, visitLocked } = viewModel;
   const now = new Date();
   const staffBanner = staffViewer
     ? `<p class="staff-banner">Режим персонала — очки не участвуют в розыгрыше</p>`
     : "";
+  const checkInBanner = visitLocked ? renderCheckInBanner() : "";
+  const visitEndedBanner =
+    !staffViewer && !visitLocked && me.checkedInToday && !me.visitActive ? renderVisitEndedBanner() : "";
 
   root.innerHTML = `
     <div class="hub">
       <header class="hub-header">
         <h1>Игры</h1>
       </header>
+      ${checkInBanner}
+      ${visitEndedBanner}
       ${renderHero(rules, now)}
       ${renderStatusRow(me, overallBoard, staffViewer)}
       ${staffBanner}
       ${renderHubLinks()}
-      ${renderGameGrid(gameBoards)}
+      ${renderGameGrid(gameBoards, visitLocked)}
     </div>
     ${renderSheetMarkup()}
   `;
 
-  bindPlayButtons(root, hubOptions);
+  bindHubActions(root, viewModel);
   bindGameCards(root, viewModel);
   bindSheetControls(root, viewModel);
 };
 
 export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {}) => {
-  root.textContent = "Загрузка…";
+  root.innerHTML = renderHubSkeleton();
   document.body.classList.remove("hub-sheet-open");
 
   const me = await fetchMe();
@@ -442,16 +595,7 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
 
   const role = options.role ?? me.data.role;
   const staffViewer = isStaffViewer(role, options.staffMode === true);
-
-  if (!staffViewer && !me.data.visitActive) {
-    renderCheckIn({
-      root,
-      onSuccess: () => {
-        void renderHub(root, options);
-      },
-    });
-    return;
-  }
+  const visitLocked = !staffViewer && !me.data.visitActive;
 
   const [games, rules, overallBoard] = await Promise.all([
     fetchGames(),
@@ -473,8 +617,8 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
 
   const boards = await Promise.all(
     games.data.map(async (game) => {
-      const board = await fetchLeaderboard(game.slug);
-      return { game, board };
+      const [board, skin] = await Promise.all([fetchLeaderboard(game.slug), fetchGameSkin(game.slug)]);
+      return { game, board, skin };
     }),
   );
 
@@ -486,7 +630,13 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
 
   const gameBoards = boards.flatMap((entry) => {
     if (entry.board.kind === "ok") {
-      return [{ game: entry.game, board: entry.board.data }];
+      return [
+        {
+          game: entry.game,
+          board: entry.board.data,
+          coverUrl: gameCoverUrl(entry.skin),
+        },
+      ];
     }
     return [];
   });
@@ -498,5 +648,7 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
     rules: rules.data,
     hubOptions: options,
     staffViewer,
+    visitLocked,
+    myUserId: me.data.id,
   });
 };

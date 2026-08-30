@@ -136,7 +136,25 @@ test("getOverallLeaderboard sums points across games", async () => {
     now,
     viewerRole: "guest",
   });
-  expect(board.me).toEqual({ place: 1, points: 200 });
+  expect(board.me).toEqual({ place: 1, points: 200, playedToday: false });
+});
+
+test("getLeaderboard marks playedToday after accepted session", async () => {
+  const { store, user, staff } = await seed();
+  await applyCheck(store, {
+    guestId: user.id,
+    actorId: staff.id,
+    checkRubles: 100,
+    now,
+  });
+  await submitScore(store, { userId: user.id, slug: "match3", points: 120, now, ...sessionTiming(now, 15) });
+  const board = await getLeaderboard(store, {
+    userId: user.id,
+    slug: "match3",
+    now,
+    viewerRole: "guest",
+  });
+  expect(board.me.playedToday).toBe(true);
 });
 
 test("getGameRules returns settings and body", async () => {

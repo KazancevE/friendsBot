@@ -154,12 +154,17 @@ export const createCashierRoutes = ({ store, botToken }: CreateCashierRoutesPara
   };
 
   app.post("/api/me", async (c) => {
+    const now = new Date();
     const { user } = await actorFromRequest(c);
-    const visit = await store.getActiveVisit(user.id, new Date());
+    const visit = await store.getActiveVisit(user.id, now);
+    const checkedInToday = await store.hasCheckInToday(user.id, now);
     return c.json({
+      id: user.id,
       role: user.role,
       balance: user.balance,
       visitActive: visit !== null,
+      checkedInToday,
+      visitEndsAt: visit?.endsAt.toISOString() ?? null,
     });
   });
 
