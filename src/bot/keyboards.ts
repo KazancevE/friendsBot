@@ -1,4 +1,4 @@
-import { Keyboard } from "grammy";
+import { InlineKeyboard, Keyboard } from "grammy";
 import type { Role } from "../domain/types.ts";
 import { adminAppUrl, miniAppUrl } from "../web-app-url.ts";
 
@@ -44,17 +44,25 @@ export const miniAppButtonLabel = (role: Role) => {
   return role === "guest" ? MINI_APP_GUEST_LABEL : MINI_APP_STAFF_LABEL;
 };
 
-type MainKeyboardParameters = {
-  readonly role: Role;
-  readonly publicUrl: string;
+/** Reply keyboard: text only — Telegram не передаёт initData с reply web_app. */
+export const inlineMiniAppKeyboard = (publicUrl: string, label: string) => {
+  return new InlineKeyboard().webApp(label, miniAppUrl(publicUrl));
 };
 
-const guestKeyboard = (appUrl: string) => {
+export const inlineAdminAppKeyboard = (publicUrl: string) => {
+  return new InlineKeyboard().webApp("Открыть веб-админ", adminAppUrl(publicUrl));
+};
+
+type MainKeyboardParameters = {
+  readonly role: Role;
+};
+
+const guestKeyboard = () => {
   return new Keyboard()
     .text(BTN_BALANCE)
     .text(BTN_QR)
     .row()
-    .webApp(MINI_APP_GUEST_LABEL, appUrl)
+    .text(MINI_APP_GUEST_LABEL)
     .row()
     .text(BTN_MENU)
     .text(BTN_PROMOS)
@@ -71,41 +79,40 @@ const guestKeyboard = (appUrl: string) => {
     .persistent();
 };
 
-const masterKeyboard = (appUrl: string) => {
+const masterKeyboard = () => {
   return new Keyboard()
     .text(BTN_FIND_GUEST)
     .row()
-    .webApp(MINI_APP_STAFF_LABEL, appUrl)
+    .text(MINI_APP_STAFF_LABEL)
     .row()
     .text(BTN_VENUE_CODE)
     .text(BTN_BOOKINGS_TODAY)
     .row()
-    .webApp(MINI_APP_GUEST_LABEL, appUrl)
+    .text(MINI_APP_GUEST_LABEL)
     .resized()
     .persistent();
 };
 
-const adminKeyboard = (appUrl: string, adminUrl: string) => {
+const adminKeyboard = () => {
   return new Keyboard()
     .text(BTN_FIND_GUEST)
     .row()
-    .webApp(MINI_APP_STAFF_LABEL, appUrl)
+    .text(MINI_APP_STAFF_LABEL)
     .row()
     .text(BTN_VENUE_CODE)
     .text(BTN_BOOKINGS_TODAY)
     .row()
-    .webApp(BTN_WEB_ADMIN, adminUrl)
+    .text(BTN_WEB_ADMIN)
     .resized()
     .persistent();
 };
 
-export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
-  const appUrl = miniAppUrl(publicUrl);
+export const mainKeyboard = ({ role }: MainKeyboardParameters) => {
   if (role === "guest") {
-    return guestKeyboard(appUrl);
+    return guestKeyboard();
   }
   if (role === "master") {
-    return masterKeyboard(appUrl);
+    return masterKeyboard();
   }
-  return adminKeyboard(appUrl, adminAppUrl(publicUrl));
+  return adminKeyboard();
 };

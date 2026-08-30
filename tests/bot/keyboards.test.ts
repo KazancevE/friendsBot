@@ -2,6 +2,8 @@ import { expect, test } from "vitest";
 import {
   cancelKeyboard,
   contactOrCancelKeyboard,
+  inlineAdminAppKeyboard,
+  inlineMiniAppKeyboard,
   mainKeyboard,
   MINI_APP_GUEST_LABEL,
   MINI_APP_STAFF_LABEL,
@@ -18,34 +20,36 @@ const adminAppUrl = (publicUrl: string) => {
   return `${origin}/admin/?v=20260831`;
 };
 
-test("staff keyboard opens Mini App via reply web_app button", () => {
-  const keyboard = mainKeyboard({ role: "master", publicUrl: "https://friends.example/" });
-  const buttons = keyboard.keyboard.flat();
-  const miniApp = buttons.find((button) => "text" in button && button.text === MINI_APP_STAFF_LABEL);
-  expect(miniApp).toEqual({
-    text: MINI_APP_STAFF_LABEL,
-    web_app: { url: miniAppUrl("https://friends.example/") },
-  });
-});
-
-test("guest keyboard opens Mini App via reply web_app button", () => {
-  const keyboard = mainKeyboard({ role: "guest", publicUrl: "https://friends.example" });
-  const buttons = keyboard.keyboard.flat();
-  const games = buttons.find((button) => "text" in button && button.text === MINI_APP_GUEST_LABEL);
-  expect(games).toEqual({
+test("reply keyboard uses text buttons for mini app entry", () => {
+  const guest = mainKeyboard({ role: "guest" }).keyboard.flat();
+  expect(guest.find((button) => "text" in button && button.text === MINI_APP_GUEST_LABEL)).toEqual({
     text: MINI_APP_GUEST_LABEL,
-    web_app: { url: miniAppUrl("https://friends.example") },
+  });
+  expect(guest.some((button) => "web_app" in button)).toBe(false);
+
+  const master = mainKeyboard({ role: "master" }).keyboard.flat();
+  expect(master.find((button) => "text" in button && button.text === MINI_APP_STAFF_LABEL)).toEqual({
+    text: MINI_APP_STAFF_LABEL,
+  });
+
+  const admin = mainKeyboard({ role: "admin" }).keyboard.flat();
+  expect(admin.find((button) => "text" in button && button.text === BTN_WEB_ADMIN)).toEqual({
+    text: BTN_WEB_ADMIN,
   });
 });
 
-test("admin keyboard exposes web admin web_app button", () => {
-  const keyboard = mainKeyboard({ role: "admin", publicUrl: "https://friends.example" });
-  const buttons = keyboard.keyboard.flat();
-  const webAdmin = buttons.find((button) => "text" in button && button.text === BTN_WEB_ADMIN);
-  expect(webAdmin).toEqual({
-    text: BTN_WEB_ADMIN,
-    web_app: { url: adminAppUrl("https://friends.example") },
-  });
+test("inline keyboard opens mini app with initData-compatible web_app", () => {
+  const keyboard = inlineMiniAppKeyboard("https://friends.example", MINI_APP_GUEST_LABEL);
+  expect(keyboard.inline_keyboard).toEqual([
+    [{ text: MINI_APP_GUEST_LABEL, web_app: { url: miniAppUrl("https://friends.example") } }],
+  ]);
+});
+
+test("inline keyboard opens admin app", () => {
+  const keyboard = inlineAdminAppKeyboard("https://friends.example");
+  expect(keyboard.inline_keyboard).toEqual([
+    [{ text: "Открыть веб-админ", web_app: { url: adminAppUrl("https://friends.example") } }],
+  ]);
 });
 
 test("cancel keyboard is a single Отмена button", () => {
