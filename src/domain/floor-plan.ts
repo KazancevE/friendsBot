@@ -43,8 +43,8 @@ export async function saveFloorPlan(
   if (name.length === 0 || name.length > 80) {
     throw new DomainError("bad_request", "Название зала от 1 до 80 символов");
   }
-  const width = input.width ?? 100;
-  const height = input.height ?? 100;
+  const width = input.width ?? 200;
+  const height = input.height ?? 150;
   if (!Number.isInteger(width) || width < 10 || width > 1000) {
     throw new DomainError("bad_request", "Ширина зала от 10 до 1000");
   }
@@ -105,8 +105,8 @@ export async function saveVenueTable(
     seatsMax,
     posX: input.posX ?? 0,
     posY: input.posY ?? 0,
-    width: input.width ?? 10,
-    height: input.height ?? 10,
+    width: input.width ?? 14,
+    height: input.height ?? 14,
     rotation: input.rotation ?? 0,
     sort: input.sort ?? 0,
     active: input.active ?? true,

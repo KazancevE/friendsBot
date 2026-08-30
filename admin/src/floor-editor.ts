@@ -34,6 +34,21 @@ const tableHtml = (table: VenueTableView, scale: number) =>
     <span class="floor-resize-handle" data-resize-table="${table.id}"></span>
   </div>`;
 
+const ZOOM_STORAGE_KEY = "floor-editor-zoom";
+const ZOOM_OPTIONS = [0.5, 1, 1.5, 2] as const;
+const DEFAULT_ZOOM = 2;
+
+const readStoredZoom = () => {
+  const raw = sessionStorage.getItem(ZOOM_STORAGE_KEY);
+  const parsed = raw === null ? NaN : Number(raw);
+  return ZOOM_OPTIONS.includes(parsed as (typeof ZOOM_OPTIONS)[number]) ? parsed : DEFAULT_ZOOM;
+};
+
+const computeScale = (floorPlan: FloorPlanView, zoom: number) => {
+  const baseScale = Math.min(640 / floorPlan.width, 480 / floorPlan.height);
+  return baseScale * zoom;
+};
+
 export type FloorEditorCallbacks = {
   onStructureChange?: () => void;
 };
@@ -43,15 +58,21 @@ export const mountFloorEditor = (
   floorPlan: FloorPlanView,
   callbacks: FloorEditorCallbacks = {},
 ) => {
-  const scale = Math.min(1, 640 / floorPlan.width);
-  const width = floorPlan.width * scale;
-  const height = floorPlan.height * scale;
+  let zoom = readStoredZoom();
+  let scale = computeScale(floorPlan, zoom);
+  const canvasWidth = () => floorPlan.width * scale;
+  const canvasHeight = () => floorPlan.height * scale;
 
   host.innerHTML = `
     <div class="floor-toolbar">
       <button type="button" class="action" data-add-element="bar">+ Бар</button>
       <button type="button" class="action" data-add-element="obstacle">+ Препятствие</button>
       <button type="button" class="action" data-add-element="wall">+ Стена</button>
+      <label class="floor-zoom-label">Масштаб
+        <select data-floor-zoom>
+          ${ZOOM_OPTIONS.map((value) => `<option value="${value}"${value === zoom ? " selected" : ""}>${value * 100}%</option>`).join("")}
+        </select>
+      </label>
       <span class="muted">Перетащите или измените размер</span>
       <div class="floor-size-panel hidden" data-size-panel>
         <label>Ш<input type="number" data-size-w min="4" max="100" step="1" /></label>
@@ -60,7 +81,7 @@ export const mountFloorEditor = (
       </div>
     </div>
     <div class="floor-canvas-wrap">
-      <div class="floor-canvas" data-floor-canvas style="width:${width}px;height:${height}px">
+      <div class="floor-canvas" data-floor-canvas style="width:${canvasWidth()}px;height:${canvasHeight()}px;background-size:${20 * scale}px ${20 * scale}px">
         ${floorPlan.elements.map((element) => elementHtml(element, scale)).join("")}
         ${floorPlan.tables.map((table) => tableHtml(table, scale)).join("")}
       </div>
@@ -69,8 +90,46 @@ export const mountFloorEditor = (
 
   const canvas = host.querySelector("[data-floor-canvas]");
   const sizePanel = host.querySelector("[data-size-panel]");
+  const zoomSelect = host.querySelector("[data-floor-zoom]");
   if (!(canvas instanceof HTMLElement) || !(sizePanel instanceof HTMLElement)) {
     return;
+  }
+
+  const applyVisualScale = () => {
+    canvas.style.width = `${canvasWidth()}px`;
+    canvas.style.height = `${canvasHeight()}px`;
+    canvas.style.backgroundSize = `${20 * scale}px ${20 * scale}px`;
+    for (const table of floorPlan.tables) {
+      const el = canvas.querySelector(`[data-table-id="${table.id}"]`);
+      if (el instanceof HTMLElement) {
+        el.style.left = `${table.posX * scale}px`;
+        el.style.top = `${table.posY * scale}px`;
+        el.style.width = `${table.width * scale}px`;
+        el.style.height = `${table.height * scale}px`;
+      }
+    }
+    for (const element of floorPlan.elements) {
+      const el = canvas.querySelector(`[data-element-id="${element.id}"]`);
+      if (el instanceof HTMLElement) {
+        el.style.left = `${element.posX * scale}px`;
+        el.style.top = `${element.posY * scale}px`;
+        el.style.width = `${element.width * scale}px`;
+        el.style.height = `${element.height * scale}px`;
+      }
+    }
+  };
+
+  if (zoomSelect instanceof HTMLSelectElement) {
+    zoomSelect.addEventListener("change", () => {
+      const next = Number(zoomSelect.value);
+      if (!ZOOM_OPTIONS.includes(next as (typeof ZOOM_OPTIONS)[number])) {
+        return;
+      }
+      zoom = next;
+      sessionStorage.setItem(ZOOM_STORAGE_KEY, String(zoom));
+      scale = computeScale(floorPlan, zoom);
+      applyVisualScale();
+    });
   }
 
   let selected: DragTarget | null = null;
