@@ -30,6 +30,7 @@ import {
   fetchStaffMembers,
   fetchStaffStats,
   fetchStats,
+  fetchStatsBetween,
   fetchTimeseries,
   fetchVenueCode,
   patchBooking,
@@ -51,7 +52,11 @@ import {
   type FloorPlanView,
   type StatsGranularity,
   type StatsMetric,
+  type StatsSummary,
 } from "./api.ts";
+import { type AdminTab, renderAdminShell, setActiveAdminTab } from "./admin-nav.ts";
+import { renderBrandPanel } from "./brand-panel.ts";
+import { renderGameSkinsPanel } from "./game-skins-panel.ts";
 import { mountFloorEditor } from "./floor-editor.ts";
 import { renderScheduleGrid } from "./schedule-grid.ts";
 import {
@@ -73,7 +78,7 @@ import {
 } from "./ui-helpers.ts";
 import "./style.css";
 
-type Tab = "dashboard" | "guests" | "bookings" | "broadcasts" | "settings" | "menu" | "staff" | "content" | "export" | "games";
+type Tab = AdminTab;
 type DashboardPeriod = 7 | 30 | 90 | 180 | 365;
 type DashboardView = {
   period: DashboardPeriod;
@@ -99,29 +104,16 @@ const GRANULARITY_OPTIONS: { id: StatsGranularity; label: string }[] = [
 
 const WEEKDAY_LABELS = ["", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
-const tabLabel = (tab: Tab) => {
-  switch (tab) {
-    case "dashboard":
-      return "Дашборд";
-    case "guests":
-      return "Гости";
-    case "bookings":
-      return "Брони";
-    case "broadcasts":
-      return "Рассылки";
-    case "settings":
-      return "Настройки";
-    case "menu":
-      return "Меню";
-    case "staff":
-      return "Персонал";
-    case "content":
-      return "Контент";
-    case "export":
-      return "Экспорт";
-    case "games":
-      return "Игры";
-  }
+const renderShell = (root: HTMLElement, active: Tab) => {
+  renderAdminShell(root, active, {
+    onTab: (tab) => {
+      void renderApp(root, tab);
+    },
+  });
+};
+
+const setActiveTab = (root: HTMLElement, active: Tab) => {
+  setActiveAdminTab(root, active);
 };
 
 const renderPeriodToolbar = (days: number) => {
@@ -143,45 +135,6 @@ const bindPeriodToolbar = (host: HTMLElement, onChange: (days: number) => void) 
   }
 };
 
-const renderShell = (root: HTMLElement, active: Tab) => {
-  if (root.querySelector("[data-view]") instanceof HTMLElement) {
-    setActiveTab(root, active);
-    return;
-  }
-  root.innerHTML = `
-    <header>
-      <div>
-        <h1>Друзья — админ</h1>
-        <p class="muted">Веб-панель v1</p>
-      </div>
-    </header>
-    <nav>
-      ${(["dashboard", "guests", "bookings", "broadcasts", "settings", "menu", "staff", "content", "export", "games"] as Tab[])
-        .map((tab) => `<button type="button" data-tab="${tab}" class="${tab === active ? "active" : ""}">${tabLabel(tab)}</button>`)
-        .join("")}
-    </nav>
-    <main data-view></main>
-  `;
-  for (const button of root.querySelectorAll("[data-tab]")) {
-    button.addEventListener("click", () => {
-      const tab = button.getAttribute("data-tab") as Tab;
-      void renderApp(root, tab);
-    });
-  }
-  setActiveTab(root, active);
-};
-
-const setActiveTab = (root: HTMLElement, active: Tab) => {
-  for (const button of root.querySelectorAll("[data-tab]")) {
-    const tab = button.getAttribute("data-tab");
-    const isActive = tab === active;
-    button.classList.toggle("active", isActive);
-    if (isActive) {
-      button.scrollIntoView({ inline: "nearest", block: "nearest" });
-    }
-  }
-};
-
 const preserveScroll = async (fn: () => Promise<void> | void) => {
   const scrollY = window.scrollY;
   await fn();
@@ -190,8 +143,20 @@ const preserveScroll = async (fn: () => Promise<void> | void) => {
 
 const showLoadingIfEmpty = (host: HTMLElement) => {
   if (host.children.length === 0) {
-    host.innerHTML = `<section class="panel"><p class="muted">Загрузка…</p></section>`;
+    host.innerHTML = renderDashboardSkeleton();
   }
+};
+
+const renderDashboardSkeleton = () => {
+  return `
+    <section class="panel skeleton-panel">
+      <div class="skeleton skeleton-line skeleton-line--title"></div>
+      <div class="dashboard-kpi-grid">
+        ${Array.from({ length: 8 }, () => `<div class="skeleton skeleton-stat"></div>`).join("")}
+      </div>
+      <div class="skeleton skeleton-chart"></div>
+    </section>
+  `;
 };
 
 const viewHost = (root: HTMLElement) => {
@@ -236,21 +201,44 @@ const renderHeatmap = (cells: Array<{ weekday: number; hour: number; count: numb
   return `<div class="heatmap">${header}${rows}</div>`;
 };
 
+const formatStatDelta = (current: number, previous: number) => {
+  const delta = current - previous;
+  if (delta === 0) {
+    return `<span class="stat-delta stat-delta--flat">0</span>`;
+  }
+  const sign = delta > 0 ? "+" : "";
+  const tone = delta > 0 ? "up" : "down";
+  return `<span class="stat-delta stat-delta--${tone}">${sign}${delta}</span>`;
+};
+
+const renderStat = (label: string, value: string | number, delta?: string) => {
+  return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value}${delta ?? ""}</div></div>`;
+};
+
 const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
   const { period, metric, granularity, heatmapSource } = view;
   showLoadingIfEmpty(host);
-  const [stats, series, staff, live, heatmap] = await Promise.all([
+  const now = new Date();
+  const currentFrom = new Date(now.getTime() - (period - 1) * 24 * 60 * 60 * 1000);
+  const previousTo = new Date(currentFrom.getTime() - 1);
+  const previousFrom = new Date(previousTo.getTime() - (period - 1) * 24 * 60 * 60 * 1000);
+  const [stats, previousStats, series, staff, live, heatmap, bookings] = await Promise.all([
     fetchStats(period),
+    fetchStatsBetween(previousFrom, previousTo),
     fetchTimeseries(metric, period, granularity),
     fetchStaffStats(period),
     fetchLiveVenue(),
     fetchHeatmap(period, heatmapSource),
+    fetchBookings(7, "pending"),
   ]);
   if (stats.kind === "error") {
     host.innerHTML = `<section class="panel"><p class="error">${escapeHtml(stats.message)}</p></section>`;
     return;
   }
   const s = stats.data;
+  const prev = previousStats.kind === "ok" ? previousStats.data : null;
+  const delta = (key: keyof StatsSummary) =>
+    prev === null ? "" : formatStatDelta(Number(s[key] ?? 0), Number(prev[key] ?? 0));
   const maxValue =
     series.kind === "ok" ? Math.max(1, ...series.data.points.map((point) => point.value)) : 1;
   const chartRows =
@@ -259,7 +247,7 @@ const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
           .map((point) => {
             const width = Math.round((point.value / maxValue) * 100);
             const label = granularity === "month" ? point.date : point.date.slice(5);
-            return `<div class="chart-row"><span class="chart-label">${label}</span><div class="chart-bar"><span style="width:${width}%"></span></div><span class="chart-value">${point.value}</span></div>`;
+            return `<div class="chart-row chart-row--area" title="${label}: ${point.value}"><span class="chart-label">${label}</span><div class="chart-bar"><span style="width:${width}%"></span></div><span class="chart-value">${point.value}</span></div>`;
           })
           .join("")
       : `<p class="error">${escapeHtml(series.message)}</p>`;
@@ -307,7 +295,22 @@ const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
           </div>
         </section>`
       : "";
+  const pendingBookings =
+    bookings.kind === "ok"
+      ? bookings.data.filter((row) => row.status === "pending" || row.status === "confirmed").length
+      : 0;
+  const todayBlock = `
+    <section class="panel dashboard-today">
+      <h2>Сегодня</h2>
+      <div class="dashboard-kpi-grid">
+        <div class="stat"><div class="stat-label">Check-in</div><div class="stat-value">${live.kind === "ok" ? live.data.checkInsToday : "—"}</div></div>
+        <div class="stat"><div class="stat-label">В зале</div><div class="stat-value">${live.kind === "ok" ? live.data.visits.length : "—"}</div></div>
+        <div class="stat"><div class="stat-label">Брони ожидают</div><div class="stat-value">${pendingBookings}</div></div>
+        <div class="stat"><div class="stat-label">Регистрации (${period} д)</div><div class="stat-value">${s.registrations}</div></div>
+      </div>
+    </section>`;
   host.innerHTML = `
+    ${todayBlock}
     ${liveBlock}
     <section class="panel">
       <div class="toolbar">
@@ -316,20 +319,20 @@ const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
           ${PERIOD_OPTIONS.map((days) => `<button type="button" data-days="${days}" class="${days === period ? "active" : ""}">${days} д</button>`).join("")}
         </div>
       </div>
-      <div class="grid">
-        <div class="stat"><div class="stat-label">Регистрации</div><div class="stat-value">${s.registrations}</div></div>
-        <div class="stat"><div class="stat-label">Визиты</div><div class="stat-value">${s.visits}</div></div>
-        <div class="stat"><div class="stat-label">Check-in</div><div class="stat-value">${s.checkIns}</div></div>
-        <div class="stat"><div class="stat-label">Начислено</div><div class="stat-value">${s.bonusesCredited}</div></div>
-        <div class="stat"><div class="stat-label">Списано</div><div class="stat-value">${s.bonusesRedeemed}</div></div>
-        <div class="stat"><div class="stat-label">Liability</div><div class="stat-value">${s.bonusLiability}</div></div>
-        <div class="stat"><div class="stat-label">Средний чек</div><div class="stat-value">${s.averageCheckRubles ?? "—"}</div></div>
-        <div class="stat"><div class="stat-label">Рефералы</div><div class="stat-value">${s.referralActivations}</div></div>
-        <div class="stat"><div class="stat-label">Игры</div><div class="stat-value">${s.gameSessions}</div></div>
-        <div class="stat"><div class="stat-label">Игроков</div><div class="stat-value">${s.uniqueGamePlayers}</div></div>
-        <div class="stat"><div class="stat-label">Визитов/день</div><div class="stat-value">${s.avgVisitsPerDay}</div></div>
-        <div class="stat"><div class="stat-label">Пик</div><div class="stat-value stat-value-sm">${peakLabel}</div></div>
-        <div class="stat"><div class="stat-label">Повторные</div><div class="stat-value">${s.returningGuestsPct ?? "—"}${s.returningGuestsPct === null ? "" : "%"}</div></div>
+      <div class="grid dashboard-kpi-grid">
+        ${renderStat("Регистрации", s.registrations, delta("registrations"))}
+        ${renderStat("Визиты", s.visits, delta("visits"))}
+        ${renderStat("Check-in", s.checkIns, delta("checkIns"))}
+        ${renderStat("Начислено", s.bonusesCredited, delta("bonusesCredited"))}
+        ${renderStat("Списано", s.bonusesRedeemed, delta("bonusesRedeemed"))}
+        ${renderStat("Liability", s.bonusLiability, delta("bonusLiability"))}
+        ${renderStat("Средний чек", s.averageCheckRubles ?? "—")}
+        ${renderStat("Рефералы", s.referralActivations, delta("referralActivations"))}
+        ${renderStat("Игры", s.gameSessions, delta("gameSessions"))}
+        ${renderStat("Игроков", s.uniqueGamePlayers, delta("uniqueGamePlayers"))}
+        ${renderStat("Визитов/день", s.avgVisitsPerDay, delta("avgVisitsPerDay"))}
+        ${renderStat("Пик", peakLabel)}
+        ${renderStat("Повторные", `${s.returningGuestsPct ?? "—"}${s.returningGuestsPct === null ? "" : "%"}`)}
       </div>
     </section>
     <section class="panel">
@@ -1957,6 +1960,12 @@ const renderApp = async (root: HTMLElement, tab: Tab) => {
       break;
     case "games":
       await renderGames(host);
+      break;
+    case "brand":
+      await renderBrandPanel(host);
+      break;
+    case "game-skins":
+      await renderGameSkinsPanel(host);
       break;
     default:
       break;

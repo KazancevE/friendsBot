@@ -1157,7 +1157,7 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     await enterConversation(ctx, "addQuizQuestion");
   });
 
-  bot.hears("Веб-админ", async (ctx) => {
+  bot.hears(["Веб-админ", "🖥 Веб-админ"], async (ctx) => {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }

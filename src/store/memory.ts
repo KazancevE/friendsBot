@@ -44,6 +44,7 @@ import type { BroadcastGuestCandidate, NewUser, Store } from "./types.ts";
 
 export class MemoryStore implements Store {
   settings: Settings = structuredClone(DEFAULT_SETTINGS);
+  rawSettings = new Map<string, string>();
   users = new Map<string, UserRecord>();
   ledger: LedgerRecord[] = [];
   visits = new Map<string, VisitRecord>();
@@ -132,6 +133,14 @@ export class MemoryStore implements Store {
   async updateSettings(patch: Partial<Settings>) {
     this.settings = { ...this.settings, ...patch };
     return this.getSettings();
+  }
+
+  async getSettingValue(key: string) {
+    return this.rawSettings.get(key) ?? null;
+  }
+
+  async upsertSettingValue(key: string, value: string) {
+    this.rawSettings.set(key, value);
   }
 
   async createUser(input: NewUser): Promise<UserRecord> {

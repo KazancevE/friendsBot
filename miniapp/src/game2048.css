@@ -67,6 +67,13 @@
   font-size: 0.75rem;
 }
 
+.game2048-cell--skin {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: transparent;
+}
+
 .game2048-done-actions {
   display: flex;
   gap: 8px;

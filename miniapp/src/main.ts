@@ -1,6 +1,7 @@
 import { fetchMe } from "./api.ts";
 import { renderHub } from "./hub.ts";
 import { renderStaffShell } from "./staff-shell.ts";
+import { initTheme } from "./theme-client.ts";
 import "./style.css";
 import { readyTelegram } from "./telegram.ts";
 
@@ -8,6 +9,7 @@ const STAFF_ROLES = new Set(["master", "admin"]);
 
 const boot = async () => {
   readyTelegram();
+  await initTheme();
   const root = document.querySelector("#app");
   if (!(root instanceof HTMLElement)) {
     return;

@@ -1,5 +1,12 @@
 import { submitCheckIn } from "./api.ts";
 import { canScanCamera, canScanQr, prefersTelegramScanner, scanQr } from "./qr-scan.ts";
+import { hapticImpact } from "./telegram.ts";
+
+type RenderCheckInOptions = {
+  readonly root: HTMLElement;
+  readonly onSuccess: () => void;
+  readonly compact?: boolean;
+};
 
 const setStatus = (root: HTMLElement, message: string, isError = false) => {
   const status = root.querySelector("[data-status]");
@@ -10,27 +17,61 @@ const setStatus = (root: HTMLElement, message: string, isError = false) => {
   status.classList.toggle("error", isError);
 };
 
-type RenderCheckInParameters = {
-  readonly root: HTMLElement;
-  readonly onSuccess: () => void;
+const readPin = (root: HTMLElement) => {
+  const inputs = root.querySelectorAll("[data-pin-digit]");
+  return [...inputs]
+    .map((input) => (input instanceof HTMLInputElement ? input.value : ""))
+    .join("");
 };
 
-export const renderCheckIn = ({ root, onSuccess }: RenderCheckInParameters) => {
+const bindPinInputs = (root: HTMLElement, onComplete: (pin: string) => void) => {
+  const inputs = [...root.querySelectorAll("[data-pin-digit]")].filter(
+    (input): input is HTMLInputElement => input instanceof HTMLInputElement,
+  );
+  if (inputs.length === 0) {
+    return;
+  }
+  inputs.forEach((input, index) => {
+    input.addEventListener("input", () => {
+      input.value = input.value.replace(/\D/g, "").slice(-1);
+      if (input.value.length === 1 && index < inputs.length - 1) {
+        inputs[index + 1]?.focus();
+      }
+      const pin = readPin(root);
+      if (pin.length === inputs.length) {
+        onComplete(pin);
+      }
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Backspace" && input.value.length === 0 && index > 0) {
+        inputs[index - 1]?.focus();
+      }
+    });
+  });
+};
+
+export const renderCheckIn = ({ root, onSuccess, compact = false }: RenderCheckInOptions) => {
   const scanAvailable = canScanQr();
   const useCamera = scanAvailable && canScanCamera() && !prefersTelegramScanner();
   root.innerHTML = `
-    <header>
+    ${compact ? "" : `<header>
       <h1>Отметка в зале</h1>
       <p class="muted">Сканируйте QR с экрана персонала или введите 4 цифры</p>
-    </header>
-    <section class="panel">
+    </header>`}
+    <section class="panel check-in-panel">
+      ${compact ? `<h2 class="check-in-sheet-title">Отметка в зале</h2><p class="muted">Сканируйте QR или введите код с экрана персонала</p>` : ""}
       ${useCamera ? `<video data-preview playsinline muted hidden></video>` : ""}
       ${scanAvailable ? `<button type="button" data-scan>Сканировать QR</button>` : ""}
       <p class="check-in-divider">или</p>
       <form data-pin>
-        <label>
+        <label class="check-in-pin-label">
           Код с экрана
-          <input name="pin" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="one-time-code" required />
+          <div class="check-in-pin" data-pin-group>
+            <input data-pin-digit inputmode="numeric" maxlength="1" autocomplete="one-time-code" aria-label="Цифра 1" required />
+            <input data-pin-digit inputmode="numeric" maxlength="1" aria-label="Цифра 2" required />
+            <input data-pin-digit inputmode="numeric" maxlength="1" aria-label="Цифра 3" required />
+            <input data-pin-digit inputmode="numeric" maxlength="1" aria-label="Цифра 4" required />
+          </div>
         </label>
         <button type="submit">Отметиться</button>
       </form>
@@ -41,12 +82,17 @@ export const renderCheckIn = ({ root, onSuccess }: RenderCheckInParameters) => {
   let scanStop: (() => void) | undefined;
 
   const submitPin = async (pin: string) => {
+    if (pin.length !== 4) {
+      setStatus(root, "Введите 4 цифры", true);
+      return;
+    }
     setStatus(root, "Проверяем…");
     const result = await submitCheckIn({ method: "pin", pin });
     if (result.kind === "error") {
       setStatus(root, result.message, true);
       return;
     }
+    hapticImpact("medium");
     setStatus(root, result.data.message);
     onSuccess();
   };
@@ -58,17 +104,20 @@ export const renderCheckIn = ({ root, onSuccess }: RenderCheckInParameters) => {
       setStatus(root, result.message, true);
       return;
     }
+    hapticImpact("medium");
     setStatus(root, result.data.message);
     onSuccess();
   };
+
+  bindPinInputs(root, (pin) => {
+    void submitPin(pin);
+  });
 
   const pinForm = root.querySelector("[data-pin]");
   if (pinForm instanceof HTMLFormElement) {
     pinForm.addEventListener("submit", (event) => {
       event.preventDefault();
-      const data = new FormData(pinForm);
-      const pin = String(data.get("pin") ?? "").trim();
-      void submitPin(pin);
+      void submitPin(readPin(root));
     });
   }
 

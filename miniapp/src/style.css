@@ -221,6 +221,41 @@ video {
   margin-bottom: 0.65rem;
   background: linear-gradient(145deg, color-mix(in srgb, var(--ember) 22%, var(--bg-panel)), var(--bg-panel));
   border-color: color-mix(in srgb, var(--ember) 35%, var(--coal));
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hub-hero-logo {
+  display: block;
+  max-height: 2.5rem;
+  width: auto;
+  margin-bottom: 0.5rem;
+}
+
+.hub-hero-interior {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  overflow-x: auto;
+}
+
+.hub-hero-interior img {
+  flex: 0 0 auto;
+  width: 4.5rem;
+  height: 3rem;
+  object-fit: cover;
+  border-radius: 0.35rem;
+  border: 1px solid var(--coal);
+}
+
+html.theme-active body {
+  background-color: var(--bg, var(--bg-deep));
+  background-image: var(--hub-bg-image, none);
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
 }
 
 .hub-hero-kicker {
@@ -447,4 +482,344 @@ body.hub-sheet-open {
 
 .game-detail-play {
   width: 100%;
+}
+
+.hub-check-in-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+  border-color: color-mix(in srgb, var(--ember) 45%, var(--coal));
+  background: color-mix(in srgb, var(--ember) 12%, var(--bg-panel));
+}
+
+.hub-check-in-banner-title {
+  margin: 0 0 0.2rem;
+  font-weight: 600;
+}
+
+.hub-check-in-banner-text {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.hub-check-in-banner-btn {
+  margin-top: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.game-card-compact--locked {
+  opacity: 0.88;
+}
+
+.game-card-compact--locked .game-card-play {
+  background: var(--bg);
+  color: var(--smoke);
+  border: 1px solid var(--coal);
+}
+
+.leaderboard-row {
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.45rem;
+}
+
+.leaderboard-row--me {
+  border: 1px solid color-mix(in srgb, var(--ember) 55%, transparent);
+  background: color-mix(in srgb, var(--ember) 12%, transparent);
+}
+
+.leaderboard-row--prize-1 {
+  border: 1px solid #d4af37;
+  background: linear-gradient(90deg, rgb(212 175 55 / 16%), transparent);
+}
+
+.leaderboard-row--prize-2 {
+  border: 1px solid #b8bcc6;
+  background: linear-gradient(90deg, rgb(184 188 198 / 14%), transparent);
+}
+
+.leaderboard-row--prize-3 {
+  border: 1px solid #c98a4a;
+  background: linear-gradient(90deg, rgb(201 138 74 / 14%), transparent);
+}
+
+.leaderboard-row--prize {
+  border: 1px solid color-mix(in srgb, var(--ember) 40%, transparent);
+}
+
+.leaderboard-me-tag {
+  color: var(--ember);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.leaderboard-my-standing {
+  margin: 0 0 0.65rem;
+  color: var(--smoke);
+}
+
+.check-in-sheet-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.check-in-pin-label {
+  gap: 0.55rem;
+}
+
+.check-in-pin {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.check-in-pin input {
+  width: 2.75rem;
+  text-align: center;
+  font-size: 1.2rem;
+  padding: 0.55rem 0;
+}
+
+.guest-card-name {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.guest-card-balance {
+  margin: 0.25rem 0;
+  color: var(--ember);
+  font-weight: 600;
+}
+
+.guest-card-meta {
+  margin: 0.15rem 0;
+  color: var(--ash);
+  font-size: 0.9rem;
+}
+
+.guest-action-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  overflow-x: auto;
+}
+
+.guest-action-tab {
+  margin-top: 0;
+  flex: 1 0 auto;
+  background: var(--bg);
+  color: var(--smoke);
+  border: 1px solid var(--coal);
+  font-size: 0.85rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.guest-action-tab--active {
+  background: var(--ember);
+  color: #1a1210;
+  border-color: var(--ember);
+}
+
+.guest-action-panel[hidden] {
+  display: none !important;
+}
+
+.toast-host {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: 22rem;
+  width: calc(100% - 2rem);
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--bg-panel) 92%, black);
+  border: 1px solid var(--coal);
+  color: var(--text);
+  text-align: center;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.toast-host--error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.cashier-find-another {
+  position: sticky;
+  bottom: calc(0.5rem + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  width: 100%;
+  margin-top: 0.75rem;
+  background: transparent;
+  color: var(--ember);
+  border: 1px solid var(--coal);
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--coal) 80%, var(--bg-panel)),
+    var(--bg-panel),
+    color-mix(in srgb, var(--coal) 80%, var(--bg-panel))
+  );
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+.skeleton-title {
+  height: 1.5rem;
+  width: 40%;
+  margin-bottom: 0.75rem;
+}
+
+.skeleton-hero {
+  height: 6rem;
+  margin-bottom: 0.65rem;
+}
+
+.skeleton-row {
+  height: 3rem;
+  margin-bottom: 0.65rem;
+}
+
+.skeleton-card {
+  min-height: 8.5rem;
+}
+
+.hub-visit-ended {
+  margin-bottom: 0.65rem;
+  border-color: color-mix(in srgb, var(--ember) 45%, var(--coal));
+}
+
+.hub-visit-ended-title {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.game-card-cover {
+  display: block;
+  width: 100%;
+  height: 4.5rem;
+  object-fit: cover;
+  border-radius: 0.45rem;
+  margin-bottom: 0.45rem;
+  border: 1px solid var(--coal);
+}
+
+.game-over {
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
+.game-over-headline {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.game-over-score {
+  margin: 0.25rem 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--ember);
+}
+
+.game-over-detail {
+  margin: 0.15rem 0;
+  color: var(--smoke);
+  font-size: 0.92rem;
+}
+
+.game-over-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.85rem;
+}
+
+.game-over--celebrate {
+  border-color: color-mix(in srgb, var(--ember) 55%, var(--coal));
+}
+
+.game-over-confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.game-over-confetti-piece {
+  position: absolute;
+  top: -0.5rem;
+  width: 0.45rem;
+  height: 0.75rem;
+  border-radius: 0.1rem;
+  animation: game-over-confetti-fall 1.2s ease-in forwards;
+}
+
+@keyframes game-over-confetti-fall {
+  to {
+    transform: translateY(110vh) rotate(540deg);
+    opacity: 0;
+  }
+}
+
+.match3-tile--skin {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.game-card-badge {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--ember);
+  border: 1px solid color-mix(in srgb, var(--ember) 45%, var(--coal));
+}
+
+.game-card-compact--played {
+  border-color: color-mix(in srgb, var(--ember) 35%, var(--coal));
+}
+
+.game-detail-cover {
+  display: block;
+  width: 100%;
+  max-height: 9rem;
+  object-fit: cover;
+  border-radius: 0.65rem;
+  margin-bottom: 0.65rem;
+  border: 1px solid var(--coal);
+}
+
+.game-detail-cover--emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 5rem;
+  font-size: 2rem;
+  background: var(--bg-panel);
+}
+
+.game-detail-played {
+  margin: 0.35rem 0 0;
+  color: var(--smoke);
+  font-size: 0.9rem;
 }

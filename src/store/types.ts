@@ -381,5 +381,8 @@ export interface Store {
   redeemCoupon(id: string, by: string, at: Date): Promise<CouponRecord>;
   expireCoupons(now: Date): Promise<number>;
 
+  getSettingValue(key: string): Promise<string | null>;
+  upsertSettingValue(key: string, value: string): Promise<void>;
+
   withTransaction<T>(fn: (store: Store) => Promise<T>): Promise<T>;
 }

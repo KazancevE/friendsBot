@@ -5,7 +5,8 @@ import {
   wouldMatch,
   type Board,
 } from "../../src/domain/match3.ts";
-import { submitGameScore } from "./api.ts";
+import { showGameOver } from "./game-over.ts";
+import { fetchGameSkin } from "./theme-client.ts";
 import { createMatch3Board, type Cell } from "./match3-board.ts";
 import { bindMatch3Gestures, cellsEqual } from "./match3-gestures.ts";
 import { hapticImpact } from "./telegram.ts";
@@ -32,28 +33,6 @@ const rankForScore = (points: number) => {
     return "Неплохо!";
   }
   return "Попробуйте ещё";
-};
-
-const animateCountUp = (
-  element: HTMLElement,
-  from: number,
-  to: number,
-  durationMs: number,
-) => {
-  return new Promise<void>((resolve) => {
-    const started = performance.now();
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - started) / durationMs);
-      const value = Math.round(from + (to - from) * progress);
-      element.textContent = String(value);
-      if (progress < 1) {
-        requestAnimationFrame(tick);
-        return;
-      }
-      resolve();
-    };
-    requestAnimationFrame(tick);
-  });
 };
 
 export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
@@ -125,84 +104,19 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
   const finishGame = async () => {
     finished = true;
     boardApi.setBusy(true);
-    const rank = rankForScore(score);
-
-    if (score < 1) {
-      root.insertAdjacentHTML(
-        "beforeend",
-        `<div class="match3-done panel">
-          <p class="muted">Нет очков для отправки</p>
-          <div class="match3-done-actions">
-            <button type="button" data-restart>Играть снова</button>
-            <button type="button" class="secondary" data-back>К таблице</button>
-          </div>
-        </div>`,
-      );
-      bindBackButtons(onBack);
-      const restart = root.querySelector("[data-restart]");
-      if (restart instanceof HTMLButtonElement) {
-        restart.addEventListener("click", () => {
-          unbindGestures();
-          renderMatch3({ root, onBack });
-        });
-      }
-      return;
-    }
-
-    const done = document.createElement("div");
-    done.className = "match3-done panel";
-    const rankLine = document.createElement("p");
-    rankLine.className = "match3-rank";
-    rankLine.textContent = rank;
-    const status = document.createElement("p");
-    status.className = "status";
-    status.textContent = "Отправка очков…";
-    const actions = document.createElement("div");
-    actions.className = "match3-done-actions";
-    actions.hidden = true;
-    const restart = document.createElement("button");
-    restart.type = "button";
-    restart.dataset.restart = "true";
-    restart.textContent = "Играть снова";
-    const back = document.createElement("button");
-    back.type = "button";
-    back.className = "secondary";
-    back.dataset.back = "true";
-    back.textContent = "К таблице";
-    actions.append(restart, back);
-    done.append(rankLine, status, actions);
-    root.append(done);
-
-    const display = document.createElement("p");
-    display.className = "match3-final-score";
-    display.textContent = "0";
-    status.replaceWith(display);
-    await animateCountUp(display, 0, score, 400);
-
-    const result = await submitGameScore({
+    await showGameOver({
+      root,
       slug: MATCH3_SLUG,
-      points: score,
+      score,
       sessionStartedAt,
-      sessionEndedAt: new Date(),
+      headline: rankForScore(score),
+      celebrate: score >= 500,
+      onRestart: () => {
+        unbindGestures();
+        renderMatch3({ root, onBack });
+      },
+      onBack,
     });
-    const resultLine = document.createElement("p");
-    resultLine.className = "status";
-    if (result.kind === "error") {
-      resultLine.textContent = result.message;
-      resultLine.classList.add("error");
-    } else if (!result.data.counted) {
-      resultLine.textContent = "Тренировочная партия — очки не засчитаны";
-    } else {
-      resultLine.textContent = `Очки отправлены: ${score}`;
-    }
-    display.insertAdjacentElement("afterend", resultLine);
-    actions.hidden = false;
-
-    restart.addEventListener("click", () => {
-      unbindGestures();
-      renderMatch3({ root, onBack });
-    });
-    bindBackButtons(onBack);
   };
 
   const runCascade = async (startBoard: Board) => {
@@ -295,7 +209,8 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
     void attemptSwap(from, cell);
   };
 
-  const mount = () => {
+  const mount = async () => {
+    const skin = await fetchGameSkin(MATCH3_SLUG);
     root.innerHTML = `
       <header class="match3-header">
         <button type="button" class="match3-back" data-back aria-label="Назад">←</button>
@@ -337,7 +252,7 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
 
     gridElement.dataset.rows = String(board.length);
     gridElement.dataset.cols = String(board[0]?.length ?? 0);
-    boardApi = createMatch3Board(gridElement);
+    boardApi = createMatch3Board(gridElement, { skin });
     boardApi.sync(board);
     updateHud();
 
@@ -352,5 +267,5 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
     });
   };
 
-  mount();
+  void mount();
 };

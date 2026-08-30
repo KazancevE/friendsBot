@@ -8,6 +8,8 @@ import { createBookingRoutes } from "./booking.ts";
 import { createCashierRoutes } from "./cashier.ts";
 import { createCheckInRoutes } from "./check-in.ts";
 import { createGameRoutes } from "./games.ts";
+import { createPublicGameSkinRoutes } from "./game-skin.ts";
+import { createThemeRoutes } from "./theme.ts";
 import { applyWebAppCacheHeaders } from "./web-app-cache.ts";
 
 type CreateHttpAppParameters = {
@@ -38,6 +40,8 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
   app.route("/", createCashierRoutes({ store, botToken }));
   app.route("/", createCheckInRoutes({ store, botToken, botApi: bot?.api }));
   app.route("/", createGameRoutes({ store, botToken }));
+  app.route("/", createPublicGameSkinRoutes({ store }));
+  app.route("/", createThemeRoutes({ store }));
   app.route("/", createBookingRoutes({ store, botToken, botApi: bot?.api }));
   app.route("/", createAdminRoutes({ store, botToken, botApi: bot?.api }));
 

@@ -1,5 +1,7 @@
 import type { Board, GameState, Piece } from "../../src/domain/block-blast.ts";
 import { BOARD_SIZE, nearFullCells } from "../../src/domain/block-blast.ts";
+import type { GameSkin } from "./theme-client.ts";
+import { tileImageUrl } from "./theme-client.ts";
 
 const EMPTY = -1;
 const TILE_EMOJI = ["🔥", "💧", "🫧", "🌿"] as const;
@@ -33,10 +35,11 @@ const prefersReducedMotion = () => {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 };
 
-const TRAY_PIECE_MAX_PX = 56;
-const TRAY_PIECE_GAP_PX = 1;
+export const TRAY_PIECE_MAX_PX = 56;
+export const DRAG_GHOST_MAX_PX = 72;
+export const TRAY_PIECE_GAP_PX = 1;
 
-const pieceBounds = (piece: Piece) => {
+export const pieceBounds = (piece: Piece) => {
   let maxDr = 0;
   let maxDc = 0;
   for (const cell of piece.cells) {
@@ -46,15 +49,32 @@ const pieceBounds = (piece: Piece) => {
   return { rows: maxDr + 1, cols: maxDc + 1 };
 };
 
-const createBlockElement = (tile: number) => {
+const applyTileVisual = (element: HTMLElement, tile: number, skin: GameSkin | null) => {
+  const url = tileImageUrl(skin, tile);
+  if (url === null) {
+    element.style.backgroundImage = "";
+    element.classList.remove("bb-block--skin");
+    return;
+  }
+  element.classList.add("bb-block--skin");
+  element.style.backgroundImage = `url("${url}")`;
+  element.textContent = "";
+};
+
+const createBlockElement = (tile: number, skin: GameSkin | null) => {
   const block = document.createElement("span");
   block.className = "bb-block";
-  block.textContent = tileEmoji(tile);
   block.dataset.tile = String(tile);
+  const url = tileImageUrl(skin, tile);
+  if (url === null) {
+    block.textContent = tileEmoji(tile);
+  } else {
+    applyTileVisual(block, tile, skin);
+  }
   return block;
 };
 
-export const renderPiecePreview = (piece: Piece, maxPx = TRAY_PIECE_MAX_PX) => {
+export const renderPiecePreview = (piece: Piece, maxPx = TRAY_PIECE_MAX_PX, skin: GameSkin | null = null) => {
   const { rows, cols } = pieceBounds(piece);
   const cellSize = Math.max(1, Math.floor(maxPx / Math.max(rows, cols)));
   const gridGap = TRAY_PIECE_GAP_PX;
@@ -70,7 +90,12 @@ export const renderPiecePreview = (piece: Piece, maxPx = TRAY_PIECE_MAX_PX) => {
       slot.className = "bb-tray-piece-cell";
       const match = piece.cells.find((cell) => cell.dr === dr && cell.dc === dc);
       if (match !== undefined) {
-        slot.textContent = tileEmoji(piece.tile);
+        const url = tileImageUrl(skin, piece.tile);
+        if (url === null) {
+          slot.textContent = tileEmoji(piece.tile);
+        } else {
+          applyTileVisual(slot, piece.tile, skin);
+        }
         slot.dataset.tile = String(piece.tile);
       }
       wrap.append(slot);
@@ -79,11 +104,15 @@ export const renderPiecePreview = (piece: Piece, maxPx = TRAY_PIECE_MAX_PX) => {
   return wrap;
 };
 
-export const createDragGhostElement = (piece: Piece) => {
+export const createDragGhostElement = (piece: Piece, skin: GameSkin | null = null) => {
   const ghost = document.createElement("div");
   ghost.className = "bb-drag-ghost";
-  ghost.append(renderPiecePreview(piece, 72));
+  ghost.append(renderPiecePreview(piece, DRAG_GHOST_MAX_PX, skin));
   return ghost;
+};
+
+export type BlockBlastBoardOptions = {
+  readonly skin?: GameSkin | null;
 };
 
 export type BlockBlastBoard = {
@@ -94,6 +123,7 @@ export type BlockBlastBoard = {
   readonly getBoardElement: () => HTMLElement;
   readonly getTrayElement: () => HTMLElement;
   readonly setSelectedPiece: (index: number | undefined) => void;
+  readonly setDraggingPiece: (index: number | undefined) => void;
   readonly setGhost: (
     cells: ReadonlyArray<Cell> | undefined,
     valid: boolean,
@@ -109,9 +139,14 @@ export type BlockBlastBoard = {
   readonly shakeTrayPiece: (index: number) => void;
   readonly animateGameOver: () => Promise<void>;
   readonly boardCellFromPoint: (clientX: number, clientY: number) => Cell | undefined;
+  readonly getSkin: () => GameSkin | null;
 };
 
-export const createBlockBlastBoard = (container: HTMLElement): BlockBlastBoard => {
+export const createBlockBlastBoard = (
+  container: HTMLElement,
+  options: BlockBlastBoardOptions = {},
+): BlockBlastBoard => {
+  const skin = options.skin ?? null;
   container.innerHTML = `
     <div class="bb-board-wrap">
       <div class="bb-board" data-grid></div>
@@ -136,7 +171,19 @@ export const createBlockBlastBoard = (container: HTMLElement): BlockBlastBoard =
     throw new Error("block blast board mount failed");
   }
 
+  if (skin?.boardBackgroundUrl !== null && skin?.boardBackgroundUrl !== undefined) {
+    grid.style.backgroundImage = `url("${skin.boardBackgroundUrl}")`;
+    grid.style.backgroundSize = "cover";
+    grid.style.backgroundPosition = "center";
+  }
+  if (skin?.trayBackgroundUrl !== null && skin?.trayBackgroundUrl !== undefined) {
+    tray.style.backgroundImage = `url("${skin.trayBackgroundUrl}")`;
+    tray.style.backgroundSize = "cover";
+    tray.style.backgroundPosition = "center";
+  }
+
   let selectedPiece: number | undefined;
+  let draggingPiece: number | undefined;
   const tileElements = new Map<string, HTMLElement>();
 
   const getCellSize = () => {
@@ -153,9 +200,12 @@ export const createBlockBlastBoard = (container: HTMLElement): BlockBlastBoard =
       if (piece === null) {
         slot.classList.add("bb-tray-slot--empty");
       } else {
-        slot.append(renderPiecePreview(piece));
+        slot.append(renderPiecePreview(piece, TRAY_PIECE_MAX_PX, skin));
         if (selectedPiece === index) {
           slot.classList.add("bb-tray-slot--selected");
+        }
+        if (draggingPiece === index) {
+          slot.classList.add("bb-tray-slot--dragging");
         }
       }
       tray.append(slot);
@@ -199,7 +249,7 @@ export const createBlockBlastBoard = (container: HTMLElement): BlockBlastBoard =
         cell.dataset.row = String(row);
         cell.dataset.col = String(col);
         if (tile !== EMPTY) {
-          const block = createBlockElement(tile);
+          const block = createBlockElement(tile, skin);
           cell.append(block);
           tileElements.set(cellKey({ row, col }), block);
         }
@@ -227,7 +277,12 @@ export const createBlockBlastBoard = (container: HTMLElement): BlockBlastBoard =
       ghost.className = "bb-ghost-cell";
       if (tile !== undefined) {
         ghost.dataset.tile = String(tile);
-        ghost.textContent = tileEmoji(tile);
+        const url = tileImageUrl(skin, tile);
+        if (url === null) {
+          ghost.textContent = tileEmoji(tile);
+        } else {
+          applyTileVisual(ghost, tile, skin);
+        }
       }
       ghost.style.width = `${cellSize}px`;
       ghost.style.height = `${cellSize}px`;
@@ -270,6 +325,17 @@ export const createBlockBlastBoard = (container: HTMLElement): BlockBlastBoard =
         if (slot instanceof HTMLElement) {
           slot.classList.toggle(
             "bb-tray-slot--selected",
+            index !== undefined && slot.dataset.index === String(index),
+          );
+        }
+      }
+    },
+    setDraggingPiece: (index) => {
+      draggingPiece = index;
+      for (const slot of tray.querySelectorAll(".bb-tray-slot")) {
+        if (slot instanceof HTMLElement) {
+          slot.classList.toggle(
+            "bb-tray-slot--dragging",
             index !== undefined && slot.dataset.index === String(index),
           );
         }
@@ -361,5 +427,6 @@ export const createBlockBlastBoard = (container: HTMLElement): BlockBlastBoard =
       }
       return { row, col };
     },
+    getSkin: () => skin,
   };
 };

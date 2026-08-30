@@ -1,5 +1,8 @@
 import type { Board } from "../../src/domain/match3.ts";
 
+import type { GameSkin } from "./theme-client.ts";
+import { tileImageUrl } from "./theme-client.ts";
+
 const TILE_EMOJI = ["🔥", "💧", "🫧", "🌿"] as const;
 const FALL_DURATION_MS = 320;
 const STAGGER_MS = 30;
@@ -129,7 +132,20 @@ export type Match3Board = {
   readonly setBusy: (busy: boolean) => void;
 };
 
-export const createMatch3Board = (container: HTMLElement): Match3Board => {
+export type Match3BoardOptions = {
+  readonly skin?: GameSkin | null;
+};
+
+export const createMatch3Board = (
+  container: HTMLElement,
+  options: Match3BoardOptions = {},
+): Match3Board => {
+  const skin = options.skin ?? null;
+  if (skin?.boardBackgroundUrl !== null && skin?.boardBackgroundUrl !== undefined) {
+    container.style.backgroundImage = `url("${skin.boardBackgroundUrl}")`;
+    container.style.backgroundSize = "cover";
+    container.style.backgroundPosition = "center";
+  }
   const tiles: HTMLButtonElement[][] = [];
   let selected: Cell | undefined;
   let busy = false;
@@ -161,11 +177,19 @@ export const createMatch3Board = (container: HTMLElement): Match3Board => {
   };
 
   const applyTile = (element: HTMLButtonElement, tile: number) => {
-    element.textContent = tileEmoji(tile);
+    const url = tileImageUrl(skin, tile);
     element.dataset.tile = String(tile);
     element.style.transform = "";
     element.style.opacity = "";
-    element.classList.remove("popping", "flashing", "falling");
+    element.classList.remove("popping", "flashing", "falling", "match3-tile--skin");
+    if (url === null) {
+      element.style.backgroundImage = "";
+      element.textContent = tileEmoji(tile);
+    } else {
+      element.textContent = "";
+      element.classList.add("match3-tile--skin");
+      element.style.backgroundImage = `url("${url}")`;
+    }
   };
 
   const sync = (board: Board) => {

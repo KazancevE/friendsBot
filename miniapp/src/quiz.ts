@@ -1,4 +1,6 @@
 import { fetchLiveQuiz, submitQuizAnswer, type LiveQuiz } from "./api.ts";
+import { showQuizComplete } from "./game-over.ts";
+import { hapticImpact } from "./telegram.ts";
 
 type RenderQuizParameters = {
   readonly root: HTMLElement;
@@ -47,14 +49,8 @@ const runQuiz = async ({
   const renderQuestion = () => {
     const question = quiz.questions[questionIndex];
     if (question === undefined) {
-      root.innerHTML = `
-        <section class="panel">
-          <h2>Готово!</h2>
-          <p>Набрано: ${totalPoints} очков</p>
-          <button type="button" data-back>К таблице</button>
-        </section>
-      `;
-      root.querySelector("[data-back]")?.addEventListener("click", onBack);
+      hapticImpact("medium");
+      showQuizComplete({ root, points: totalPoints, onBack });
       return;
     }
 

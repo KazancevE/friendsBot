@@ -12,6 +12,7 @@ import { closeActiveVisit, extendActiveVisit, staffOpenVisit } from "../domain/v
 import { MOSCOW } from "../domain/week.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
+import { BTN_FIND_GUEST } from "./keyboards.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
 
@@ -387,7 +388,7 @@ export async function staffCouponRedeemConversation(conversation: BotConversatio
 }
 
 export function wireStaffHandlers(bot: Bot<BotContext>) {
-  bot.hears("Найти гостя", async (ctx) => {
+  bot.hears([BTN_FIND_GUEST, "Найти гостя"], async (ctx) => {
     if (!isStaffRole(ctx.dbUser?.role)) {
       await ctx.reply("Недостаточно прав");
       return;

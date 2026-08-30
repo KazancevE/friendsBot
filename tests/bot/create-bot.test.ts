@@ -311,7 +311,7 @@ test("admin cancel during broadcast does not save promo", async () => {
   expect(await store.listFeedPromos()).toEqual([]);
   const cancelled = sent.find((row) => row.payload.text === "Отменено");
   expect(cancelled).toBeDefined();
-  expect(keyboardTexts(cancelled)).toContain("Рассылка");
+  expect(keyboardTexts(cancelled)).toContain("🖥 Веб-админ");
 });
 
 test("admin broadcast success restores the main keyboard", async () => {
@@ -333,7 +333,7 @@ test("admin broadcast success restores the main keyboard", async () => {
   expect(promos[0]?.body).toBe("Скидка на кальян");
   const saved = sent.find((row) => row.payload.text === "Акция сохранена");
   expect(saved).toBeDefined();
-  expect(keyboardTexts(saved)).toContain("Рассылка");
+  expect(keyboardTexts(saved)).toContain("🖥 Веб-админ");
 });
 
 test("guest profile shows data with edit button", async () => {
@@ -353,7 +353,7 @@ test("guest profile shows data with edit button", async () => {
   await sendText(bot, { userId: GUEST_ID, text: "/start", updateId: 1 });
   await sendText(bot, { userId: GUEST_ID, text: "Профиль", updateId: 2 });
 
-  expect(sent.some((row) => row.payload.text === "Как вас зовут? (имя)")).toBe(false);
+  expect(sent.some((row) => row.payload.text?.includes("Шаг 1/4"))).toBe(false);
   const profile = sent.find(
     (row) => typeof row.payload.text === "string" && row.payload.text.includes("Ваш профиль"),
   );
@@ -388,7 +388,7 @@ test("guest cancel during profile does not change data", async () => {
   expect(guest?.lastName).toBe("Петров");
   const cancelled = sent.find((row) => row.payload.text === "Отменено");
   expect(cancelled).toBeDefined();
-  expect(keyboardTexts(cancelled)).toContain("Профиль");
+  expect(keyboardTexts(cancelled)).toContain("👤 Профиль");
 });
 
 test("unregistered guest cannot skip registration via menu", async () => {
@@ -399,7 +399,7 @@ test("unregistered guest cannot skip registration via menu", async () => {
   await sendText(bot, { userId: GUEST_ID, text: "Меню", updateId: 1 });
 
   expect(await store.findUserByTelegramId(BigInt(GUEST_ID))).toBeNull();
-  expect(sent.some((row) => row.payload.text === "Как вас зовут? (имя)")).toBe(true);
+  expect(sent.some((row) => row.payload.text?.includes("Шаг 1/4"))).toBe(true);
   expect(keyboardTexts(lastSendMessage(sent))).not.toContain("Отмена");
 });
 
@@ -412,6 +412,6 @@ test("Отмена during registration does not skip the wizard", async () => {
   await sendText(bot, { userId: GUEST_ID, text: "Отмена", updateId: 2 });
 
   expect(await store.findUserByTelegramId(BigInt(GUEST_ID))).toBeNull();
-  expect(sent.some((row) => row.payload.text === "Фамилия?")).toBe(true);
+  expect(sent.some((row) => row.payload.text?.includes("Шаг 2/4"))).toBe(true);
   expect(sent.some((row) => row.payload.text === "Отменено")).toBe(false);
 });

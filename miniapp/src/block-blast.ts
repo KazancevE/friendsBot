@@ -5,9 +5,10 @@ import {
   pieceAnchorCells,
   type GameState,
 } from "../../src/domain/block-blast.ts";
-import { fetchLeaderboard, submitGameScore } from "./api.ts";
 import { createBlockBlastBoard } from "./block-blast-board.ts";
 import { bindBlockBlastGestures } from "./block-blast-gestures.ts";
+import { showGameOver } from "./game-over.ts";
+import { fetchGameSkin } from "./theme-client.ts";
 import { hapticImpact } from "./telegram.ts";
 import "./block-blast.css";
 
@@ -52,36 +53,6 @@ const rankProgressFor = (points: number): RankProgress => {
   };
 };
 
-const formatWeeklyPlace = (place: number | null) => {
-  if (place === null) {
-    return "Вы пока вне топа недели";
-  }
-  return `Место в рейтинге: #${place}`;
-};
-
-const spawnConfetti = (root: HTMLElement) => {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    return;
-  }
-  const layer = document.createElement("div");
-  layer.className = "bb-confetti";
-  layer.setAttribute("aria-hidden", "true");
-  const colors = ["#d4784a", "#f0a060", "#ffd080", "#68b878", "#5a9ad8", "#a888d8"];
-  for (let index = 0; index < 40; index += 1) {
-    const piece = document.createElement("span");
-    piece.className = "bb-confetti-piece";
-    piece.style.left = `${Math.random() * 100}%`;
-    piece.style.background = colors[index % colors.length] ?? colors[0]!;
-    piece.style.animationDelay = `${Math.random() * 400}ms`;
-    piece.style.animationDuration = `${800 + Math.random() * 600}ms`;
-    layer.append(piece);
-  }
-  root.append(layer);
-  window.setTimeout(() => {
-    layer.remove();
-  }, 2200);
-};
-
 const comboMessage = (linesCleared: number) => {
   if (linesCleared >= 4) {
     return `Невероятно! x${linesCleared}`;
@@ -112,28 +83,6 @@ const hapticForClear = (linesCleared: number) => {
     return;
   }
   hapticImpact("light");
-};
-
-const animateCountUp = (
-  element: HTMLElement,
-  from: number,
-  to: number,
-  durationMs: number,
-) => {
-  return new Promise<void>((resolve) => {
-    const started = performance.now();
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - started) / durationMs);
-      const value = Math.round(from + (to - from) * progress);
-      element.textContent = String(value);
-      if (progress < 1) {
-        requestAnimationFrame(tick);
-        return;
-      }
-      resolve();
-    };
-    requestAnimationFrame(tick);
-  });
 };
 
 export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) => {
@@ -214,119 +163,20 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
   const finishGame = async () => {
     finished = true;
     boardApi.setBusy(true);
-    hapticImpact("medium");
-    const rank = rankForScore(score);
-    const previousLeaderboard = await fetchLeaderboard(BLOCK_BLAST_SLUG);
-    const previousBest =
-      previousLeaderboard.kind === "ok" ? previousLeaderboard.data.me.points : 0;
-
-    if (score < 1) {
-      root.insertAdjacentHTML(
-        "beforeend",
-        `<div class="bb-done panel bb-done--empty">
-          <p class="bb-rank">Партия окончена</p>
-          <p class="muted">Нет очков для отправки</p>
-          <div class="bb-done-actions">
-            <button type="button" data-restart>Играть снова</button>
-            <button type="button" class="secondary" data-back>К играм</button>
-          </div>
-        </div>`,
-      );
-      bindBackButtons(onBack);
-      const restart = root.querySelector("[data-restart]");
-      if (restart instanceof HTMLButtonElement) {
-        restart.addEventListener("click", () => {
-          unbindGestures();
-          renderBlockBlast({ root, onBack });
-        });
-      }
-      return;
-    }
-
-    const done = document.createElement("div");
-    done.className = "bb-done panel";
-    if (score >= RANK_GREAT) {
-      done.classList.add("bb-done--celebrate");
-    }
-    const rankLine = document.createElement("p");
-    rankLine.className = "bb-rank";
-    rankLine.textContent = rank;
-    const status = document.createElement("p");
-    status.className = "status";
-    status.textContent = "Отправка очков…";
-    const actions = document.createElement("div");
-    actions.className = "bb-done-actions";
-    actions.hidden = true;
-    const restart = document.createElement("button");
-    restart.type = "button";
-    restart.dataset.restart = "true";
-    restart.textContent = "Играть снова";
-    const back = document.createElement("button");
-    back.type = "button";
-    back.className = "secondary";
-    back.dataset.back = "true";
-    back.textContent = "К играм";
-    actions.append(restart, back);
-    done.append(rankLine, status, actions);
-    root.append(done);
-
-    const display = document.createElement("p");
-    display.className = "bb-final-score";
-    display.textContent = "0";
-    status.replaceWith(display);
-    await animateCountUp(display, 0, score, 400);
-
-    if (score >= CONFETTI_MIN_SCORE) {
-      spawnConfetti(root);
-    }
-
-    const result = await submitGameScore({
+    await showGameOver({
+      root,
       slug: BLOCK_BLAST_SLUG,
-      points: score,
+      score,
       sessionStartedAt,
-      sessionEndedAt: new Date(),
+      headline: rankForScore(score),
+      celebrate: score >= RANK_GREAT,
+      confettiMinScore: CONFETTI_MIN_SCORE,
+      onRestart: () => {
+        unbindGestures();
+        renderBlockBlast({ root, onBack });
+      },
+      onBack,
     });
-    const resultLine = document.createElement("p");
-    resultLine.className = "status";
-    if (result.kind === "error") {
-      resultLine.textContent = result.message;
-      resultLine.classList.add("error");
-    } else if (!result.data.counted) {
-      resultLine.textContent = "Тренировочная партия — очки не засчитаны";
-    } else {
-      resultLine.textContent = `Очки отправлены: ${score}`;
-    }
-    display.insertAdjacentElement("afterend", resultLine);
-
-    const nextLeaderboard = await fetchLeaderboard(BLOCK_BLAST_SLUG);
-    let detailsAnchor: HTMLElement = resultLine;
-    if (nextLeaderboard.kind === "ok") {
-      const counted = result.kind === "ok" && result.data.counted;
-      if (counted && score > previousBest) {
-        const recordLine = document.createElement("p");
-        recordLine.className = "bb-record";
-        recordLine.textContent = "Новый рекорд!";
-        detailsAnchor.insertAdjacentElement("afterend", recordLine);
-        detailsAnchor = recordLine;
-      }
-      const placeLine = document.createElement("p");
-      placeLine.className = "bb-place";
-      placeLine.textContent = formatWeeklyPlace(nextLeaderboard.data.me.place);
-      detailsAnchor.insertAdjacentElement("afterend", placeLine);
-    } else if (previousBest > 0) {
-      const bestLine = document.createElement("p");
-      bestLine.className = "bb-place";
-      bestLine.textContent = `Ваш рекорд недели: ${Math.max(previousBest, score)}`;
-      detailsAnchor.insertAdjacentElement("afterend", bestLine);
-    }
-
-    actions.hidden = false;
-
-    restart.addEventListener("click", () => {
-      unbindGestures();
-      renderBlockBlast({ root, onBack });
-    });
-    bindBackButtons(onBack);
   };
 
   const attemptPlace = async (pieceIndex: number, row: number, col: number) => {
@@ -385,7 +235,8 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
     }
   };
 
-  const mount = () => {
+  const mount = async () => {
+    const skin = await fetchGameSkin(BLOCK_BLAST_SLUG);
     root.innerHTML = `
       <header class="bb-header">
         <button type="button" class="bb-back" data-back aria-label="Назад">←</button>
@@ -422,7 +273,7 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
     }
 
     bindBackButtons(onBack);
-    boardApi = createBlockBlastBoard(boardHost);
+    boardApi = createBlockBlastBoard(boardHost, { skin });
     boardApi.sync(state);
     updateHud();
 
@@ -439,5 +290,5 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
     });
   };
 
-  mount();
+  void mount();
 };

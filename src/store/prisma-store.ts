@@ -254,6 +254,19 @@ export class PrismaStore implements Store {
     return next;
   }
 
+  async getSettingValue(key: string): Promise<string | null> {
+    const row = await this.prisma.setting.findUnique({ where: { key } });
+    return row?.value ?? null;
+  }
+
+  async upsertSettingValue(key: string, value: string): Promise<void> {
+    await this.prisma.setting.upsert({
+      where: { key },
+      create: { key, value },
+      update: { value },
+    });
+  }
+
   async createUser(input: NewUser): Promise<UserRecord> {
     const row = await this.prisma.user.create({
       data: {

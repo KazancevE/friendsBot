@@ -23,8 +23,26 @@ type TelegramWebApp = {
     callback?: (text: string) => boolean,
   ) => void;
   readonly closeScanQrPopup?: () => void;
+  readonly MainButton?: TelegramMainButton;
+  readonly BackButton?: TelegramBackButton;
   readonly onEvent?: (eventType: string, callback: () => void) => void;
   readonly offEvent?: (eventType: string, callback: () => void) => void;
+};
+
+type TelegramMainButton = {
+  readonly text: string;
+  readonly setText: (text: string) => void;
+  readonly show: () => void;
+  readonly hide: () => void;
+  readonly onClick: (callback: () => void) => void;
+  readonly offClick: (callback: () => void) => void;
+};
+
+type TelegramBackButton = {
+  readonly show: () => void;
+  readonly hide: () => void;
+  readonly onClick: (callback: () => void) => void;
+  readonly offClick: (callback: () => void) => void;
 };
 
 type SafeAreaInset = {
@@ -128,4 +146,22 @@ export const scanViaTelegramPopup = (hint?: string): Promise<string | undefined>
       return true;
     });
   });
+};
+
+export const bindMainButton = (text: string, onClick: () => void) => {
+  const mainButton = telegramWebApp()?.MainButton;
+  if (mainButton === undefined) {
+    return () => {};
+  }
+  mainButton.setText(text);
+  mainButton.onClick(onClick);
+  mainButton.show();
+  return () => {
+    mainButton.offClick(onClick);
+    mainButton.hide();
+  };
+};
+
+export const hideMainButton = () => {
+  telegramWebApp()?.MainButton?.hide();
 };

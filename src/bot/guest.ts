@@ -2,7 +2,7 @@ import { DateTime } from "luxon";
 import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard, InputFile } from "grammy";
 import type { Bot } from "grammy";
-import { listActiveMenu } from "../domain/content.ts";
+import { getOverallLeaderboard } from "../domain/games.ts";
 import { formatContactEntriesText, parseContactEntries } from "../domain/contacts.ts";
 import { DomainError } from "../domain/errors.ts";
 import {
@@ -26,8 +26,66 @@ import {
   waitCancellableContactOrSkip,
 } from "./conversation-cancel.ts";
 import { enterConversation } from "./enter-conversation.ts";
-import { mainKeyboard } from "./keyboards.ts";
+import {
+  BTN_BALANCE,
+  BTN_BALANCE_QR_LEGACY,
+  BTN_BOOK,
+  BTN_CONTACTS,
+  BTN_DIRECTIONS,
+  BTN_HISTORY,
+  BTN_MENU,
+  BTN_MORE,
+  BTN_PROFILE,
+  BTN_PROMOS,
+  BTN_QR,
+  BTN_REFERRAL,
+  mainKeyboard,
+} from "./keyboards.ts";
 import { qrPngBuffer } from "./qr.ts";
+import { miniAppUrl } from "../web-app-url.ts";
+
+const formatMoscowTime = (value: Date): string => {
+  return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("HH:mm");
+};
+
+const guestHomeInlineKeyboard = (publicUrl: string) => {
+  return new InlineKeyboard()
+    .webApp("🎮 Игры", miniAppUrl(publicUrl))
+    .text("📱 QR", "guest:qr")
+    .text("📅 Забронировать", "guest:book");
+};
+
+const buildGuestHomeText = async (ctx: BotContext, user: NonNullable<BotContext["dbUser"]>) => {
+  const now = new Date();
+  const visit = await ctx.store.getActiveVisit(user.id, now);
+  const lots = await ctx.store.listBonusLots(user.id);
+  const activeLots = lots.filter((lot) => lot.remaining > 0 && lot.expiresAt > now);
+  activeLots.sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime());
+  const nearestLot = activeLots[0];
+  const overall = await getOverallLeaderboard(ctx.store, {
+    userId: user.id,
+    now,
+    viewerRole: user.role,
+  });
+
+  const lines = ["🌫️ Друзья", `💰 Баланс: ${user.balance} бонусов`];
+  if (nearestLot !== undefined) {
+    lines.push(
+      `⏳ ${nearestLot.remaining} ${nearestLot.category === "gift" ? "подарочных" : "чековых"} до ${formatMoscowDate(nearestLot.expiresAt)}`,
+    );
+  }
+  if (visit !== null) {
+    lines.push(`🟢 В зале до ${formatMoscowTime(visit.endsAt)}`);
+  } else {
+    lines.push("⚪ Не в зале — отметьтесь для игр");
+  }
+  if (overall.me.place !== null) {
+    lines.push(`🏆 Неделя: #${overall.me.place} · ${overall.me.points} очков`);
+  } else if (overall.me.points > 0) {
+    lines.push(`🏆 Неделя: ${overall.me.points} очков`);
+  }
+  return lines.join("\n");
+};
 
 const formatMoscowDate = (value: Date): string => {
   return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("dd.MM.yyyy");
@@ -121,6 +179,67 @@ const guestProfileKeyboard = (): InlineKeyboard => {
   return new InlineKeyboard().text("Редактировать", "guest:editProfile");
 };
 
+const moreMenuKeyboard = (optOut: boolean): InlineKeyboard => {
+  const keyboard = new InlineKeyboard().text("📜 История", "guest:history").row();
+  if (optOut) {
+    keyboard.text("Включить рассылку", "guest:broadcastOn");
+  } else {
+    keyboard.text("Отключить рассылку", "guest:broadcastOff");
+  }
+  return keyboard;
+};
+
+const guestBalanceLines = async (ctx: BotContext, user: NonNullable<BotContext["dbUser"]>) => {
+  const coupons = await ctx.store.listActiveCoupons(user.id);
+  const couponLine =
+    coupons.length > 0
+      ? coupons.map((coupon) => `${coupon.title} (до ${formatMoscowDate(coupon.expiresAt)})`).join(", ")
+      : "нет";
+  const lots = await ctx.store.listBonusLots(user.id);
+  const now = new Date();
+  const activeLots = lots.filter((lot) => lot.remaining > 0 && lot.expiresAt > now);
+  const lotLines =
+    activeLots.length === 0
+      ? []
+      : activeLots.map(
+          (lot) =>
+            `· ${lot.remaining} ${lot.category === "gift" ? "подарочных" : "чековых"} (до ${formatMoscowDate(lot.expiresAt)})`,
+        );
+  return [`Баланс: ${user.balance}`, ...lotLines, `Купоны: ${couponLine}`];
+};
+
+const sendGuestBalance = async (ctx: BotContext) => {
+  if (!ctx.dbUser) {
+    await enterConversation(ctx, "registerGuest");
+    return;
+  }
+  const lines = await guestBalanceLines(ctx, ctx.dbUser);
+  await ctx.reply(lines.join("\n"));
+};
+
+const sendGuestQr = async (ctx: BotContext) => {
+  if (!ctx.dbUser) {
+    await enterConversation(ctx, "registerGuest");
+    return;
+  }
+  const buf = await qrPngBuffer(ctx.dbUser.qrToken);
+  await ctx.replyWithPhoto(new InputFile(buf), {
+    caption: `Код: ${ctx.dbUser.qrToken}`,
+  });
+};
+
+const sendGuestBalanceAndQr = async (ctx: BotContext) => {
+  if (!ctx.dbUser) {
+    await enterConversation(ctx, "registerGuest");
+    return;
+  }
+  const buf = await qrPngBuffer(ctx.dbUser.qrToken);
+  const lines = await guestBalanceLines(ctx, ctx.dbUser);
+  await ctx.replyWithPhoto(new InputFile(buf), {
+    caption: [...lines, `Код: ${ctx.dbUser.qrToken}`].join("\n"),
+  });
+};
+
 const sendPromoMessage = async (ctx: BotContext, promo: PromoRecord) => {
   const photo = promo.photos[0];
   if (photo !== undefined) {
@@ -178,44 +297,40 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       }
     }
 
-    await ctx.reply("Добро пожаловать в Друзья", {
-      reply_markup: mainKeyboard({ role: ctx.dbUser.role, publicUrl: ctx.config.publicUrl }),
+    const homeText = await buildGuestHomeText(ctx, ctx.dbUser);
+    await ctx.reply(homeText, {
+      reply_markup: guestHomeInlineKeyboard(ctx.config.publicUrl),
     });
+    await replyMainMenu({ ctx, text: "⌨️ Основное меню" });
   });
 
-  bot.hears("Баланс и QR", async (ctx) => {
+  bot.callbackQuery("guest:qr", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await sendGuestQr(ctx);
+  });
+
+  bot.callbackQuery("guest:book", async (ctx) => {
+    await ctx.answerCallbackQuery();
     if (!ctx.dbUser) {
       await enterConversation(ctx, "registerGuest");
       return;
     }
-    const buf = await qrPngBuffer(ctx.dbUser.qrToken);
-    const coupons = await ctx.store.listActiveCoupons(ctx.dbUser.id);
-    const couponLine =
-      coupons.length > 0
-        ? coupons.map((coupon) => `${coupon.title} (до ${formatMoscowDate(coupon.expiresAt)})`).join(", ")
-        : "нет";
-    const lots = await ctx.store.listBonusLots(ctx.dbUser.id);
-    const now = new Date();
-    const activeLots = lots.filter((lot) => lot.remaining > 0 && lot.expiresAt > now);
-    const lotLines =
-      activeLots.length === 0
-        ? []
-        : activeLots.map(
-            (lot) =>
-              `· ${lot.remaining} ${lot.category === "gift" ? "подарочных" : "чековых"} (до ${formatMoscowDate(lot.expiresAt)})`,
-          );
-    const lines = [
-      `Баланс: ${ctx.dbUser.balance}`,
-      ...lotLines,
-      `Код: ${ctx.dbUser.qrToken}`,
-      `Купоны: ${couponLine}`,
-    ];
-    await ctx.replyWithPhoto(new InputFile(buf), {
-      caption: lines.join("\n"),
-    });
+    await enterConversation(ctx, "guestBooking");
   });
 
-  bot.hears("История", async (ctx) => {
+  bot.hears([BTN_BALANCE], async (ctx) => {
+    await sendGuestBalance(ctx);
+  });
+
+  bot.hears([BTN_QR], async (ctx) => {
+    await sendGuestQr(ctx);
+  });
+
+  bot.hears([BTN_BALANCE_QR_LEGACY], async (ctx) => {
+    await sendGuestBalanceAndQr(ctx);
+  });
+
+  bot.hears([BTN_HISTORY, "История"], async (ctx) => {
     if (!ctx.dbUser) {
       await enterConversation(ctx, "registerGuest");
       return;
@@ -244,7 +359,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     await ctx.reply(text);
   });
 
-  bot.hears("Профиль", async (ctx) => {
+  bot.hears([BTN_PROFILE, "Профиль"], async (ctx) => {
     if (!ctx.dbUser) {
       await enterConversation(ctx, "registerGuest");
       return;
@@ -254,7 +369,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     });
   });
 
-  bot.hears("Меню", async (ctx) => {
+  bot.hears([BTN_MENU, "Меню"], async (ctx) => {
     const menu = await listActiveMenu(ctx.store);
     const text = formatMenu(menu);
     const isAdmin = ctx.dbUser?.role === "admin";
@@ -274,7 +389,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     await sendMenuPhotos(ctx, menu);
   });
 
-  bot.hears("Контакты", async (ctx) => {
+  bot.hears([BTN_CONTACTS, "Контакты"], async (ctx) => {
     const page = await ctx.store.getPage("contacts");
     const text = formatContactEntriesText(parseContactEntries(page?.body ?? ""));
     if (ctx.dbUser?.role === "admin") {
@@ -284,7 +399,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     await ctx.reply(text);
   });
 
-  bot.hears("Как доехать", async (ctx) => {
+  bot.hears([BTN_DIRECTIONS, "Как доехать"], async (ctx) => {
     const page = await ctx.store.getPage("directions");
     const body = page?.body?.trim() || "Маршрут пока не добавлен";
     const text = page?.mapUrl ? `${body}\n\nКарта: ${page.mapUrl}` : body;
@@ -295,7 +410,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     await ctx.reply(text);
   });
 
-  bot.hears("Акции", async (ctx) => {
+  bot.hears([BTN_PROMOS, "Акции"], async (ctx) => {
     if (!ctx.dbUser) {
       await enterConversation(ctx, "registerGuest");
       return;
@@ -317,7 +432,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     });
   });
 
-  bot.hears("Пригласить друга", async (ctx) => {
+  bot.hears([BTN_REFERRAL, "Пригласить друга"], async (ctx) => {
     if (!ctx.dbUser) {
       await enterConversation(ctx, "registerGuest");
       return;
@@ -344,6 +459,16 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     );
   });
 
+  bot.hears(BTN_MORE, async (ctx) => {
+    if (!ctx.dbUser) {
+      await enterConversation(ctx, "registerGuest");
+      return;
+    }
+    await ctx.reply("Дополнительно:", {
+      reply_markup: moreMenuKeyboard(ctx.dbUser.broadcastOptOut),
+    });
+  });
+
   bot.hears("Отключить рассылку", async (ctx) => {
     await setBroadcastOptOut(ctx, true);
   });
@@ -358,6 +483,36 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
 
   bot.command("broadcast_opt_in", async (ctx) => {
     await setBroadcastOptOut(ctx, false);
+  });
+
+  bot.callbackQuery("guest:history", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!ctx.dbUser) {
+      await ctx.reply("Сначала зарегистрируйтесь");
+      return;
+    }
+    const rows = await ctx.store.listLedger(ctx.dbUser.id);
+    if (rows.length === 0) {
+      await ctx.reply("История пуста");
+      return;
+    }
+    const text = (
+      await Promise.all(
+        rows.map(async (row) => {
+          const sign = row.amount > 0 ? "+" : "";
+          const label = row.comment ?? row.type;
+          let line = `${formatMoscowDate(row.createdAt)} ${label}: ${sign}${row.amount}`;
+          if (row.amount > 0) {
+            const lot = await ctx.store.findBonusLotByLedgerId(row.id);
+            if (lot !== null) {
+              line += ` (до ${formatMoscowDate(lot.expiresAt)})`;
+            }
+          }
+          return line;
+        }),
+      )
+    ).join("\n");
+    await ctx.reply(text);
   });
 
   bot.callbackQuery("guest:editProfile", async (ctx) => {
