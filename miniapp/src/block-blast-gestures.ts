@@ -32,26 +32,25 @@ export const computeDragOffsetY = (piece: Piece, maxPx = DRAG_GHOST_MAX_PX) => {
   return Math.max(MIN_FINGER_OFFSET_PX, pieceHeightPx + FINGER_MARGIN_PX);
 };
 
-const isOverBoard = (board: HTMLElement, clientX: number, clientY: number) => {
-  const rect = board.getBoundingClientRect();
-  return (
-    clientX >= rect.left &&
-    clientX <= rect.right &&
-    clientY >= rect.top &&
-    clientY <= rect.bottom
-  );
+type BoardCell = {
+  readonly row: number;
+  readonly col: number;
+};
+
+export const compensatedLookupY = (clientY: number, piece: Piece, compensate: boolean) => {
+  return compensate ? clientY - computeDragOffsetY(piece) : clientY;
 };
 
 const boardCellFromFinger = (
   boardApi: BlockBlastBoard,
-  board: HTMLElement,
   piece: Piece,
   clientX: number,
   clientY: number,
+  compensate: boolean,
 ) => {
-  const overBoard = isOverBoard(board, clientX, clientY);
-  const lookupY = overBoard ? clientY - computeDragOffsetY(piece) : clientY;
-  return { cell: boardApi.boardCellFromPoint(clientX, lookupY), overBoard };
+  const lookupY = compensatedLookupY(clientY, piece, compensate);
+  const cell = boardApi.boardCellFromPoint(clientX, lookupY);
+  return { cell, overBoard: cell !== undefined };
 };
 
 export const bindBlockBlastGestures = ({
@@ -73,6 +72,7 @@ export const bindBlockBlastGestures = ({
   let pointerStartX = 0;
   let pointerStartY = 0;
   let hapticPickup = false;
+  let lastGhostCell: BoardCell | undefined;
 
   const clearDragGhost = () => {
     dragGhost?.remove();
@@ -84,6 +84,7 @@ export const bindBlockBlastGestures = ({
     dragPiece = undefined;
     dragMoved = false;
     hapticPickup = false;
+    lastGhostCell = undefined;
     clearDragGhost();
     boardApi.setDraggingPiece(undefined);
     boardApi.setGhost(undefined, true);
@@ -123,16 +124,19 @@ export const bindBlockBlastGestures = ({
     if (dragPiece === undefined) {
       return;
     }
-    const { cell, overBoard } = boardCellFromFinger(boardApi, board, dragPiece, clientX, clientY);
+    const { cell, overBoard } = boardCellFromFinger(boardApi, dragPiece, clientX, clientY, true);
     if (overBoard) {
       clearDragGhost();
       if (cell === undefined) {
+        lastGhostCell = undefined;
         boardApi.setGhost(undefined, true);
         return;
       }
+      lastGhostCell = cell;
       showGhost(dragPiece, cell.row, cell.col);
       return;
     }
+    lastGhostCell = undefined;
     boardApi.setGhost(undefined, true);
     if (dragGhost === undefined) {
       dragGhost = createDragGhostElement(dragPiece);
@@ -199,9 +203,10 @@ export const bindBlockBlastGestures = ({
     }
     const index = dragIndex;
     const piece = dragPiece;
-    const { cell } = boardCellFromFinger(boardApi, board, piece, event.clientX, event.clientY);
-    if (dragMoved && cell !== undefined) {
-      tryPlace(index, cell.row, cell.col);
+    const { cell } = boardCellFromFinger(boardApi, piece, event.clientX, event.clientY, dragMoved);
+    const placeCell = cell ?? lastGhostCell;
+    if (dragMoved && placeCell !== undefined) {
+      tryPlace(index, placeCell.row, placeCell.col);
       suppressClick = true;
       window.setTimeout(() => {
         suppressClick = false;
@@ -219,7 +224,7 @@ export const bindBlockBlastGestures = ({
     if (piece === undefined || piece === null) {
       return;
     }
-    const { cell } = boardCellFromFinger(boardApi, board, piece, event.clientX, event.clientY);
+    const { cell } = boardCellFromFinger(boardApi, piece, event.clientX, event.clientY, false);
     if (cell === undefined) {
       return;
     }
@@ -235,7 +240,7 @@ export const bindBlockBlastGestures = ({
     if (piece === undefined || piece === null) {
       return;
     }
-    const { cell } = boardCellFromFinger(boardApi, board, piece, event.clientX, event.clientY);
+    const { cell } = boardCellFromFinger(boardApi, piece, event.clientX, event.clientY, false);
     if (cell === undefined) {
       boardApi.setGhost(undefined, true);
       return;

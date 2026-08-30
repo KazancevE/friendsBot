@@ -147,6 +147,18 @@ const showLoadingIfEmpty = (host: HTMLElement) => {
   }
 };
 
+let dashboardRenderGeneration = 0;
+
+const unwrapSettled = <T>(
+  result: PromiseSettledResult<Awaited<ReturnType<typeof fetchStats>>>,
+  fallbackMessage: string,
+) => {
+  if (result.status === "rejected") {
+    return { kind: "error" as const, message: fallbackMessage };
+  }
+  return result.value;
+};
+
 const renderDashboardSkeleton = () => {
   return `
     <section class="panel skeleton-panel">
@@ -217,24 +229,48 @@ const renderStat = (label: string, value: string | number, delta?: string) => {
 
 const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
   const { period, metric, granularity, heatmapSource } = view;
-  showLoadingIfEmpty(host);
+  const generation = ++dashboardRenderGeneration;
+  host.innerHTML = renderDashboardSkeleton();
   const now = new Date();
   const currentFrom = new Date(now.getTime() - (period - 1) * 24 * 60 * 60 * 1000);
   const previousTo = new Date(currentFrom.getTime() - 1);
   const previousFrom = new Date(previousTo.getTime() - (period - 1) * 24 * 60 * 60 * 1000);
-  const [stats, previousStats, series, staff, live, heatmap, bookings] = await Promise.all([
-    fetchStats(period),
-    fetchStatsBetween(previousFrom, previousTo),
-    fetchTimeseries(metric, period, granularity),
-    fetchStaffStats(period),
-    fetchLiveVenue(),
-    fetchHeatmap(period, heatmapSource),
-    fetchBookings(7, "pending"),
-  ]);
-  if (stats.kind === "error") {
-    host.innerHTML = `<section class="panel"><p class="error">${escapeHtml(stats.message)}</p></section>`;
-    return;
-  }
+
+  try {
+    const [
+      statsResult,
+      previousStatsResult,
+      seriesResult,
+      staffResult,
+      liveResult,
+      heatmapResult,
+      bookingsResult,
+    ] = await Promise.allSettled([
+      fetchStats(period),
+      fetchStatsBetween(previousFrom, previousTo),
+      fetchTimeseries(metric, period, granularity),
+      fetchStaffStats(period),
+      fetchLiveVenue(),
+      fetchHeatmap(period, heatmapSource),
+      fetchBookings(7, "pending"),
+    ]);
+
+    if (generation !== dashboardRenderGeneration) {
+      return;
+    }
+
+    const stats = unwrapSettled(statsResult, "Не удалось загрузить статистику");
+    const previousStats = unwrapSettled(previousStatsResult, "Не удалось загрузить сравнение");
+    const series = unwrapSettled(seriesResult, "Не удалось загрузить динамику");
+    const staff = unwrapSettled(staffResult, "Не удалось загрузить персонал");
+    const live = unwrapSettled(liveResult, "Не удалось загрузить зал");
+    const heatmap = unwrapSettled(heatmapResult, "Не удалось загрузить загруженность");
+    const bookings = unwrapSettled(bookingsResult, "Не удалось загрузить брони");
+
+    if (stats.kind === "error") {
+      host.innerHTML = `<section class="panel"><p class="error">${escapeHtml(stats.message)}</p></section>`;
+      return;
+    }
   const s = stats.data;
   const prev = previousStats.kind === "ok" ? previousStats.data : null;
   const delta = (key: keyof StatsSummary) =>
@@ -250,7 +286,7 @@ const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
             return `<div class="chart-row chart-row--area" title="${label}: ${point.value}"><span class="chart-label">${label}</span><div class="chart-bar"><span style="width:${width}%"></span></div><span class="chart-value">${point.value}</span></div>`;
           })
           .join("")
-      : `<p class="error">${escapeHtml(series.message)}</p>`;
+      : `<p class="error">${escapeHtml(series.kind === "error" ? series.message : "Нет данных")}</p>`;
   const heatmapBlock =
     heatmap.kind === "ok"
       ? `<section class="panel">
@@ -384,6 +420,12 @@ const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
         void preserveScroll(() => renderDashboard(host, { ...view, heatmapSource: next }));
       }
     });
+  }
+  } catch {
+    if (generation !== dashboardRenderGeneration) {
+      return;
+    }
+    host.innerHTML = `<section class="panel"><p class="error">Не удалось загрузить дашборд. Проверьте соединение и обновите страницу.</p></section>`;
   }
 };
 
