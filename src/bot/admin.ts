@@ -10,6 +10,7 @@ import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
 import type { PrizePlace, Role, Settings } from "../domain/types.ts";
+import { adminAppUrl } from "../web-app-url.ts";
 import {
   askCancellableInt,
   askCancellablePriceOrSkip,
@@ -1152,9 +1153,8 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
     if (!(await requireAdminOrReply(ctx))) {
       return;
     }
-    const origin = ctx.config.publicUrl.replace(/\/$/, "");
     await ctx.reply("Откройте панель администратора", {
-      reply_markup: new InlineKeyboard().webApp("Открыть веб-админ", `${origin}/admin/`),
+      reply_markup: new InlineKeyboard().webApp("Открыть веб-админ", adminAppUrl(ctx.config.publicUrl)),
     });
   });
 

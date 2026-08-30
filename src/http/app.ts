@@ -7,6 +7,7 @@ import { createAdminRoutes } from "./admin.ts";
 import { createCashierRoutes } from "./cashier.ts";
 import { createCheckInRoutes } from "./check-in.ts";
 import { createGameRoutes } from "./games.ts";
+import { applyWebAppCacheHeaders } from "./web-app-cache.ts";
 
 type CreateHttpAppParameters = {
   readonly store: Store;
@@ -47,6 +48,13 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
       return handleUpdate(c);
     });
   }
+
+  app.use("/app", applyWebAppCacheHeaders);
+  app.use("/app/", applyWebAppCacheHeaders);
+  app.use("/app/*", applyWebAppCacheHeaders);
+  app.use("/admin", applyWebAppCacheHeaders);
+  app.use("/admin/", applyWebAppCacheHeaders);
+  app.use("/admin/*", applyWebAppCacheHeaders);
 
   app.use("/app", serveStatic({ root: ".", path: MINIAPP_INDEX }));
   app.use("/app/", serveStatic({ root: ".", path: MINIAPP_INDEX }));

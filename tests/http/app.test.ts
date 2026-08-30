@@ -26,6 +26,7 @@ test("serves mini app index at /app and /app/", async () => {
   const slash = await app.request("/app/");
   expect(slash.status).toBe(200);
   expect(await slash.text()).toContain("касса");
+  expect(slash.headers.get("Cache-Control")).toBe("no-cache, no-store, must-revalidate");
 
   const bare = await app.request("/app");
   expect(bare.status).toBe(200);
@@ -34,4 +35,5 @@ test("serves mini app index at /app and /app/", async () => {
   const admin = await app.request("/admin/");
   expect(admin.status).toBe(200);
   expect(await admin.text()).toContain("admin");
+  expect(admin.headers.get("Cache-Control")).toBe("no-cache, no-store, must-revalidate");
 });
