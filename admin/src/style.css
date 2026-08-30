@@ -665,6 +665,87 @@ td {
   padding: 0.35rem;
 }
 
+.tile-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .tile-upload-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.tile-upload-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+}
+
+.tile-preview {
+  aspect-ratio: 1;
+  border-radius: 0.4rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tile-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile-preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 0.35rem;
+}
+
+.tile-upload-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.action--compact {
+  width: 100%;
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.skin-bg-uploads {
+  margin-top: 0.75rem;
+}
+
+.skin-bg-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+}
+
+.skin-file-name {
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
 .asset-preview img,
 .asset-placeholder {
   display: block;

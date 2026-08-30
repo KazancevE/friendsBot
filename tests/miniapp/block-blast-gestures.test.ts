@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeDragOffsetY } from "../../miniapp/src/block-blast-gestures.ts";
+import { compensatedLookupY, computeDragOffsetY } from "../../miniapp/src/block-blast-gestures.ts";
 import type { Piece } from "../../src/domain/block-blast.ts";
 
 const piece = (cells: Piece["cells"], tile = 0): Piece => {
@@ -20,4 +20,11 @@ test("computeDragOffsetY grows with piece height", () => {
     ]),
   );
   expect(tall).toBeGreaterThan(small);
+});
+
+test("compensatedLookupY shifts finger up during drag", () => {
+  const single = piece([{ dr: 0, dc: 0 }]);
+  const fingerY = 400;
+  expect(compensatedLookupY(fingerY, single, true)).toBeLessThan(fingerY);
+  expect(compensatedLookupY(fingerY, single, false)).toBe(fingerY);
 });

@@ -25,34 +25,38 @@ const renderGameSkinSection = (slug: string, title: string, hint: string, skin: 
     <section class="panel" data-game-skin="${escapeHtml(slug)}">
       <h2>${escapeHtml(title)}</h2>
       <p class="muted">${escapeHtml(hint)}</p>
-      <div class="gallery-grid">
+      <div class="tile-upload-grid">
         ${TILE_LABELS.map((label, index) => {
           const tile = tiles.find((entry) => entry.index === index);
           return `
-            <figure class="gallery-item">
-              ${
-                tile !== undefined
-                  ? `<img src="${escapeHtml(tile.imageUrl)}" alt="${escapeHtml(label)}" loading="lazy" />`
-                  : `<div class="asset-placeholder">${escapeHtml(label)}</div>`
-              }
-              <figcaption>${escapeHtml(label)}</figcaption>
-              <label class="upload-label compact">
-                Загрузить
-                <input type="file" accept="image/*" data-tile-index="${index}" />
-              </label>
-            </figure>
+            <div class="tile-upload-card">
+              <div class="tile-preview">
+                ${
+                  tile !== undefined
+                    ? `<img src="${escapeHtml(tile.imageUrl)}" alt="${escapeHtml(label)}" loading="lazy" />`
+                    : `<span class="tile-preview-placeholder">${escapeHtml(label)}</span>`
+                }
+              </div>
+              <span class="tile-upload-label">${escapeHtml(label)}</span>
+              <button type="button" class="action action--compact" data-pick-tile="${index}">Загрузить</button>
+              <input type="file" accept="image/*" hidden data-tile-index="${index}" />
+            </div>
           `;
         }).join("")}
       </div>
-      <div class="upload-grid">
-        <label class="upload-label">
-          Фон поля / обложка
-          <input type="file" accept="image/*" data-skin-kind="boardBg" />
-        </label>
-        <label class="upload-label">
-          Фон лотка
-          <input type="file" accept="image/*" data-skin-kind="trayBg" />
-        </label>
+      <div class="upload-grid skin-bg-uploads">
+        <div class="skin-bg-upload">
+          <span class="tile-upload-label">Фон поля / обложка</span>
+          <button type="button" class="action action--compact" data-pick-bg="boardBg">Выбрать файл</button>
+          <span class="muted skin-file-name" data-file-name="boardBg">Файл не выбран</span>
+          <input type="file" accept="image/*" hidden data-skin-kind="boardBg" />
+        </div>
+        <div class="skin-bg-upload">
+          <span class="tile-upload-label">Фон лотка</span>
+          <button type="button" class="action action--compact" data-pick-bg="trayBg">Выбрать файл</button>
+          <span class="muted skin-file-name" data-file-name="trayBg">Файл не выбран</span>
+          <input type="file" accept="image/*" hidden data-skin-kind="trayBg" />
+        </div>
       </div>
       ${
         skin?.boardBackgroundUrl !== null && skin?.boardBackgroundUrl !== undefined
@@ -85,6 +89,16 @@ const bindGameSkinSection = (host: HTMLElement, slug: string, reload: () => Prom
     }
   };
 
+  for (const button of section.querySelectorAll("[data-pick-tile]")) {
+    button.addEventListener("click", () => {
+      const index = button.getAttribute("data-pick-tile");
+      const input = section.querySelector(`[data-tile-index="${index}"]`);
+      if (input instanceof HTMLInputElement) {
+        input.click();
+      }
+    });
+  }
+
   for (const input of section.querySelectorAll("[data-tile-index]")) {
     input.addEventListener("change", () => {
       if (!(input instanceof HTMLInputElement) || !(input.files?.[0] instanceof File)) {
@@ -104,6 +118,16 @@ const bindGameSkinSection = (host: HTMLElement, slug: string, reload: () => Prom
     });
   }
 
+  for (const button of section.querySelectorAll("[data-pick-bg]")) {
+    button.addEventListener("click", () => {
+      const kind = button.getAttribute("data-pick-bg");
+      const input = section.querySelector(`[data-skin-kind="${kind}"]`);
+      if (input instanceof HTMLInputElement) {
+        input.click();
+      }
+    });
+  }
+
   for (const input of section.querySelectorAll("[data-skin-kind]")) {
     input.addEventListener("change", () => {
       if (!(input instanceof HTMLInputElement) || !(input.files?.[0] instanceof File)) {
@@ -113,11 +137,18 @@ const bindGameSkinSection = (host: HTMLElement, slug: string, reload: () => Prom
       if (kind !== "boardBg" && kind !== "trayBg") {
         return;
       }
+      const fileName = section.querySelector(`[data-file-name="${kind}"]`);
+      if (fileName instanceof HTMLElement && input.files[0] !== undefined) {
+        fileName.textContent = input.files[0].name;
+      }
       setStatus("Загрузка…");
       void uploadGameSkinAsset(slug, kind, input.files[0]).then((uploaded) => {
         input.value = "";
         if (uploaded.kind === "error") {
           setStatus(uploaded.message);
+          if (fileName instanceof HTMLElement) {
+            fileName.textContent = "Файл не выбран";
+          }
           return;
         }
         setStatus("Фон обновлён");
