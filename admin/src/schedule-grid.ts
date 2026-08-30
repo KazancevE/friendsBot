@@ -1,16 +1,43 @@
 import type { StaffMemberView } from "./api.ts";
 import { escapeHtml, formatName } from "./ui-helpers.ts";
+import { formatShiftRange } from "./time-helpers.ts";
 
 const WEEKDAY_LABELS = ["", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
-const HOURS = Array.from({ length: 16 }, (_, index) => index + 12);
+
+const isSlotActiveAtHour = (slot: StaffMemberView["schedule"][number], weekday: number, hour: number) => {
+  if (slot.endHour <= 24) {
+    return slot.weekday === weekday && hour >= slot.startHour && hour < slot.endHour;
+  }
+  if (slot.weekday === weekday && hour >= slot.startHour) {
+    return true;
+  }
+  const nextWeekday = slot.weekday === 7 ? 1 : slot.weekday + 1;
+  return nextWeekday === weekday && hour < slot.endHour - 24;
+};
 
 const slotActive = (member: StaffMemberView, weekday: number, hour: number) => {
-  return member.schedule.some((slot) => {
-    if (slot.weekday !== weekday) {
-      return false;
-    }
-    return hour >= slot.startHour && hour < slot.endHour;
-  });
+  return member.schedule.some((slot) => isSlotActiveAtHour(slot, weekday, hour));
+};
+
+const slotLabel = (member: StaffMemberView, weekday: number) => {
+  const daySlots = member.schedule.filter(
+    (slot) => slot.weekday === weekday || (slot.endHour > 24 && (slot.weekday === 7 ? 1 : slot.weekday + 1) === weekday),
+  );
+  if (daySlots.length === 0) {
+    return "—";
+  }
+  return daySlots
+    .map((slot) => {
+      if (slot.weekday === weekday) {
+        return formatShiftRange(slot.startHour, Math.min(slot.endHour, 24));
+      }
+      if (slot.endHour > 24) {
+        return formatShiftRange(0, slot.endHour - 24);
+      }
+      return "";
+    })
+    .filter((part) => part.length > 0)
+    .join(", ");
 };
 
 export const renderScheduleGrid = (
@@ -31,32 +58,27 @@ export const renderScheduleGrid = (
     .map((member) => {
       const cells = [1, 2, 3, 4, 5, 6, 7]
         .map((weekday) => {
-          const activeHours = HOURS.filter((hour) => slotActive(member, weekday, hour));
-          const label =
-            activeHours.length === 0
-              ? "—"
-              : `${Math.min(...activeHours)}–${Math.max(...activeHours) + 1}`;
+          const activeHours = Array.from({ length: 24 }, (_, hour) => hour).filter((hour) =>
+            slotActive(member, weekday, hour),
+          );
+          const label = slotLabel(member, weekday);
           return `<td><button type="button" class="schedule-cell ${activeHours.length > 0 ? "active" : ""}" data-schedule-member="${member.id}" data-weekday="${weekday}">${escapeHtml(label)}</button></td>`;
         })
         .join("");
-      return `<tr>
-        <td><button type="button" class="linkish" data-schedule-member="${member.id}" data-weekday="1">${escapeHtml(formatName(member.firstName, member.lastName))}</button></td>
-        ${cells}
-      </tr>`;
+      return `<tr><td>${escapeHtml(formatName(member.firstName, member.lastName))}</td>${cells}</tr>`;
     })
     .join("");
 
   host.innerHTML = `
-    <p class="muted">Клик по ячейке — редактировать смены сотрудника</p>
-    <div class="table-wrap">
-      <table class="schedule-grid"><thead>${header}</thead><tbody>${rows}</tbody></table>
+    <div class="table-wrap schedule-grid">
+      <table><thead>${header}</thead><tbody>${rows}</tbody></table>
     </div>
   `;
 
   for (const button of host.querySelectorAll("[data-schedule-member]")) {
     button.addEventListener("click", () => {
-      const userId = button.getAttribute("data-schedule-member");
-      const member = members.find((row) => row.id === userId);
+      const memberId = button.getAttribute("data-schedule-member");
+      const member = members.find((row) => row.id === memberId);
       if (member !== undefined) {
         onEdit(member);
       }
