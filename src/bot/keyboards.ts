@@ -51,6 +51,7 @@ export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParame
   }
   if (role === "master" || role === "admin") {
     keyboard.row().text("Найти гостя").text("Код зала");
+    keyboard.row().text("Брони сегодня");
   }
   if (role === "admin") {
     keyboard.row().text("Настройки").text("Роли").text("Рассылка");

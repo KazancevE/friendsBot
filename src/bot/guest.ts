@@ -61,11 +61,18 @@ const menuImageCaption = (item: MenuItemRecord): string | undefined => {
 
 const sendMenuPhotos = async (ctx: BotContext, items: MenuItemRecord[]) => {
   for (const item of items) {
-    if (item.imageFileId === null) {
+    const caption = menuImageCaption(item);
+    const captionOptions = caption === undefined ? {} : { caption };
+    if (item.imageFileId !== null) {
+      await ctx.replyWithPhoto(item.imageFileId, captionOptions);
       continue;
     }
-    const caption = menuImageCaption(item);
-    await ctx.replyWithPhoto(item.imageFileId, caption === undefined ? {} : { caption });
+    if (item.imageUrl !== null) {
+      const photoUrl = item.imageUrl.startsWith("http")
+        ? item.imageUrl
+        : `${ctx.config.publicUrl}${item.imageUrl}`;
+      await ctx.replyWithPhoto(photoUrl, captionOptions);
+    }
   }
 };
 
@@ -187,8 +194,24 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       coupons.length > 0
         ? coupons.map((coupon) => `${coupon.title} (до ${formatMoscowDate(coupon.expiresAt)})`).join(", ")
         : "нет";
+    const lots = await ctx.store.listBonusLots(ctx.dbUser.id);
+    const now = new Date();
+    const activeLots = lots.filter((lot) => lot.remaining > 0 && lot.expiresAt > now);
+    const lotLines =
+      activeLots.length === 0
+        ? []
+        : activeLots.map(
+            (lot) =>
+              `· ${lot.remaining} ${lot.category === "gift" ? "подарочных" : "чековых"} (до ${formatMoscowDate(lot.expiresAt)})`,
+          );
+    const lines = [
+      `Баланс: ${ctx.dbUser.balance}`,
+      ...lotLines,
+      `Код: ${ctx.dbUser.qrToken}`,
+      `Купоны: ${couponLine}`,
+    ];
     await ctx.replyWithPhoto(new InputFile(buf), {
-      caption: `Баланс: ${ctx.dbUser.balance}\nКод: ${ctx.dbUser.qrToken}\nКупоны: ${couponLine}`,
+      caption: lines.join("\n"),
     });
   });
 

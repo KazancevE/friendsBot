@@ -250,6 +250,11 @@ export type SettingsView = {
   birthdayCouponTitle: string | null;
   birthdayCouponClaimDays: number;
   maxSessionsPerHour: number;
+  bookingHoursStart: number;
+  bookingHoursEnd: number;
+  bookingSlotMinutes: number;
+  bookingClosedWeekdays: number[];
+  bookingDurationMinutes: number;
 };
 
 const isSettingsResponse = (value: unknown): value is { settings: SettingsView } => {
@@ -385,8 +390,11 @@ export type MenuItem = {
   title: string;
   description: string;
   priceRubles: number | null;
+  imageFileId: string | null;
+  imageUrl: string | null;
   sort: number;
   active: boolean;
+  isGallery?: boolean;
 };
 
 const isMenuList = (value: unknown): value is { rows: MenuItem[] } => {
@@ -424,4 +432,286 @@ export const updateMenuItem = (
       return { kind: "error" as const, message: "Некорректный ответ" };
     }
     return { kind: "ok" as const, data: parsed.item };
+  });
+
+export type LiveVisitRow = {
+  visitId: string;
+  userId: string;
+  firstName: string | null;
+  lastName: string | null;
+  startedAt: string;
+  endsAt: string;
+  checkInMethod: string | null;
+};
+
+const isLiveVenue = (value: unknown): value is { visits: LiveVisitRow[]; checkInsToday: number } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { visits: unknown }).visits);
+};
+
+export const fetchLiveVenue = () => getJson("/api/admin/live", isLiveVenue);
+
+export type VenueCodeView = {
+  pin: string;
+  token: string;
+  qrPayload: string;
+  validFrom: string;
+  validUntil: string;
+};
+
+const isVenueCode = (value: unknown): value is VenueCodeView => {
+  return typeof value === "object" && value !== null && typeof (value as VenueCodeView).pin === "string";
+};
+
+export const fetchVenueCode = () => getJson("/api/admin/venue-code", isVenueCode);
+
+export type ContentPageView = {
+  slug: string;
+  body: string;
+  mapUrl: string | null;
+};
+
+const isContentPage = (value: unknown): value is { page: ContentPageView } => {
+  return typeof value === "object" && value !== null && typeof (value as { page: ContentPageView }).page?.slug === "string";
+};
+
+export const fetchContentPage = (slug: "contacts" | "directions") =>
+  getJson(`/api/admin/pages/${slug}`, isContentPage);
+
+export const patchContentPage = (slug: "contacts" | "directions", body: string, mapUrl: string | null) =>
+  fetch(`/api/admin/pages/${slug}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ body, mapUrl }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    const parsed: unknown = await res.json();
+    if (!isContentPage(parsed)) {
+      return { kind: "error" as const, message: "Некорректный ответ" };
+    }
+    return { kind: "ok" as const, data: parsed.page };
+  });
+
+export type BookingRow = {
+  id: string;
+  userId: string;
+  guestName: string;
+  guestPhone: string | null;
+  requestedFor: string;
+  endsAt: string | null;
+  partySize: number;
+  comment: string | null;
+  status: string;
+  tableId: string | null;
+  tableLabel: string | null;
+  handledAt: string | null;
+  createdAt: string;
+};
+
+const isBookings = (value: unknown): value is { rows: BookingRow[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
+};
+
+export const fetchBookings = (days = 14) => {
+  const params = periodParams(days);
+  return getJson(`/api/admin/bookings?${params.toString()}`, isBookings);
+};
+
+export const patchBooking = (id: string, status: "confirmed" | "cancelled") =>
+  fetch(`/api/admin/bookings/${id}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ status }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export type VenueTableView = {
+  id: string;
+  floorPlanId: string;
+  label: string;
+  description: string;
+  highlights: string[];
+  photoUrl: string | null;
+  seatsMin: number;
+  seatsMax: number;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  sort: number;
+  active: boolean;
+};
+
+export type FloorPlanView = {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  backgroundImageUrl: string | null;
+  active: boolean;
+  tables: VenueTableView[];
+};
+
+const isFloorPlan = (value: unknown): value is { floorPlan: FloorPlanView | null } => {
+  return typeof value === "object" && value !== null && "floorPlan" in value;
+};
+
+export const fetchFloorPlan = () => getJson("/api/admin/floor-plan", isFloorPlan);
+
+export const saveFloorPlan = (input: { id?: string; name: string; width?: number; height?: number }) =>
+  fetch("/api/admin/floor-plan", {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify(input),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    const parsed: unknown = await res.json();
+    if (!isFloorPlan(parsed) || parsed.floorPlan === null) {
+      return { kind: "error" as const, message: "Некорректный ответ" };
+    }
+    return { kind: "ok" as const, data: parsed.floorPlan };
+  });
+
+export const createVenueTable = (input: {
+  floorPlanId: string;
+  label: string;
+  description?: string;
+  highlights?: string[];
+  seatsMin?: number;
+  seatsMax?: number;
+}) =>
+  fetch("/api/admin/tables", {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(input),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const assignBookingTable = (bookingId: string, tableId: string) =>
+  fetch(`/api/admin/bookings/${bookingId}/assign-table`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ tableId }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export type StaffMemberView = {
+  id: string;
+  telegramId: string;
+  role: string;
+  firstName: string | null;
+  lastName: string | null;
+  schedule: Array<{ weekday: number; startHour: number; endHour: number }>;
+};
+
+const isStaffList = (value: unknown): value is { members: StaffMemberView[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { members: unknown }).members);
+};
+
+export const fetchStaffMembers = () => getJson("/api/admin/staff", isStaffList);
+
+export const assignStaffRole = (telegramId: string, role: "guest" | "master" | "admin") =>
+  postJson("/api/admin/staff/role", { telegramId, role }, (value): value is { user: { id: string } } => {
+    return typeof value === "object" && value !== null && typeof (value as { user: { id: string } }).user?.id === "string";
+  });
+
+export const updateStaffSchedule = (
+  userId: string,
+  slots: Array<{ weekday: number; startHour: number; endHour: number }>,
+) =>
+  fetch(`/api/admin/staff/${userId}/schedule`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify({ slots }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const uploadMenuGallery = async (file: File): Promise<ApiResult<{ id: string; imageUrl: string | null }>> => {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/admin/menu/upload", {
+    method: "POST",
+    headers: { "X-Telegram-Init-Data": initData() },
+    body: form,
+  });
+  if (!res.ok) {
+    const parsed: unknown = await res.json().catch(() => ({}));
+    const message =
+      typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+        ? parsed.message
+        : "Ошибка загрузки";
+    return { kind: "error", message };
+  }
+  const parsed: unknown = await res.json();
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("item" in parsed) ||
+    typeof (parsed as { item: { id: string } }).item?.id !== "string"
+  ) {
+    return { kind: "error", message: "Некорректный ответ" };
+  }
+  const item = (parsed as { item: { id: string; imageUrl: string | null } }).item;
+  return { kind: "ok", data: { id: item.id, imageUrl: item.imageUrl } };
+};
+
+export const deleteMenuGalleryItem = (id: string) =>
+  fetch(`/api/admin/menu/gallery/${id}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initData() },
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка удаления" };
+    }
+    return { kind: "ok" as const, data: null };
   });

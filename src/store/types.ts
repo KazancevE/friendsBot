@@ -1,12 +1,15 @@
 import type {
   ActiveVisitRow,
   BonusLotRecord,
+  BookingListRow,
   BookingRequestRecord,
   BookingStatus,
   BroadcastSegmentId,
   CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
+  FloorPlanRecord,
+  FloorPlanView,
   GameRecord,
   AggregatedScoreRecord,
   GameScoreRecord,
@@ -29,8 +32,11 @@ import type {
   Settings,
   StaffActionKind,
   StaffActionLogRecord,
+  StaffMemberRecord,
+  StaffWeeklyScheduleRecord,
   UserRecord,
   VenueCodeRecord,
+  VenueTableRecord,
   VisitRecord,
 } from "../domain/types.ts";
 
@@ -103,19 +109,74 @@ export interface Store {
   createBookingRequest(input: {
     userId: string;
     requestedFor: Date;
+    endsAt: Date;
+    durationMinutes: number;
     partySize: number;
     comment: string | null;
+    tableId?: string | null;
   }): Promise<BookingRequestRecord>;
   findBookingById(id: string): Promise<BookingRequestRecord | null>;
   findPendingBookingForUser(userId: string): Promise<BookingRequestRecord | null>;
   updateBooking(
     id: string,
     patch: Partial<
-      Pick<BookingRequestRecord, "status" | "handledBy" | "handledAt" | "reminderSent">
+      Pick<
+        BookingRequestRecord,
+        | "status"
+        | "handledBy"
+        | "handledAt"
+        | "reminderSent"
+        | "tableId"
+        | "tableAssignedAt"
+        | "seatedAt"
+        | "endsAt"
+        | "durationMinutes"
+      >
     >,
   ): Promise<BookingRequestRecord>;
   listBookingsNeedingReminder(now: Date): Promise<BookingRequestRecord[]>;
   listPendingBookings(): Promise<BookingRequestRecord[]>;
+  listBookingsBetween(input: { from: Date; to: Date; status?: BookingStatus }): Promise<BookingListRow[]>;
+
+  getActiveFloorPlan(): Promise<FloorPlanView | null>;
+  listFloorPlans(): Promise<FloorPlanRecord[]>;
+  findFloorPlanById(id: string): Promise<FloorPlanRecord | null>;
+  upsertFloorPlan(input: {
+    id?: string;
+    name: string;
+    width: number;
+    height: number;
+    backgroundImageUrl: string | null;
+    active: boolean;
+  }): Promise<FloorPlanRecord>;
+  deleteFloorPlan(id: string): Promise<void>;
+  findTableById(id: string): Promise<VenueTableRecord | null>;
+  upsertVenueTable(input: {
+    id?: string;
+    floorPlanId: string;
+    label: string;
+    description: string;
+    highlights: string[];
+    photoUrl: string | null;
+    seatsMin: number;
+    seatsMax: number;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+    active: boolean;
+  }): Promise<VenueTableRecord>;
+  deleteVenueTable(id: string): Promise<void>;
+
+  listStaffMembers(): Promise<StaffMemberRecord[]>;
+  listStaffWeeklySchedule(userId: string): Promise<StaffWeeklyScheduleRecord[]>;
+  listAllStaffWeeklySchedules(): Promise<StaffWeeklyScheduleRecord[]>;
+  replaceStaffWeeklySchedule(
+    userId: string,
+    slots: ReadonlyArray<{ weekday: number; startHour: number; endHour: number }>,
+  ): Promise<StaffWeeklyScheduleRecord[]>;
 
   addLedger(input: {
     userId: string;
@@ -177,6 +238,7 @@ export interface Store {
   findLatestCheckInForVisit(visitId: string): Promise<CheckInLogRecord | null>;
 
   listMenu(): Promise<MenuItemRecord[]>;
+  listAllMenuItems(): Promise<MenuItemRecord[]>;
   upsertMenuItem(item: Omit<MenuItemRecord, "id"> & { id?: string }): Promise<MenuItemRecord>;
   deleteMenuItem(id: string): Promise<void>;
   getPage(slug: "contacts" | "directions" | "game_rules"): Promise<ContentPageRecord | null>;

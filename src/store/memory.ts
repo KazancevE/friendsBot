@@ -4,9 +4,12 @@ import type {
   ActiveVisitRow,
   BonusLotRecord,
   BookingRequestRecord,
+  BookingStatus,
   CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
+  FloorPlanRecord,
+  FloorPlanView,
   GameRecord,
   GameScoreRecord,
   GameSessionLogRecord,
@@ -27,8 +30,11 @@ import type {
   QuizSessionStatus,
   StaffActionKind,
   StaffActionLogRecord,
+  StaffMemberRecord,
+  StaffWeeklyScheduleRecord,
   UserRecord,
   VenueCodeRecord,
+  VenueTableRecord,
   VisitRecord,
 } from "../domain/types.ts";
 import { MOSCOW, moscowCalendarYear } from "../domain/week.ts";
@@ -59,6 +65,9 @@ export class MemoryStore implements Store {
   awards = new Map<string, number>();
   staffActionLogs: StaffActionLogRecord[] = [];
   bookings = new Map<string, BookingRequestRecord>();
+  staffWeeklySchedules = new Map<string, StaffWeeklyScheduleRecord>();
+  floorPlans = new Map<string, FloorPlanRecord>();
+  venueTables = new Map<string, VenueTableRecord>();
 
   constructor() {
     const match3Id = crypto.randomUUID();
@@ -221,6 +230,48 @@ export class MemoryStore implements Store {
       .filter((u) => u.role === "master" || u.role === "admin")
       .map((u) => u.telegramId);
   }
+  async listStaffMembers(): Promise<StaffMemberRecord[]> {
+    return [...this.users.values()]
+      .filter((u) => u.role === "master" || u.role === "admin")
+      .map((u) => ({
+        id: u.id,
+        telegramId: u.telegramId,
+        role: u.role,
+        firstName: u.firstName,
+        lastName: u.lastName,
+      }))
+      .sort((a, b) => a.role.localeCompare(b.role));
+  }
+  async listStaffWeeklySchedule(userId: string) {
+    return [...this.staffWeeklySchedules.values()]
+      .filter((row) => row.userId === userId)
+      .sort((a, b) => a.weekday - b.weekday)
+      .map((row) => ({ ...row }));
+  }
+  async listAllStaffWeeklySchedules() {
+    return [...this.staffWeeklySchedules.values()].map((row) => ({ ...row }));
+  }
+  async replaceStaffWeeklySchedule(
+    userId: string,
+    slots: ReadonlyArray<{ weekday: number; startHour: number; endHour: number }>,
+  ) {
+    for (const [id, row] of this.staffWeeklySchedules) {
+      if (row.userId === userId) {
+        this.staffWeeklySchedules.delete(id);
+      }
+    }
+    for (const slot of slots) {
+      const row: StaffWeeklyScheduleRecord = {
+        id: crypto.randomUUID(),
+        userId,
+        weekday: slot.weekday,
+        startHour: slot.startHour,
+        endHour: slot.endHour,
+      };
+      this.staffWeeklySchedules.set(row.id, row);
+    }
+    return this.listStaffWeeklySchedule(userId);
+  }
   async countRegistrationsBetween(from: Date, to: Date) {
     return [...this.users.values()].filter(
       (u) => u.role === "guest" && u.createdAt >= from && u.createdAt <= to,
@@ -339,17 +390,28 @@ export class MemoryStore implements Store {
   async createBookingRequest(input: {
     userId: string;
     requestedFor: Date;
+    endsAt: Date;
+    durationMinutes: number;
     partySize: number;
     comment: string | null;
+    tableId?: string | null;
   }) {
     const row: BookingRequestRecord = {
       id: crypto.randomUUID(),
       status: "pending",
       handledBy: null,
       handledAt: null,
+      seatedAt: null,
+      tableAssignedAt: null,
       reminderSent: false,
       createdAt: new Date(),
-      ...input,
+      userId: input.userId,
+      requestedFor: input.requestedFor,
+      endsAt: input.endsAt,
+      durationMinutes: input.durationMinutes,
+      partySize: input.partySize,
+      comment: input.comment,
+      tableId: input.tableId ?? null,
     };
     this.bookings.set(row.id, row);
     return { ...row };
@@ -366,7 +428,18 @@ export class MemoryStore implements Store {
   async updateBooking(
     id: string,
     patch: Partial<
-      Pick<BookingRequestRecord, "status" | "handledBy" | "handledAt" | "reminderSent">
+      Pick<
+        BookingRequestRecord,
+        | "status"
+        | "handledBy"
+        | "handledAt"
+        | "reminderSent"
+        | "tableId"
+        | "tableAssignedAt"
+        | "seatedAt"
+        | "endsAt"
+        | "durationMinutes"
+      >
     >,
   ) {
     const cur = this.bookings.get(id);
@@ -392,6 +465,137 @@ export class MemoryStore implements Store {
       .filter((b) => b.status === "pending")
       .sort((a, b) => a.requestedFor.getTime() - b.requestedFor.getTime())
       .map((b) => ({ ...b }));
+  }
+  async listBookingsBetween(input: { from: Date; to: Date; status?: BookingStatus }) {
+    return [...this.bookings.values()]
+      .filter((booking) => {
+        if (booking.requestedFor < input.from || booking.requestedFor > input.to) {
+          return false;
+        }
+        if (input.status !== undefined && booking.status !== input.status) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => a.requestedFor.getTime() - b.requestedFor.getTime())
+      .map((booking) => {
+        const guest = this.users.get(booking.userId);
+        const table = booking.tableId !== null ? this.venueTables.get(booking.tableId) : undefined;
+        return {
+          ...booking,
+          guestFirstName: guest?.firstName ?? null,
+          guestLastName: guest?.lastName ?? null,
+          guestPhone: guest?.phone ?? null,
+          tableLabel: table?.label ?? null,
+        };
+      });
+  }
+
+  async getActiveFloorPlan(): Promise<FloorPlanView | null> {
+    const plan = [...this.floorPlans.values()].find((row) => row.active) ?? null;
+    if (plan === null) {
+      return null;
+    }
+    return {
+      ...plan,
+      tables: [...this.venueTables.values()]
+        .filter((table) => table.floorPlanId === plan.id)
+        .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, "ru")),
+    };
+  }
+
+  async listFloorPlans() {
+    return [...this.floorPlans.values()].map((row) => ({ ...row }));
+  }
+
+  async findFloorPlanById(id: string) {
+    const row = this.floorPlans.get(id);
+    return row ? { ...row } : null;
+  }
+
+  async upsertFloorPlan(input: {
+    id?: string;
+    name: string;
+    width: number;
+    height: number;
+    backgroundImageUrl: string | null;
+    active: boolean;
+  }) {
+    const id = input.id ?? crypto.randomUUID();
+    if (input.active) {
+      for (const plan of this.floorPlans.values()) {
+        if (plan.id !== id) {
+          plan.active = false;
+        }
+      }
+    }
+    const row: FloorPlanRecord = {
+      id,
+      name: input.name,
+      width: input.width,
+      height: input.height,
+      backgroundImageUrl: input.backgroundImageUrl,
+      active: input.active,
+    };
+    this.floorPlans.set(id, row);
+    return { ...row };
+  }
+
+  async deleteFloorPlan(id: string) {
+    this.floorPlans.delete(id);
+    for (const table of [...this.venueTables.values()]) {
+      if (table.floorPlanId === id) {
+        this.venueTables.delete(table.id);
+      }
+    }
+  }
+
+  async findTableById(id: string) {
+    const row = this.venueTables.get(id);
+    return row ? { ...row } : null;
+  }
+
+  async upsertVenueTable(input: {
+    id?: string;
+    floorPlanId: string;
+    label: string;
+    description: string;
+    highlights: string[];
+    photoUrl: string | null;
+    seatsMin: number;
+    seatsMax: number;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+    active: boolean;
+  }) {
+    const id = input.id ?? crypto.randomUUID();
+    const row: VenueTableRecord = {
+      id,
+      floorPlanId: input.floorPlanId,
+      label: input.label,
+      description: input.description,
+      highlights: input.highlights,
+      photoUrl: input.photoUrl,
+      seatsMin: input.seatsMin,
+      seatsMax: input.seatsMax,
+      posX: input.posX,
+      posY: input.posY,
+      width: input.width,
+      height: input.height,
+      rotation: input.rotation,
+      sort: input.sort,
+      active: input.active,
+    };
+    this.venueTables.set(id, row);
+    return { ...row };
+  }
+
+  async deleteVenueTable(id: string) {
+    this.venueTables.delete(id);
   }
 
   async addLedger(input: {
@@ -556,6 +760,9 @@ export class MemoryStore implements Store {
 
   async listMenu() {
     return [...this.menu.values()].filter((m) => m.active).sort((a, b) => a.sort - b.sort);
+  }
+  async listAllMenuItems() {
+    return [...this.menu.values()].sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
   }
   async upsertMenuItem(item: Omit<MenuItemRecord, "id"> & { id?: string }) {
     const id = item.id ?? crypto.randomUUID();

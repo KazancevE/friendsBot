@@ -57,13 +57,18 @@ enum StaffActionKind {
   visit_extend
   coupon_redeem
   guest_search
+  booking_table_assign
+  booking_table_move
+  booking_table_swap
 }
 
 enum BookingStatus {
   pending
   confirmed
+  seated
   cancelled
   completed
+  no_show
 }
 
 enum QuizSessionStatus {
@@ -109,6 +114,48 @@ model User {
   referredActivation  ReferralActivation? @relation("ReferralReferee")
   gameSessionLogs     GameSessionLog[]
   quizAnswers         QuizAnswer[]
+  weeklySchedules     StaffWeeklySchedule[]
+}
+
+model StaffWeeklySchedule {
+  id        String @id @default(uuid())
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  weekday   Int
+  startHour Int
+  endHour   Int
+
+  @@unique([userId, weekday])
+}
+
+model FloorPlan {
+  id                 String       @id @default(uuid())
+  name               String
+  width              Int          @default(100)
+  height             Int          @default(100)
+  backgroundImageUrl String?
+  active             Boolean      @default(true)
+  tables             VenueTable[]
+}
+
+model VenueTable {
+  id          String           @id @default(uuid())
+  floorPlan   FloorPlan        @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  floorPlanId String
+  label       String
+  description String           @default("")
+  highlights  Json             @default("[]")
+  photoUrl    String?
+  seatsMin    Int              @default(1)
+  seatsMax    Int              @default(4)
+  posX        Float            @default(0)
+  posY        Float            @default(0)
+  width       Float            @default(10)
+  height      Float            @default(10)
+  rotation    Float            @default(0)
+  sort        Int              @default(0)
+  active      Boolean          @default(true)
+  bookings    BookingRequest[]
 }
 
 model ReferralActivation {
@@ -156,18 +203,26 @@ model StaffActionLog {
 }
 
 model BookingRequest {
-  id           String        @id @default(uuid())
-  user         User          @relation("BookingGuest", fields: [userId], references: [id])
-  userId       String
-  requestedFor DateTime
-  partySize    Int
-  comment      String?
-  status       BookingStatus @default(pending)
-  handler      User?         @relation("BookingHandler", fields: [handledBy], references: [id])
-  handledBy    String?
-  handledAt    DateTime?
-  reminderSent Boolean       @default(false)
-  createdAt    DateTime      @default(now())
+  id               String        @id @default(uuid())
+  user             User          @relation("BookingGuest", fields: [userId], references: [id])
+  userId           String
+  table            VenueTable?   @relation(fields: [tableId], references: [id])
+  tableId          String?
+  requestedFor     DateTime
+  endsAt           DateTime?
+  durationMinutes  Int?
+  partySize        Int
+  comment          String?
+  status           BookingStatus @default(pending)
+  handler          User?         @relation("BookingHandler", fields: [handledBy], references: [id])
+  handledBy        String?
+  handledAt        DateTime?
+  seatedAt         DateTime?
+  tableAssignedAt  DateTime?
+  reminderSent     Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+
+  @@index([tableId, requestedFor])
 }
 
 model Ledger {
@@ -253,6 +308,7 @@ model MenuItem {
   description  String  @default("")
   priceRubles  Int?
   imageFileId  String?
+  imageUrl     String?
   sort         Int     @default(0)
   active       Boolean @default(true)
 }
