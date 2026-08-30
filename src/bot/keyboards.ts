@@ -1,5 +1,6 @@
 import { Keyboard } from "grammy";
 import type { Role } from "../domain/types.ts";
+import { miniAppUrl } from "../web-app-url.ts";
 
 export const CANCEL_TEXT = "Отмена";
 
@@ -31,7 +32,8 @@ type MainKeyboardParameters = {
   readonly publicUrl: string;
 };
 
-export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParameters) => {
+export const mainKeyboard = ({ role, publicUrl }: MainKeyboardParameters) => {
+  const appUrl = miniAppUrl(publicUrl);
   const keyboard = new Keyboard()
     .text("Баланс и QR")
     .text("История")
@@ -43,7 +45,7 @@ export const mainKeyboard = ({ role, publicUrl: _publicUrl }: MainKeyboardParame
     .text("Как доехать")
     .row()
     .text("Контакты")
-    .text(miniAppButtonLabel(role));
+    .webApp(miniAppButtonLabel(role), appUrl);
 
   if (role === "guest") {
     keyboard.row().text("Отключить рассылку").text("Забронировать");

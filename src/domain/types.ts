@@ -103,7 +103,8 @@ export type StaffActionKind =
   | "guest_search"
   | "booking_table_assign"
   | "booking_table_move"
-  | "booking_table_swap";
+  | "booking_table_swap"
+  | "guest_message";
 
 export type StaffActionLogRecord = {
   id: string;
@@ -365,8 +366,30 @@ export type PromoRecord = {
   body: string;
   photos: string[];
   showInFeed: boolean;
+  broadcastSegment: BroadcastSegmentId | null;
+  broadcastRecipients: number | null;
+  broadcastSent: number | null;
+  broadcastFailed: number | null;
   createdAt: Date;
 };
+
+export type GuestListRow = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  telegramUsername: string | null;
+  phone: string | null;
+  balance: number;
+  totalVisits: number;
+  lastVisitAt: Date | null;
+  visitActive: boolean;
+  broadcastOptOut: boolean;
+  createdAt: Date;
+};
+
+export type GuestListFilter = "in_venue" | "inactive_30d" | "opt_out" | "has_coupon";
+
+export type GuestListSort = "lastVisitAt" | "createdAt" | "balance" | "totalVisits";
 
 export type GameSessionLogRecord = {
   id: string;

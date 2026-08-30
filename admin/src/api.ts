@@ -74,6 +74,10 @@ export type StatsSummary = {
   referralActivations: number;
   gameSessions: number;
   uniqueGamePlayers: number;
+  avgVisitsPerDay: number;
+  peakHour: number | null;
+  peakWeekday: number | null;
+  returningGuestsPct: number | null;
 };
 
 const isStatsSummary = (value: unknown): value is StatsSummary => {
@@ -108,12 +112,48 @@ const isTimeseries = (value: unknown): value is { points: StatsTimeseriesPoint[]
   return typeof value === "object" && value !== null && Array.isArray((value as { points: unknown }).points);
 };
 
-export type StatsMetric = "visits" | "bonuses" | "checkins";
+export type StatsMetric =
+  | "visits"
+  | "bonuses"
+  | "checkins"
+  | "registrations"
+  | "gameSessions"
+  | "uniqueGuests";
 
-export const fetchTimeseries = (metric: StatsMetric, days: number) => {
+export type StatsGranularity = "day" | "week" | "month";
+
+export const fetchTimeseries = (
+  metric: StatsMetric,
+  days: number,
+  granularity: StatsGranularity = "day",
+) => {
   const params = periodParams(days);
   params.set("metric", metric);
+  params.set("granularity", granularity);
   return getJson(`/api/admin/stats/timeseries?${params.toString()}`, isTimeseries);
+};
+
+export type StatsHeatmapCell = {
+  weekday: number;
+  hour: number;
+  count: number;
+};
+
+const isHeatmap = (
+  value: unknown,
+): value is { cells: StatsHeatmapCell[]; peak: StatsHeatmapCell | null; total: number; source: string } => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { cells: unknown }).cells) &&
+    typeof (value as { total: number }).total === "number"
+  );
+};
+
+export const fetchHeatmap = (days: number, source: "visits" | "checkins" = "visits") => {
+  const params = periodParams(days);
+  params.set("source", source);
+  return getJson(`/api/admin/stats/heatmap?${params.toString()}`, isHeatmap);
 };
 
 export type StatsStaffRow = {
@@ -359,11 +399,96 @@ export const sendBroadcast = (input: {
   segment: string;
   body: string;
   showInFeed: boolean;
+  sendNow?: boolean;
   photoId?: string;
   params?: { balanceMin?: number };
 }) =>
   postJson("/api/admin/broadcast/send", input, (value): value is { sent: number; failed: number; recipients: number } => {
     return typeof value === "object" && value !== null && typeof (value as { sent: number }).sent === "number";
+  });
+
+export type BroadcastHistoryRow = {
+  promoId: string;
+  body: string;
+  createdAt: string;
+  showInFeed: boolean;
+  segment: string | null;
+  recipients: number | null;
+  sent: number | null;
+  failed: number | null;
+};
+
+const isBroadcastHistory = (value: unknown): value is { rows: BroadcastHistoryRow[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
+};
+
+export const fetchBroadcastHistory = () => getJson("/api/admin/broadcasts?limit=20", isBroadcastHistory);
+
+export type GuestDirectoryRow = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  telegramUsername: string | null;
+  phoneMasked: string | null;
+  balance: number;
+  totalVisits: number;
+  lastVisitAt: string | null;
+  visitActive: boolean;
+  broadcastOptOut: boolean;
+  createdAt: string;
+};
+
+const isGuestDirectory = (
+  value: unknown,
+): value is { guests: GuestDirectoryRow[]; total: number; offset: number; limit: number } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { guests: unknown }).guests);
+};
+
+export const fetchGuestDirectory = (input: {
+  offset?: number;
+  limit?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  filter?: string;
+}) => {
+  const params = new URLSearchParams();
+  if (input.offset !== undefined) {
+    params.set("offset", String(input.offset));
+  }
+  if (input.limit !== undefined) {
+    params.set("limit", String(input.limit));
+  }
+  if (input.sort !== undefined) {
+    params.set("sort", input.sort);
+  }
+  if (input.order !== undefined) {
+    params.set("order", input.order);
+  }
+  if (input.filter !== undefined && input.filter.length > 0) {
+    params.set("filter", input.filter);
+  }
+  return getJson(`/api/admin/guests?${params.toString()}`, isGuestDirectory);
+};
+
+export type GuestVisitPattern = {
+  totalVisits: number;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number | null;
+  topWeekdays: string[];
+  topHours: string[];
+  visitsPerMonth: number | null;
+};
+
+const isVisitPattern = (value: unknown): value is GuestVisitPattern => {
+  return typeof value === "object" && value !== null && typeof (value as GuestVisitPattern).totalVisits === "number";
+};
+
+export const fetchGuestVisitPattern = (guestId: string) =>
+  getJson(`/api/admin/guest/${guestId}/visit-pattern`, isVisitPattern);
+
+export const sendGuestMessage = (guestId: string, body: string) =>
+  postJson(`/api/admin/guest/${guestId}/message`, { body }, (value): value is { ok: true } => {
+    return typeof value === "object" && value !== null && (value as { ok: boolean }).ok === true;
   });
 
 export const patchSettings = (patch: Partial<SettingsView>) =>

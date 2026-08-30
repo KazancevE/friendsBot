@@ -941,10 +941,29 @@ export async function createPromoConversation(
           return { ok: false as const, message: ADMIN_ONLY };
         }
         try {
+          const telegramIds = sendNow
+            ? await recipientsForSegment(outer.store, {
+                segment,
+                params: { balanceMin },
+                now: new Date(),
+              })
+            : [];
+          const stats = sendNow
+            ? await sendBroadcast({
+                api: outer.api,
+                telegramIds,
+                body,
+                photoId,
+              })
+            : { sent: 0, failed: 0 };
           const promo = await outer.store.createPromo({
             body,
             photos: photoId === undefined ? [] : [photoId],
             showInFeed,
+            broadcastSegment: segment,
+            broadcastRecipients: sendNow ? telegramIds.length : null,
+            broadcastSent: sendNow ? stats.sent : null,
+            broadcastFailed: sendNow ? stats.failed : null,
           });
           if (!sendNow) {
             return {
@@ -955,17 +974,6 @@ export async function createPromoConversation(
               promoId: promo.id,
             };
           }
-          const telegramIds = await recipientsForSegment(outer.store, {
-            segment,
-            params: { balanceMin },
-            now: new Date(),
-          });
-          const stats = await sendBroadcast({
-            api: outer.api,
-            telegramIds,
-            body,
-            photoId,
-          });
           return { ok: true as const, ...stats, skippedSend: false as const, promoId: promo.id };
         } catch (err) {
           if (err instanceof DomainError) {

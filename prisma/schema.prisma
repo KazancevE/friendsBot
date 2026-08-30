@@ -61,6 +61,7 @@ enum StaffActionKind {
   booking_table_assign
   booking_table_move
   booking_table_swap
+  guest_message
 }
 
 enum FloorElementKind {
@@ -207,12 +208,16 @@ model PromoRule {
 }
 
 model Promo {
-  id         String   @id @default(uuid())
-  body       String
-  photos     String[]
-  showInFeed Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  rules      PromoRule[]
+  id                  String   @id @default(uuid())
+  body                String
+  photos              String[]
+  showInFeed          Boolean  @default(true)
+  broadcastSegment    String?
+  broadcastRecipients Int?
+  broadcastSent       Int?
+  broadcastFailed     Int?
+  createdAt           DateTime @default(now())
+  rules               PromoRule[]
 }
 
 model StaffActionLog {

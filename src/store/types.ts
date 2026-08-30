@@ -17,6 +17,7 @@ import type {
   GameScoreRecord,
   GameSessionLogRecord,
   GameWeekRecord,
+  GuestListRow,
   LedgerRecord,
   LedgerType,
   MenuItemRecord,
@@ -99,6 +100,10 @@ export interface Store {
 
   countVisitsForUser(userId: string): Promise<number>;
   lastVisitStartedAt(userId: string): Promise<Date | null>;
+  listVisitStartsForUser(userId: string): Promise<Array<{ startedAt: Date }>>;
+  listGuestDirectoryRows(now: Date): Promise<GuestListRow[]>;
+  listUsersCreatedBetween(from: Date, to: Date): Promise<Array<{ createdAt: Date }>>;
+  listAcceptedGameSessionsBetween(from: Date, to: Date): Promise<Array<{ createdAt: Date }>>;
   hasCheckInToday(userId: string, now: Date): Promise<boolean>;
   countVisitsBetween(from: Date, to: Date): Promise<number>;
   countUniqueGuestsWithVisitBetween(from: Date, to: Date): Promise<number>;
@@ -260,8 +265,23 @@ export interface Store {
   getPage(slug: "contacts" | "directions" | "game_rules"): Promise<ContentPageRecord | null>;
   upsertPage(page: ContentPageRecord): Promise<ContentPageRecord>;
 
-  createPromo(input: { body: string; photos: string[]; showInFeed: boolean }): Promise<PromoRecord>;
+  createPromo(input: {
+    body: string;
+    photos: string[];
+    showInFeed: boolean;
+    broadcastSegment?: BroadcastSegmentId | null;
+    broadcastRecipients?: number | null;
+    broadcastSent?: number | null;
+    broadcastFailed?: number | null;
+  }): Promise<PromoRecord>;
+  updatePromo(
+    id: string,
+    patch: Partial<
+      Pick<PromoRecord, "broadcastSegment" | "broadcastRecipients" | "broadcastSent" | "broadcastFailed">
+    >,
+  ): Promise<PromoRecord>;
   listFeedPromos(): Promise<PromoRecord[]>;
+  listPromos(limit: number): Promise<PromoRecord[]>;
 
   createPromoRule(input: {
     promoId: string | null;

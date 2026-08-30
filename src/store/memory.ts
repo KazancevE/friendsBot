@@ -5,6 +5,7 @@ import type {
   BonusLotRecord,
   BookingRequestRecord,
   BookingStatus,
+  BroadcastSegmentId,
   CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
@@ -357,6 +358,44 @@ export class MemoryStore implements Store {
       .filter((v) => v.userId === userId)
       .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
     return visits[0]?.startedAt ?? null;
+  }
+  async listVisitStartsForUser(userId: string) {
+    return [...this.visits.values()]
+      .filter((visit) => visit.userId === userId)
+      .map((visit) => ({ startedAt: visit.startedAt }));
+  }
+  async listGuestDirectoryRows(now: Date) {
+    const guests = [...this.users.values()].filter((user) => user.role === "guest");
+    return Promise.all(
+      guests.map(async (guest) => {
+        const visit = await this.getActiveVisit(guest.id, now);
+        const totalVisits = await this.countVisitsForUser(guest.id);
+        const lastVisitAt = await this.lastVisitStartedAt(guest.id);
+        return {
+          id: guest.id,
+          firstName: guest.firstName,
+          lastName: guest.lastName,
+          telegramUsername: guest.telegramUsername,
+          phone: guest.phone,
+          balance: guest.balance,
+          totalVisits,
+          lastVisitAt,
+          visitActive: visit !== null,
+          broadcastOptOut: guest.broadcastOptOut,
+          createdAt: guest.createdAt,
+        };
+      }),
+    );
+  }
+  async listUsersCreatedBetween(from: Date, to: Date) {
+    return [...this.users.values()]
+      .filter((user) => user.role === "guest" && user.createdAt >= from && user.createdAt <= to)
+      .map((user) => ({ createdAt: user.createdAt }));
+  }
+  async listAcceptedGameSessionsBetween(from: Date, to: Date) {
+    return this.gameSessionLogs
+      .filter((row) => row.accepted && row.createdAt >= from && row.createdAt <= to)
+      .map((row) => ({ createdAt: row.createdAt }));
   }
   async hasCheckInToday(userId: string, now: Date) {
     const start = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
@@ -830,13 +869,51 @@ export class MemoryStore implements Store {
     return page;
   }
 
-  async createPromo(input: { body: string; photos: string[]; showInFeed: boolean }) {
-    const row: PromoRecord = { id: crypto.randomUUID(), createdAt: new Date(), ...input };
+  async createPromo(input: {
+    body: string;
+    photos: string[];
+    showInFeed: boolean;
+    broadcastSegment?: BroadcastSegmentId | null;
+    broadcastRecipients?: number | null;
+    broadcastSent?: number | null;
+    broadcastFailed?: number | null;
+  }) {
+    const row: PromoRecord = {
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      body: input.body,
+      photos: input.photos,
+      showInFeed: input.showInFeed,
+      broadcastSegment: input.broadcastSegment ?? null,
+      broadcastRecipients: input.broadcastRecipients ?? null,
+      broadcastSent: input.broadcastSent ?? null,
+      broadcastFailed: input.broadcastFailed ?? null,
+    };
     this.promos.set(row.id, row);
+    return row;
+  }
+  async updatePromo(
+    id: string,
+    patch: Partial<
+      Pick<PromoRecord, "broadcastSegment" | "broadcastRecipients" | "broadcastSent" | "broadcastFailed">
+    >,
+  ) {
+    const existing = this.promos.get(id);
+    if (existing === undefined) {
+      throw new Error("promo not found");
+    }
+    const row = { ...existing, ...patch };
+    this.promos.set(id, row);
     return row;
   }
   async listFeedPromos() {
     return [...this.promos.values()].filter((p) => p.showInFeed);
+  }
+  async listPromos(limit: number) {
+    return [...this.promos.values()]
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, limit)
+      .map((row) => ({ ...row }));
   }
 
   async createPromoRule(input: {

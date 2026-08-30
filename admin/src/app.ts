@@ -9,7 +9,11 @@ import {
   deleteQuizQuestion,
   downloadExport,
   fetchBookings,
+  fetchBroadcastHistory,
   fetchBroadcastSegments,
+  fetchGuestDirectory,
+  fetchGuestVisitPattern,
+  fetchHeatmap,
   fetchContentPage,
   fetchFloorPlan,
   fetchGuest,
@@ -36,12 +40,14 @@ import {
   saveFloorPlan,
   searchGuests,
   sendBroadcast,
+  sendGuestMessage,
   startQuiz,
   updateMenuItem,
   updateQuizQuestion,
   updateStaffSchedule,
   uploadMenuGallery,
   type ContactEntry,
+  type StatsGranularity,
   type StatsMetric,
 } from "./api.ts";
 import { mountFloorEditor } from "./floor-editor.ts";
@@ -59,13 +65,27 @@ import {
 import "./style.css";
 
 type Tab = "dashboard" | "guests" | "bookings" | "broadcasts" | "settings" | "menu" | "staff" | "content" | "export" | "games";
-type DashboardPeriod = 7 | 30 | 90;
+type DashboardPeriod = 7 | 30 | 90 | 180 | 365;
+type DashboardView = {
+  period: DashboardPeriod;
+  metric: StatsMetric;
+  granularity: StatsGranularity;
+  heatmapSource: "visits" | "checkins";
+};
 
-const PERIOD_OPTIONS: DashboardPeriod[] = [7, 30, 90];
+const PERIOD_OPTIONS: DashboardPeriod[] = [7, 30, 90, 180, 365];
 const METRIC_OPTIONS: { id: StatsMetric; label: string }[] = [
   { id: "visits", label: "Визиты" },
   { id: "checkins", label: "Check-in" },
   { id: "bonuses", label: "Бонусы" },
+  { id: "registrations", label: "Регистрации" },
+  { id: "gameSessions", label: "Игры" },
+  { id: "uniqueGuests", label: "Уник. гости" },
+];
+const GRANULARITY_OPTIONS: { id: StatsGranularity; label: string }[] = [
+  { id: "day", label: "Дни" },
+  { id: "week", label: "Недели" },
+  { id: "month", label: "Месяцы" },
 ];
 
 const WEEKDAY_LABELS = ["", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -107,7 +127,7 @@ const bindPeriodToolbar = (host: HTMLElement, onChange: (days: number) => void) 
   for (const button of host.querySelectorAll("[data-period] [data-days]")) {
     button.addEventListener("click", () => {
       const next = Number(button.getAttribute("data-days"));
-      if (next === 7 || next === 30 || next === 90) {
+      if (next === 7 || next === 30 || next === 90 || next === 180 || next === 365) {
         onChange(next);
       }
     });
@@ -145,13 +165,49 @@ const viewHost = (root: HTMLElement) => {
   return host;
 };
 
-const renderDashboard = async (host: HTMLElement, period: DashboardPeriod, metric: StatsMetric) => {
+const formatRelativeVisit = (iso: string | null) => {
+  if (iso === null) {
+    return "никогда";
+  }
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) {
+    return "сегодня";
+  }
+  if (days === 1) {
+    return "вчера";
+  }
+  return `${days} дн. назад`;
+};
+
+const renderHeatmap = (cells: Array<{ weekday: number; hour: number; count: number }>) => {
+  const max = Math.max(1, ...cells.map((cell) => cell.count));
+  const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  const header = `<div class="heatmap-row heatmap-header"><span></span>${hours.map((hour) => `<span>${hour}</span>`).join("")}</div>`;
+  const rows = [1, 2, 3, 4, 5, 6, 7]
+    .map((weekday) => {
+      const label = WEEKDAY_LABELS[weekday] ?? String(weekday);
+      const cellsHtml = hours
+        .map((hour) => {
+          const count = cells.find((cell) => cell.weekday === weekday && cell.hour === hour)?.count ?? 0;
+          const intensity = Math.round((count / max) * 100);
+          return `<span class="heatmap-cell" style="--intensity:${intensity}" title="${label} ${hour}:00 — ${count}">${count > 0 ? count : ""}</span>`;
+        })
+        .join("");
+      return `<div class="heatmap-row"><span class="heatmap-day">${label}</span>${cellsHtml}</div>`;
+    })
+    .join("");
+  return `<div class="heatmap">${header}${rows}</div>`;
+};
+
+const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
+  const { period, metric, granularity, heatmapSource } = view;
   host.innerHTML = `<section class="panel"><p class="muted">Загрузка…</p></section>`;
-  const [stats, series, staff, live] = await Promise.all([
+  const [stats, series, staff, live, heatmap] = await Promise.all([
     fetchStats(period),
-    fetchTimeseries(metric, period),
+    fetchTimeseries(metric, period, granularity),
     fetchStaffStats(period),
     fetchLiveVenue(),
+    fetchHeatmap(period, heatmapSource),
   ]);
   if (stats.kind === "error") {
     host.innerHTML = `<section class="panel"><p class="error">${escapeHtml(stats.message)}</p></section>`;
@@ -165,11 +221,29 @@ const renderDashboard = async (host: HTMLElement, period: DashboardPeriod, metri
       ? series.data.points
           .map((point) => {
             const width = Math.round((point.value / maxValue) * 100);
-            const label = point.date.slice(5);
+            const label = granularity === "month" ? point.date : point.date.slice(5);
             return `<div class="chart-row"><span class="chart-label">${label}</span><div class="chart-bar"><span style="width:${width}%"></span></div><span class="chart-value">${point.value}</span></div>`;
           })
           .join("")
       : `<p class="error">${escapeHtml(series.message)}</p>`;
+  const heatmapBlock =
+    heatmap.kind === "ok"
+      ? `<section class="panel">
+          <div class="toolbar">
+            <h2>Загруженность</h2>
+            <div class="pill-group" data-heatmap-source>
+              <button type="button" data-source="visits" class="${heatmapSource === "visits" ? "active" : ""}">Визиты</button>
+              <button type="button" data-source="checkins" class="${heatmapSource === "checkins" ? "active" : ""}">Check-in</button>
+            </div>
+          </div>
+          <p class="muted">Пик: ${heatmap.data.peak ? `${WEEKDAY_LABELS[heatmap.data.peak.weekday] ?? ""} ${heatmap.data.peak.hour}:00 (${heatmap.data.peak.count})` : "—"} · всего ${heatmap.data.total}</p>
+          ${renderHeatmap(heatmap.data.cells)}
+        </section>`
+      : "";
+  const peakLabel =
+    s.peakHour !== null && s.peakWeekday !== null
+      ? `${WEEKDAY_LABELS[s.peakWeekday] ?? ""} ${s.peakHour}:00`
+      : "—";
   const staffRows =
     staff.kind === "ok"
       ? staff.data.rows
@@ -216,17 +290,24 @@ const renderDashboard = async (host: HTMLElement, period: DashboardPeriod, metri
         <div class="stat"><div class="stat-label">Рефералы</div><div class="stat-value">${s.referralActivations}</div></div>
         <div class="stat"><div class="stat-label">Игры</div><div class="stat-value">${s.gameSessions}</div></div>
         <div class="stat"><div class="stat-label">Игроков</div><div class="stat-value">${s.uniqueGamePlayers}</div></div>
+        <div class="stat"><div class="stat-label">Визитов/день</div><div class="stat-value">${s.avgVisitsPerDay}</div></div>
+        <div class="stat"><div class="stat-label">Пик</div><div class="stat-value stat-value-sm">${peakLabel}</div></div>
+        <div class="stat"><div class="stat-label">Повторные</div><div class="stat-value">${s.returningGuestsPct ?? "—"}${s.returningGuestsPct === null ? "" : "%"}</div></div>
       </div>
     </section>
     <section class="panel">
       <div class="toolbar">
-        <h2>По дням</h2>
+        <h2>Динамика</h2>
+        <div class="pill-group" data-granularity>
+          ${GRANULARITY_OPTIONS.map((option) => `<button type="button" data-granularity="${option.id}" class="${option.id === granularity ? "active" : ""}">${option.label}</button>`).join("")}
+        </div>
         <div class="pill-group" data-metric-group>
           ${METRIC_OPTIONS.map((option) => `<button type="button" data-metric="${option.id}" class="${option.id === metric ? "active" : ""}">${option.label}</button>`).join("")}
         </div>
       </div>
       <div class="chart">${chartRows}</div>
     </section>
+    ${heatmapBlock}
     <section class="panel">
       <h2>Топ персонала</h2>
       <table><thead><tr><th>Сотрудник</th><th>Действий</th></tr></thead><tbody>${staffRows || '<tr><td colspan="2" class="muted">Нет данных</td></tr>'}</tbody></table>
@@ -235,38 +316,185 @@ const renderDashboard = async (host: HTMLElement, period: DashboardPeriod, metri
   for (const button of host.querySelectorAll("[data-period] [data-days]")) {
     button.addEventListener("click", () => {
       const days = Number(button.getAttribute("data-days"));
-      if (days === 7 || days === 30 || days === 90) {
-        void renderDashboard(host, days, metric);
+      if (PERIOD_OPTIONS.includes(days as DashboardPeriod)) {
+        void renderDashboard(host, { ...view, period: days as DashboardPeriod });
       }
     });
   }
   for (const button of host.querySelectorAll("[data-metric-group] [data-metric]")) {
     button.addEventListener("click", () => {
       const nextMetric = button.getAttribute("data-metric");
-      if (nextMetric === "visits" || nextMetric === "checkins" || nextMetric === "bonuses") {
-        void renderDashboard(host, period, nextMetric);
+      if (METRIC_OPTIONS.some((option) => option.id === nextMetric)) {
+        void renderDashboard(host, { ...view, metric: nextMetric as StatsMetric });
+      }
+    });
+  }
+  for (const button of host.querySelectorAll("[data-granularity] [data-granularity]")) {
+    button.addEventListener("click", () => {
+      const next = button.getAttribute("data-granularity");
+      if (GRANULARITY_OPTIONS.some((option) => option.id === next)) {
+        void renderDashboard(host, { ...view, granularity: next as StatsGranularity });
+      }
+    });
+  }
+  for (const button of host.querySelectorAll("[data-heatmap-source] [data-source]")) {
+    button.addEventListener("click", () => {
+      const next = button.getAttribute("data-source");
+      if (next === "visits" || next === "checkins") {
+        void renderDashboard(host, { ...view, heatmapSource: next });
       }
     });
   }
 };
 
 const renderGuests = (host: HTMLElement) => {
+  let listOffset = 0;
+  const listLimit = 50;
+  let listSort = "lastVisitAt";
+  let listFilter = "";
+
+  const loadDirectory = async (results: HTMLElement) => {
+    results.innerHTML = `<p class="muted">Загрузка…</p>`;
+    const found = await fetchGuestDirectory({
+      offset: listOffset,
+      limit: listLimit,
+      sort: listSort,
+      order: "desc",
+      filter: listFilter,
+    });
+    if (found.kind === "error") {
+      results.innerHTML = `<p class="error">${escapeHtml(found.message)}</p>`;
+      return;
+    }
+    const rows = found.data.guests
+      .map(
+        (guest) => `<tr>
+          <td><button type="button" class="linkish" data-guest="${guest.id}">${escapeHtml(formatName(guest.firstName, guest.lastName))}</button></td>
+          <td>${guest.telegramUsername ? `@${escapeHtml(guest.telegramUsername)}` : "—"}</td>
+          <td>${escapeHtml(guest.phoneMasked ?? "—")}</td>
+          <td>${guest.balance}</td>
+          <td>${guest.totalVisits}</td>
+          <td>${formatRelativeVisit(guest.lastVisitAt)}</td>
+          <td>${guest.visitActive ? "в зале" : guest.broadcastOptOut ? "opt-out" : ""}</td>
+        </tr>`,
+      )
+      .join("");
+    const pages = Math.max(1, Math.ceil(found.data.total / listLimit));
+    const page = Math.floor(listOffset / listLimit) + 1;
+    results.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Имя</th><th>Telegram</th><th>Телефон</th><th>Баланс</th><th>Визиты</th><th>Последний раз</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="muted">Нет гостей</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="toolbar" style="margin-top:0.75rem">
+        <span class="muted">Всего ${found.data.total} · стр. ${page}/${pages}</span>
+        <div class="pill-group">
+          <button type="button" data-page-prev ${listOffset === 0 ? "disabled" : ""}>Назад</button>
+          <button type="button" data-page-next ${listOffset + listLimit >= found.data.total ? "disabled" : ""}>Вперёд</button>
+        </div>
+      </div>
+    `;
+    for (const button of results.querySelectorAll("[data-guest]")) {
+      button.addEventListener("click", () => {
+        const id = button.getAttribute("data-guest");
+        if (id !== null) {
+          void showGuest(host.querySelector("[data-detail]"), id);
+        }
+      });
+    }
+    results.querySelector("[data-page-prev]")?.addEventListener("click", () => {
+      listOffset = Math.max(0, listOffset - listLimit);
+      void loadDirectory(results);
+    });
+    results.querySelector("[data-page-next]")?.addEventListener("click", () => {
+      listOffset += listLimit;
+      void loadDirectory(results);
+    });
+  };
+
   host.innerHTML = `
     <section class="panel">
       <h2>Гости</h2>
-      <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
-        <input type="search" placeholder="Имя или телефон" data-query style="flex:1" />
+      <div class="pill-group" data-guest-mode style="margin-bottom:0.75rem">
+        <button type="button" data-mode="list" class="active">Список</button>
+        <button type="button" data-mode="search">Поиск</button>
+      </div>
+      <div data-list-tools class="toolbar" style="margin-bottom:0.75rem">
+        <select data-sort>
+          <option value="lastVisitAt">Последний визит</option>
+          <option value="createdAt">Регистрация</option>
+          <option value="balance">Баланс</option>
+          <option value="totalVisits">Визиты</option>
+        </select>
+        <select data-filter>
+          <option value="">Все</option>
+          <option value="in_venue">В зале</option>
+          <option value="inactive_30d">Не были 30+ дн</option>
+          <option value="opt_out">Opt-out</option>
+          <option value="has_coupon">С купоном</option>
+        </select>
+      </div>
+      <div data-search-tools class="hidden" style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+        <input type="search" placeholder="Имя, телефон, @username" data-query style="flex:1" />
         <button type="button" class="action" data-search>Найти</button>
       </div>
       <div data-results class="list"></div>
       <div data-detail class="panel hidden" style="margin-top:1rem"></div>
     </section>
   `;
-  const queryInput = host.querySelector("[data-query]");
+
   const results = host.querySelector("[data-results]");
   const detail = host.querySelector("[data-detail]");
+  const listTools = host.querySelector("[data-list-tools]");
+  const searchTools = host.querySelector("[data-search-tools]");
+  if (!(results instanceof HTMLElement)) {
+    return;
+  }
+
+  const setMode = (mode: "list" | "search") => {
+    for (const button of host.querySelectorAll("[data-guest-mode] [data-mode]")) {
+      button.classList.toggle("active", button.getAttribute("data-mode") === mode);
+    }
+    listTools?.classList.toggle("hidden", mode !== "list");
+    searchTools?.classList.toggle("hidden", mode !== "search");
+    if (mode === "list") {
+      void loadDirectory(results);
+    } else {
+      results.innerHTML = `<p class="muted">Введите минимум 2 символа</p>`;
+    }
+  };
+
+  for (const button of host.querySelectorAll("[data-guest-mode] [data-mode]")) {
+    button.addEventListener("click", () => {
+      const mode = button.getAttribute("data-mode");
+      if (mode === "list" || mode === "search") {
+        setMode(mode);
+      }
+    });
+  }
+
+  const sortSelect = host.querySelector("[data-sort]");
+  if (sortSelect instanceof HTMLSelectElement) {
+    sortSelect.addEventListener("change", () => {
+      listSort = sortSelect.value;
+      listOffset = 0;
+      void loadDirectory(results);
+    });
+  }
+  const filterSelect = host.querySelector("[data-filter]");
+  if (filterSelect instanceof HTMLSelectElement) {
+    filterSelect.addEventListener("change", () => {
+      listFilter = filterSelect.value;
+      listOffset = 0;
+      void loadDirectory(results);
+    });
+  }
+
+  const queryInput = host.querySelector("[data-query]");
   const runSearch = async () => {
-    if (!(queryInput instanceof HTMLInputElement) || !(results instanceof HTMLElement)) {
+    if (!(queryInput instanceof HTMLInputElement)) {
       return;
     }
     const q = queryInput.value.trim();
@@ -309,6 +537,8 @@ const renderGuests = (host: HTMLElement) => {
       }
     });
   }
+
+  void loadDirectory(results);
 };
 
 const showGuest = async (detail: Element | null, guestId: string) => {
@@ -317,7 +547,11 @@ const showGuest = async (detail: Element | null, guestId: string) => {
   }
   detail.classList.remove("hidden");
   detail.innerHTML = `<p class="muted">Загрузка карточки…</p>`;
-  const [card, ledger] = await Promise.all([fetchGuest(guestId), fetchGuestLedger(guestId)]);
+  const [card, ledger, pattern] = await Promise.all([
+    fetchGuest(guestId),
+    fetchGuestLedger(guestId),
+    fetchGuestVisitPattern(guestId),
+  ]);
   if (card.kind === "error") {
     detail.innerHTML = `<p class="error">${escapeHtml(card.message)}</p>`;
     return;
@@ -333,6 +567,14 @@ const showGuest = async (detail: Element | null, guestId: string) => {
           )
           .join("")
       : "";
+  const patternBlock =
+    pattern.kind === "ok"
+      ? `<section style="margin:0.75rem 0">
+          <h4>Когда бывает</h4>
+          <p>Чаще: ${pattern.data.topWeekdays.length > 0 ? pattern.data.topWeekdays.join(", ") : "—"} · ${pattern.data.topHours.length > 0 ? pattern.data.topHours.join(", ") : "—"}</p>
+          <p class="muted">В среднем: ${pattern.data.visitsPerMonth ?? "—"} визита/мес · последний: ${pattern.data.daysSinceLastVisit === null ? "никогда" : `${pattern.data.daysSinceLastVisit} дн. назад`}</p>
+        </section>`
+      : "";
   detail.innerHTML = `
     <h3>${escapeHtml(formatName(card.data.firstName, card.data.lastName))}</h3>
     <div class="grid guest-meta">
@@ -341,6 +583,7 @@ const showGuest = async (detail: Element | null, guestId: string) => {
       <div class="stat"><div class="stat-label">Визитов</div><div class="stat-value stat-value-sm">${card.data.totalVisits ?? "—"}</div></div>
       <div class="stat"><div class="stat-label">Check-in сегодня</div><div class="stat-value stat-value-sm">${card.data.checkedInToday ? "да" : "нет"}</div></div>
     </div>
+    ${patternBlock}
     ${card.data.visitActive ? `<p>Активный визит до ${formatDateTime(card.data.visitEndsAt ?? null)}</p>` : ""}
     ${card.data.birthdayWeek ? `<p>Неделя ДР${card.data.birthdayDaysUntil !== null && card.data.birthdayDaysUntil !== undefined ? ` · через ${card.data.birthdayDaysUntil} д` : ""}</p>` : ""}
     ${card.data.staffNote ? `<p>Заметка: ${escapeHtml(card.data.staffNote)}</p>` : ""}
@@ -354,11 +597,37 @@ const showGuest = async (detail: Element | null, guestId: string) => {
         ? `<p>Купоны: ${card.data.coupons.map((coupon) => escapeHtml(coupon.title)).join(", ")}</p>`
         : ""
     }
+    <h4>Личное сообщение</h4>
+    <textarea data-guest-message rows="3" style="width:100%"></textarea>
+    <button type="button" class="action" data-send-guest-message style="margin-top:0.5rem">Отправить в Telegram</button>
+    <p class="muted" data-guest-message-status></p>
     <h4>История</h4>
     <div class="table-wrap">
       <table><thead><tr><th>Дата</th><th>Тип</th><th>Сумма</th><th>Комментарий</th></tr></thead><tbody>${ledgerRows}</tbody></table>
     </div>
   `;
+  detail.querySelector("[data-send-guest-message]")?.addEventListener("click", () => {
+    const input = detail.querySelector("[data-guest-message]");
+    const status = detail.querySelector("[data-guest-message-status]");
+    if (!(input instanceof HTMLTextAreaElement) || !(status instanceof HTMLElement)) {
+      return;
+    }
+    const body = input.value.trim();
+    if (body.length === 0) {
+      status.textContent = "Введите текст";
+      status.className = "error";
+      return;
+    }
+    status.textContent = "Отправка…";
+    status.className = "muted";
+    void sendGuestMessage(guestId, body).then((result) => {
+      status.textContent = result.kind === "ok" ? "Сообщение отправлено" : result.message;
+      status.className = result.kind === "ok" ? "muted" : "error";
+      if (result.kind === "ok") {
+        input.value = "";
+      }
+    });
+  });
 };
 
 const renderStaff = async (host: HTMLElement, days = 7) => {
@@ -678,7 +947,7 @@ const renderExport = (host: HTMLElement) => {
 
 const renderBroadcasts = async (host: HTMLElement) => {
   host.innerHTML = `<section class="panel"><p class="muted">Загрузка…</p></section>`;
-  const data = await fetchBroadcastSegments();
+  const [data, history] = await Promise.all([fetchBroadcastSegments(), fetchBroadcastHistory()]);
   if (data.kind === "error") {
     host.innerHTML = `<section class="panel"><p class="error">${escapeHtml(data.message)}</p></section>`;
     return;
@@ -692,6 +961,15 @@ const renderBroadcasts = async (host: HTMLElement) => {
         `<tr><td>${escapeHtml(segment.label)}</td><td><code>${escapeHtml(segment.id)}</code></td><td>${segment.count}</td></tr>`,
     )
     .join("");
+  const historyRows =
+    history.kind === "ok"
+      ? history.data.rows
+          .map(
+            (row) =>
+              `<tr><td>${new Date(row.createdAt).toLocaleString("ru-RU")}</td><td>${escapeHtml(row.body)}</td><td>${escapeHtml(row.segment ?? "—")}</td><td>${row.recipients ?? "—"}</td><td>${row.sent ?? "—"}</td><td>${row.failed ?? "—"}</td></tr>`,
+          )
+          .join("")
+      : "";
   host.innerHTML = `
     <section class="panel">
       <h2>Новая рассылка</h2>
@@ -708,11 +986,20 @@ const renderBroadcasts = async (host: HTMLElement) => {
       <label style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center">
         <input type="checkbox" data-feed /> Показать в «Акции»
       </label>
+      <label style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center">
+        <input type="checkbox" data-save-only /> Только в ленту (не отправлять)
+      </label>
       <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
         <button type="button" class="action" data-preview>Предпросмотр</button>
         <button type="button" class="action" data-send>Отправить</button>
       </div>
       <p class="muted" data-status style="margin-top:0.5rem"></p>
+    </section>
+    <section class="panel">
+      <h2>История рассылок</h2>
+      <div class="table-wrap">
+        <table><thead><tr><th>Дата</th><th>Текст</th><th>Сегмент</th><th>Получателей</th><th>Отправлено</th><th>Ошибок</th></tr></thead><tbody>${historyRows || '<tr><td colspan="6" class="muted">Пока пусто</td></tr>'}</tbody></table>
+      </div>
     </section>
     <section class="panel">
       <h2>Сегменты</h2>
@@ -726,6 +1013,7 @@ const renderBroadcasts = async (host: HTMLElement) => {
     const body = host.querySelector("[data-body]");
     const balanceMin = host.querySelector("[data-balance-min]");
     const feed = host.querySelector("[data-feed]");
+    const saveOnly = host.querySelector("[data-save-only]");
     const photoInput = host.querySelector("[data-photo-id]");
     if (!(segment instanceof HTMLSelectElement) || !(body instanceof HTMLTextAreaElement)) {
       return null;
@@ -739,6 +1027,7 @@ const renderBroadcasts = async (host: HTMLElement) => {
       segment: segment.value,
       body: body.value.trim(),
       showInFeed: feed instanceof HTMLInputElement && feed.checked,
+      sendNow: !(saveOnly instanceof HTMLInputElement && saveOnly.checked),
       photoId: photoRaw.length > 0 ? photoRaw : undefined,
       params,
     };
@@ -1427,7 +1716,12 @@ const renderApp = async (root: HTMLElement, tab: Tab) => {
   const host = viewHost(root);
   switch (tab) {
     case "dashboard":
-      await renderDashboard(host, 7, "visits");
+      await renderDashboard(host, {
+        period: 7,
+        metric: "visits",
+        granularity: "day",
+        heatmapSource: "visits",
+      });
       break;
     case "guests":
       renderGuests(host);

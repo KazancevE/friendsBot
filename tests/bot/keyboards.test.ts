@@ -7,20 +7,29 @@ import {
   MINI_APP_STAFF_LABEL,
 } from "../../src/bot/keyboards.ts";
 
-test("staff keyboard uses text Приложение and no reply web_app buttons", () => {
+const miniAppUrl = (publicUrl: string) => {
+  const origin = publicUrl.replace(/\/$/, "");
+  return `${origin}/app/?v=20260831`;
+};
+
+test("staff keyboard opens Mini App via reply web_app button", () => {
   const keyboard = mainKeyboard({ role: "master", publicUrl: "https://friends.example/" });
   const buttons = keyboard.keyboard.flat();
   const miniApp = buttons.find((button) => "text" in button && button.text === MINI_APP_STAFF_LABEL);
-  expect(miniApp).toEqual({ text: MINI_APP_STAFF_LABEL });
-  expect(buttons.some((button) => "web_app" in button)).toBe(false);
+  expect(miniApp).toEqual({
+    text: MINI_APP_STAFF_LABEL,
+    web_app: { url: miniAppUrl("https://friends.example/") },
+  });
 });
 
-test("guest keyboard uses text Игры so inline Mini App can send initData", () => {
+test("guest keyboard opens Mini App via reply web_app button", () => {
   const keyboard = mainKeyboard({ role: "guest", publicUrl: "https://friends.example" });
   const buttons = keyboard.keyboard.flat();
   const games = buttons.find((button) => "text" in button && button.text === MINI_APP_GUEST_LABEL);
-  expect(games).toEqual({ text: MINI_APP_GUEST_LABEL });
-  expect(buttons.some((button) => "web_app" in button)).toBe(false);
+  expect(games).toEqual({
+    text: MINI_APP_GUEST_LABEL,
+    web_app: { url: miniAppUrl("https://friends.example") },
+  });
 });
 
 test("cancel keyboard is a single Отмена button", () => {

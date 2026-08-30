@@ -11,7 +11,9 @@ import { parseContactEntries, serializeContactEntries } from "../domain/contacts
 import { promoRuleKindLabelRu } from "../domain/promo-rules.ts";
 import { addQuizQuestion, getLiveQuiz, notifyActiveGuestsOfQuiz, removeQuizQuestion, startQuizSession } from "../domain/quiz.ts";
 import { patchAdminSettings } from "../domain/settings.ts";
-import { getStatsSummary, getStatsStaff, getStatsTimeseries, periodLastDays, periodToday } from "../domain/stats.ts";
+import { listGuestsPage } from "../domain/guest-list.ts";
+import { getGuestVisitPattern } from "../domain/visit-pattern.ts";
+import { getStatsSummary, getStatsHeatmap, getStatsStaff, getStatsTimeseries, periodLastDays, periodToday } from "../domain/stats.ts";
 import { assignRole } from "../domain/roles.ts";
 import { addMenuGalleryImage, isGalleryMenuItem, removeMenuGalleryImage, reorderMenuGallery, saveMenuUpload } from "../domain/menu-gallery.ts";
 import { handleBookingRequest, formatBookingSlot, assignTableToBooking, moveBookingTable, swapBookingTables, markBookingSeated } from "../domain/booking.ts";
@@ -22,7 +24,7 @@ import { ensureActiveVenueCode, venueQrPayload } from "../domain/venue-code.ts";
 import { replaceStaffWeeklySchedule } from "../domain/staff-schedule.ts";
 import { extendActiveVisit } from "../domain/visits.ts";
 import { DomainError } from "../domain/errors.ts";
-import type { BroadcastSegmentId, Role, Settings } from "../domain/types.ts";
+import type { BroadcastSegmentId, GuestListFilter, GuestListSort, Role, Settings } from "../domain/types.ts";
 import type { Store } from "../store/types.ts";
 import { resolveActor } from "./auth.ts";
 
@@ -156,11 +158,55 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
     const from = parseDate(c.req.query("from"), periodLastDays(now, 7).from);
     const to = parseDate(c.req.query("to"), now);
     const metricRaw = c.req.query("metric") ?? "visits";
-    if (metricRaw !== "visits" && metricRaw !== "bonuses" && metricRaw !== "checkins") {
+    const granularityRaw = c.req.query("granularity") ?? "day";
+    const allowedMetrics = new Set([
+      "visits",
+      "bonuses",
+      "checkins",
+      "registrations",
+      "gameSessions",
+      "uniqueGuests",
+    ]);
+    if (!allowedMetrics.has(metricRaw)) {
       throw new DomainError("bad_request", "Неизвестная метрика");
     }
-    const series = await getStatsTimeseries(store, { period: { from, to }, metric: metricRaw });
+    if (granularityRaw !== "day" && granularityRaw !== "week" && granularityRaw !== "month") {
+      throw new DomainError("bad_request", "Неизвестная гранулярность");
+    }
+    const series = await getStatsTimeseries(store, {
+      period: { from, to },
+      metric: metricRaw as
+        | "visits"
+        | "bonuses"
+        | "checkins"
+        | "registrations"
+        | "gameSessions"
+        | "uniqueGuests",
+      granularity: granularityRaw,
+    });
     return c.json(series);
+  });
+
+  app.get("/api/admin/stats/heatmap", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const from = parseDate(c.req.query("from"), periodLastDays(now, 30).from);
+    const to = parseDate(c.req.query("to"), now);
+    const sourceRaw = c.req.query("source") ?? "visits";
+    if (sourceRaw !== "visits" && sourceRaw !== "checkins") {
+      throw new DomainError("bad_request", "Неизвестный источник");
+    }
+    const heatmap = await getStatsHeatmap(store, {
+      period: { from, to },
+      source: sourceRaw,
+    });
+    return c.json({
+      source: heatmap.source,
+      period: { from: heatmap.period.from.toISOString(), to: heatmap.period.to.toISOString() },
+      cells: heatmap.cells,
+      peak: heatmap.peak,
+      total: heatmap.total,
+    });
   });
 
   app.get("/api/admin/stats/staff", async (c) => {
@@ -361,6 +407,7 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
         : undefined;
     const showInFeed = "showInFeed" in body && body.showInFeed === true;
     const photoId = "photoId" in body && typeof body.photoId === "string" ? body.photoId : undefined;
+    const sendNow = !("sendNow" in body && body.sendNow === false);
     const result = await runBroadcast(store, {
       api: botApi,
       segment: segmentRaw,
@@ -368,9 +415,95 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
       body: text,
       showInFeed,
       photoId,
+      sendNow,
       now: new Date(),
     });
     return c.json(result);
+  });
+
+  app.get("/api/admin/broadcasts", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const limit = Math.min(Number(c.req.query("limit") ?? "20"), 50);
+    const rows = await store.listPromos(limit);
+    return c.json({
+      rows: rows.map((row) => ({
+        promoId: row.id,
+        body: row.body.length > 120 ? `${row.body.slice(0, 117)}...` : row.body,
+        createdAt: row.createdAt.toISOString(),
+        showInFeed: row.showInFeed,
+        segment: row.broadcastSegment,
+        recipients: row.broadcastRecipients,
+        sent: row.broadcastSent,
+        failed: row.broadcastFailed,
+      })),
+    });
+  });
+
+  app.get("/api/admin/guests", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const limit = Number(c.req.query("limit") ?? "50");
+    const offset = Number(c.req.query("offset") ?? "0");
+    const sortRaw = c.req.query("sort") ?? "lastVisitAt";
+    const orderRaw = c.req.query("order") ?? "desc";
+    const filterRaw = c.req.query("filter");
+    const allowedSort = new Set(["lastVisitAt", "createdAt", "balance", "totalVisits"]);
+    const allowedFilter = new Set(["in_venue", "inactive_30d", "opt_out", "has_coupon"]);
+    if (!allowedSort.has(sortRaw)) {
+      throw new DomainError("bad_request", "Неизвестная сортировка");
+    }
+    if (orderRaw !== "asc" && orderRaw !== "desc") {
+      throw new DomainError("bad_request", "Порядок: asc или desc");
+    }
+    if (filterRaw !== undefined && filterRaw.length > 0 && !allowedFilter.has(filterRaw)) {
+      throw new DomainError("bad_request", "Неизвестный фильтр");
+    }
+    const page = await listGuestsPage(store, {
+      limit,
+      offset,
+      sort: sortRaw as GuestListSort,
+      order: orderRaw,
+      filter: filterRaw === undefined || filterRaw.length === 0 ? undefined : (filterRaw as GuestListFilter),
+      now: new Date(),
+    });
+    return c.json(page);
+  });
+
+  app.get("/api/admin/guest/:id/visit-pattern", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const guest = await store.findUserById(c.req.param("id"));
+    if (guest === null || guest.role !== "guest") {
+      throw new DomainError("not_found", "Гость не найден");
+    }
+    const pattern = await getGuestVisitPattern(store, guest.id, new Date());
+    return c.json(pattern);
+  });
+
+  app.post("/api/admin/guest/:id/message", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    if (botApi === undefined) {
+      throw new DomainError("unavailable", "Bot API недоступен");
+    }
+    const guest = await store.findUserById(c.req.param("id"));
+    if (guest === null || guest.role !== "guest") {
+      throw new DomainError("not_found", "Гость не найден");
+    }
+    const body = await readJsonBody(c);
+    const text = "body" in body && typeof body.body === "string" ? body.body.trim() : "";
+    if (text.length === 0) {
+      throw new DomainError("bad_request", "Текст сообщения не должен быть пустым");
+    }
+    try {
+      await botApi.sendMessage(guest.telegramId.toString(), text);
+    } catch {
+      throw new DomainError("unavailable", "Не удалось отправить сообщение");
+    }
+    await store.createStaffActionLog({
+      actorId: admin.id,
+      guestId: guest.id,
+      action: "guest_message",
+      payload: { length: text.length },
+    });
+    return c.json({ ok: true });
   });
 
   app.patch("/api/admin/settings", async (c) => {

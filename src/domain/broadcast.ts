@@ -146,6 +146,7 @@ export async function runBroadcast(
     body: string;
     showInFeed: boolean;
     photoId?: string;
+    sendNow?: boolean;
     now: Date;
   },
 ) {
@@ -153,25 +154,36 @@ export async function runBroadcast(
   if (body.length === 0) {
     throw new DomainError("bad_request", "Текст рассылки не должен быть пустым");
   }
+  const sendNow = input.sendNow ?? true;
+  const telegramIds = sendNow
+    ? await recipientsForSegment(store, {
+        segment: input.segment,
+        params: input.params,
+        now: input.now,
+      })
+    : [];
+  const delivery =
+    sendNow && telegramIds.length > 0
+      ? await sendBroadcastMessages({
+          api: input.api,
+          telegramIds,
+          body,
+          photoId: input.photoId,
+        })
+      : { sent: 0, failed: 0 };
   const promo = await store.createPromo({
     body,
     photos: input.photoId === undefined ? [] : [input.photoId],
     showInFeed: input.showInFeed,
-  });
-  const telegramIds = await recipientsForSegment(store, {
-    segment: input.segment,
-    params: input.params,
-    now: input.now,
-  });
-  const delivery = await sendBroadcastMessages({
-    api: input.api,
-    telegramIds,
-    body,
-    photoId: input.photoId,
+    broadcastSegment: input.segment,
+    broadcastRecipients: sendNow ? telegramIds.length : null,
+    broadcastSent: sendNow ? delivery.sent : null,
+    broadcastFailed: sendNow ? delivery.failed : null,
   });
   return {
     promoId: promo.id,
     recipients: telegramIds.length,
     ...delivery,
+    skippedSend: !sendNow,
   };
 };

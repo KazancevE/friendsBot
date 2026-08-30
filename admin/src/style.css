@@ -282,6 +282,35 @@ td {
   border-radius: 999px;
 }
 
+.heatmap {
+  display: grid;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.heatmap-row {
+  display: grid;
+  grid-template-columns: 2.5rem repeat(24, minmax(1.4rem, 1fr));
+  gap: 0.15rem;
+  align-items: center;
+}
+
+.heatmap-header span,
+.heatmap-day {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--accent) calc(var(--intensity) * 1%), transparent);
+  font-size: 0.6rem;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+}
+
 .checkbox-row {
   display: flex;
   flex-wrap: wrap;

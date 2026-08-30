@@ -14,7 +14,10 @@ const boot = async () => {
   }
   const me = await fetchMe();
   if (me.kind === "error") {
-    root.textContent = me.message;
+    root.innerHTML =
+      me.code === "bad_init_data"
+        ? `<section class="panel"><h1>Не удалось войти</h1><p>Откройте приложение кнопкой «Игры» внизу чата с ботом.</p><p class="muted">Если не помогает — обновите Telegram и попробуйте снова.</p></section>`
+        : `<section class="panel"><p class="error">${me.message}</p></section>`;
     return;
   }
   if (STAFF_ROLES.has(me.data.role)) {

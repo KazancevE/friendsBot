@@ -34,6 +34,7 @@ import type {
   AggregatedScoreRecord,
   BonusLotRecord,
   BookingRequestRecord,
+  BroadcastSegmentId,
   CheckInLogRecord,
   CheckInMethod,
   ContentPageRecord,
@@ -45,6 +46,7 @@ import type {
   GameScoreRecord,
   GameSessionLogRecord,
   GameWeekRecord,
+  GuestListRow,
   LedgerRecord,
   LedgerType,
   MenuItemRecord,
@@ -525,6 +527,74 @@ export class PrismaStore implements Store {
       select: { startedAt: true },
     });
     return row?.startedAt ?? null;
+  }
+
+  async listVisitStartsForUser(userId: string): Promise<Array<{ startedAt: Date }>> {
+    const rows = await this.prisma.visit.findMany({
+      where: { userId },
+      select: { startedAt: true },
+      orderBy: { startedAt: "asc" },
+    });
+    return rows;
+  }
+
+  async listGuestDirectoryRows(now: Date): Promise<GuestListRow[]> {
+    const guests = await this.prisma.user.findMany({
+      where: { role: "guest" },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        telegramUsername: true,
+        phone: true,
+        balance: true,
+        broadcastOptOut: true,
+        createdAt: true,
+        visits: {
+          select: { startedAt: true, endsAt: true },
+        },
+      },
+    });
+    return guests.map((guest) => {
+      const visits = guest.visits;
+      const lastVisitAt =
+        visits.length === 0
+          ? null
+          : visits.reduce(
+              (latest, visit) => (visit.startedAt > latest ? visit.startedAt : latest),
+              visits[0]!.startedAt,
+            );
+      const visitActive = visits.some((visit) => visit.endsAt > now);
+      return {
+        id: guest.id,
+        firstName: guest.firstName,
+        lastName: guest.lastName,
+        telegramUsername: guest.telegramUsername,
+        phone: guest.phone,
+        balance: guest.balance,
+        totalVisits: visits.length,
+        lastVisitAt,
+        visitActive,
+        broadcastOptOut: guest.broadcastOptOut,
+        createdAt: guest.createdAt,
+      };
+    });
+  }
+
+  async listUsersCreatedBetween(from: Date, to: Date): Promise<Array<{ createdAt: Date }>> {
+    const rows = await this.prisma.user.findMany({
+      where: { role: "guest", createdAt: { gte: from, lte: to } },
+      select: { createdAt: true },
+    });
+    return rows;
+  }
+
+  async listAcceptedGameSessionsBetween(from: Date, to: Date): Promise<Array<{ createdAt: Date }>> {
+    const rows = await this.prisma.gameSessionLog.findMany({
+      where: { accepted: true, createdAt: { gte: from, lte: to } },
+      select: { createdAt: true },
+    });
+    return rows;
   }
 
   async hasCheckInToday(userId: string, now: Date): Promise<boolean> {
@@ -1110,13 +1180,57 @@ export class PrismaStore implements Store {
     return toPage(row);
   }
 
-  async createPromo(input: { body: string; photos: string[]; showInFeed: boolean }): Promise<PromoRecord> {
-    const row = await this.prisma.promo.create({ data: input });
+  async createPromo(input: {
+    body: string;
+    photos: string[];
+    showInFeed: boolean;
+    broadcastSegment?: BroadcastSegmentId | null;
+    broadcastRecipients?: number | null;
+    broadcastSent?: number | null;
+    broadcastFailed?: number | null;
+  }): Promise<PromoRecord> {
+    const row = await this.prisma.promo.create({
+      data: {
+        body: input.body,
+        photos: input.photos,
+        showInFeed: input.showInFeed,
+        broadcastSegment: input.broadcastSegment ?? null,
+        broadcastRecipients: input.broadcastRecipients ?? null,
+        broadcastSent: input.broadcastSent ?? null,
+        broadcastFailed: input.broadcastFailed ?? null,
+      },
+    });
+    return toPromo(row);
+  }
+
+  async updatePromo(
+    id: string,
+    patch: Partial<
+      Pick<PromoRecord, "broadcastSegment" | "broadcastRecipients" | "broadcastSent" | "broadcastFailed">
+    >,
+  ): Promise<PromoRecord> {
+    const row = await this.prisma.promo.update({
+      where: { id },
+      data: {
+        broadcastSegment: patch.broadcastSegment,
+        broadcastRecipients: patch.broadcastRecipients,
+        broadcastSent: patch.broadcastSent,
+        broadcastFailed: patch.broadcastFailed,
+      },
+    });
     return toPromo(row);
   }
 
   async listFeedPromos(): Promise<PromoRecord[]> {
     const rows = await this.prisma.promo.findMany({ where: { showInFeed: true } });
+    return rows.map(toPromo);
+  }
+
+  async listPromos(limit: number): Promise<PromoRecord[]> {
+    const rows = await this.prisma.promo.findMany({
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
     return rows.map(toPromo);
   }
 
@@ -1836,6 +1950,10 @@ function toPromo(row: Promo): PromoRecord {
     body: row.body,
     photos: row.photos,
     showInFeed: row.showInFeed,
+    broadcastSegment: (row.broadcastSegment as BroadcastSegmentId | null) ?? null,
+    broadcastRecipients: row.broadcastRecipients,
+    broadcastSent: row.broadcastSent,
+    broadcastFailed: row.broadcastFailed,
     createdAt: row.createdAt,
   };
 }

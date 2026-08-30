@@ -23,6 +23,10 @@ export type StatsSummary = {
   referralActivations: number;
   gameSessions: number;
   uniqueGamePlayers: number;
+  avgVisitsPerDay: number;
+  peakHour: number | null;
+  peakWeekday: number | null;
+  returningGuestsPct: number | null;
 };
 
 export const periodToday = (now: Date): StatsPeriod => {
@@ -90,6 +94,23 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     }
   }
 
+  const periodDays = Math.max(
+    1,
+    Math.ceil(
+      DateTime.fromJSDate(period.to, { zone: MOSCOW }).diff(
+        DateTime.fromJSDate(period.from, { zone: MOSCOW }),
+        "days",
+      ).days,
+    ),
+  );
+  const visitRows = await store.listVisitsBetween(period.from, period.to);
+  const heatmap = buildHeatmapFromVisits(visitRows.map((row) => row.startedAt));
+  const guestVisitCounts = new Map<string, number>();
+  for (const row of visitRows) {
+    guestVisitCounts.set(row.userId, (guestVisitCounts.get(row.userId) ?? 0) + 1);
+  }
+  const returningGuests = [...guestVisitCounts.values()].filter((count) => count >= 2).length;
+
   return {
     period,
     registrations,
@@ -105,10 +126,113 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
     referralActivations,
     gameSessions,
     uniqueGamePlayers,
+    avgVisitsPerDay: Math.round((visits / periodDays) * 10) / 10,
+    peakHour: heatmap.peak?.hour ?? null,
+    peakWeekday: heatmap.peak?.weekday ?? null,
+    returningGuestsPct:
+      uniqueGuestsWithVisit === 0 ? null : Math.round((returningGuests / uniqueGuestsWithVisit) * 100),
   };
 };
 
-export type StatsMetric = "visits" | "bonuses" | "checkins";
+export type StatsMetric =
+  | "visits"
+  | "bonuses"
+  | "checkins"
+  | "registrations"
+  | "gameSessions"
+  | "uniqueGuests";
+
+export type StatsGranularity = "day" | "week" | "month";
+
+export type StatsHeatmapCell = {
+  weekday: number;
+  hour: number;
+  count: number;
+};
+
+export type StatsHeatmap = {
+  source: "visits" | "checkins";
+  period: StatsPeriod;
+  cells: StatsHeatmapCell[];
+  peak: StatsHeatmapCell | null;
+  total: number;
+};
+
+const moscowWeekKey = (date: Date) => DateTime.fromJSDate(date, { zone: MOSCOW }).toFormat("yyyy-'W'WW");
+
+const moscowMonthKey = (date: Date) => DateTime.fromJSDate(date, { zone: MOSCOW }).toFormat("yyyy-MM");
+
+const bucketKeysInPeriod = (period: StatsPeriod, granularity: StatsGranularity): string[] => {
+  if (granularity === "day") {
+    return dayKeysInPeriod(period);
+  }
+  const start = DateTime.fromJSDate(period.from, { zone: MOSCOW }).startOf("day");
+  const end = DateTime.fromJSDate(period.to, { zone: MOSCOW }).startOf("day");
+  const keys: string[] = [];
+  let cursor =
+    granularity === "week" ? start.startOf("week") : DateTime.fromObject({ year: start.year, month: start.month, day: 1 }, { zone: MOSCOW });
+  while (cursor <= end) {
+    keys.push(granularity === "week" ? cursor.toFormat("yyyy-'W'WW") : cursor.toFormat("yyyy-MM"));
+    cursor = granularity === "week" ? cursor.plus({ weeks: 1 }) : cursor.plus({ months: 1 });
+  }
+  return [...new Set(keys)];
+};
+
+const bucketKeyForDate = (date: Date, granularity: StatsGranularity) => {
+  if (granularity === "day") {
+    return moscowDayKey(date);
+  }
+  if (granularity === "week") {
+    return moscowWeekKey(date);
+  }
+  return moscowMonthKey(date);
+};
+
+const buildHeatmapFromVisits = (dates: readonly Date[]) => {
+  const cells = new Map<string, number>();
+  for (let weekday = 1; weekday <= 7; weekday += 1) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      cells.set(`${weekday}:${hour}`, 0);
+    }
+  }
+  for (const date of dates) {
+    const moscow = DateTime.fromJSDate(date, { zone: MOSCOW });
+    const key = `${moscow.weekday}:${moscow.hour}`;
+    cells.set(key, (cells.get(key) ?? 0) + 1);
+  }
+  const parsed = [...cells.entries()].map(([key, count]) => {
+    const [weekdayRaw, hourRaw] = key.split(":");
+    return { weekday: Number(weekdayRaw), hour: Number(hourRaw), count };
+  });
+  const peak = parsed.reduce<StatsHeatmapCell | null>((best, cell) => {
+    if (cell.count === 0) {
+      return best;
+    }
+    if (best === null || cell.count > best.count) {
+      return cell;
+    }
+    return best;
+  }, null);
+  return { cells: parsed, peak, total: dates.length };
+};
+
+export async function getStatsHeatmap(
+  store: Store,
+  input: { period: StatsPeriod; source: "visits" | "checkins" },
+): Promise<StatsHeatmap> {
+  const dates =
+    input.source === "visits"
+      ? (await store.listVisitsBetween(input.period.from, input.period.to)).map((row) => row.startedAt)
+      : (await store.listCheckInsBetween(input.period.from, input.period.to)).map((row) => row.createdAt);
+  const built = buildHeatmapFromVisits(dates);
+  return {
+    source: input.source,
+    period: input.period,
+    cells: built.cells,
+    peak: built.peak,
+    total: built.total,
+  };
+};
 
 export type StatsTimeseriesPoint = {
   date: string;
@@ -137,17 +261,34 @@ const dayKeysInPeriod = (period: StatsPeriod): string[] => {
 
 export async function getStatsTimeseries(
   store: Store,
-  input: { period: StatsPeriod; metric: StatsMetric },
+  input: { period: StatsPeriod; metric: StatsMetric; granularity?: StatsGranularity },
 ): Promise<{ points: StatsTimeseriesPoint[] }> {
-  const keys = dayKeysInPeriod(input.period);
+  const granularity = input.granularity ?? "day";
+  const keys = bucketKeysInPeriod(input.period, granularity);
   const buckets = new Map(keys.map((key) => [key, 0]));
 
   if (input.metric === "visits") {
     const rows = await store.listVisitsBetween(input.period.from, input.period.to);
     for (const row of rows) {
-      const key = moscowDayKey(row.startedAt);
+      const key = bucketKeyForDate(row.startedAt, granularity);
       if (buckets.has(key)) {
         buckets.set(key, (buckets.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
+  if (input.metric === "uniqueGuests") {
+    const rows = await store.listVisitsBetween(input.period.from, input.period.to);
+    const seen = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const key = bucketKeyForDate(row.startedAt, granularity);
+      const guests = seen.get(key) ?? new Set<string>();
+      guests.add(row.userId);
+      seen.set(key, guests);
+    }
+    for (const [key, guests] of seen) {
+      if (buckets.has(key)) {
+        buckets.set(key, guests.size);
       }
     }
   }
@@ -155,7 +296,7 @@ export async function getStatsTimeseries(
   if (input.metric === "checkins") {
     const rows = await store.listCheckInsBetween(input.period.from, input.period.to);
     for (const row of rows) {
-      const key = moscowDayKey(row.createdAt);
+      const key = bucketKeyForDate(row.createdAt, granularity);
       if (buckets.has(key)) {
         buckets.set(key, (buckets.get(key) ?? 0) + 1);
       }
@@ -166,10 +307,30 @@ export async function getStatsTimeseries(
     const rows = await store.listLedgerBetween(input.period.from, input.period.to);
     for (const row of rows) {
       if (creditTypes.has(row.type) && row.amount > 0) {
-        const key = moscowDayKey(row.createdAt);
+        const key = bucketKeyForDate(row.createdAt, granularity);
         if (buckets.has(key)) {
           buckets.set(key, (buckets.get(key) ?? 0) + row.amount);
         }
+      }
+    }
+  }
+
+  if (input.metric === "registrations") {
+    const rows = await store.listUsersCreatedBetween(input.period.from, input.period.to);
+    for (const row of rows) {
+      const key = bucketKeyForDate(row.createdAt, granularity);
+      if (buckets.has(key)) {
+        buckets.set(key, (buckets.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
+  if (input.metric === "gameSessions") {
+    const rows = await store.listAcceptedGameSessionsBetween(input.period.from, input.period.to);
+    for (const row of rows) {
+      const key = bucketKeyForDate(row.createdAt, granularity);
+      if (buckets.has(key)) {
+        buckets.set(key, (buckets.get(key) ?? 0) + 1);
       }
     }
   }
@@ -276,5 +437,7 @@ export const staffActionLabel = (action: StaffActionKind): string => {
       return "пересадка";
     case "booking_table_swap":
       return "обмен столов";
+    case "guest_message":
+      return "сообщение гостю";
   }
 };

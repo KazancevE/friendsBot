@@ -26,8 +26,7 @@ import {
   waitCancellableContactOrSkip,
 } from "./conversation-cancel.ts";
 import { enterConversation } from "./enter-conversation.ts";
-import { miniAppUrl } from "../web-app-url.ts";
-import { MINI_APP_GUEST_LABEL, MINI_APP_STAFF_LABEL, mainKeyboard } from "./keyboards.ts";
+import { mainKeyboard } from "./keyboards.ts";
 import { qrPngBuffer } from "./qr.ts";
 
 const formatMoscowDate = (value: Date): string => {
@@ -294,16 +293,6 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       return;
     }
     await ctx.reply(text);
-  });
-
-  bot.hears([MINI_APP_GUEST_LABEL, MINI_APP_STAFF_LABEL], async (ctx) => {
-    const isStaff = ctx.dbUser?.role === "master" || ctx.dbUser?.role === "admin";
-    const text = isStaff
-      ? "Касса, код зала и игры в Mini App"
-      : "Игры в Mini App";
-    await ctx.reply(text, {
-      reply_markup: new InlineKeyboard().webApp("Открыть", miniAppUrl(ctx.config.publicUrl)),
-    });
   });
 
   bot.hears("Акции", async (ctx) => {
