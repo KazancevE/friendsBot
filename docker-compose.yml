@@ -26,6 +26,8 @@ services:
       - "${PORT:-3000}"
     env_file:
       - .env
+    volumes:
+      - uploads_data:/app/uploads
 
   caddy:
     image: caddy:2-alpine
@@ -47,3 +49,4 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  uploads_data:
