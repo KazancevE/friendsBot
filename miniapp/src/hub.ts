@@ -22,6 +22,7 @@ import { renderCheckIn } from "./check-in.ts";
 
 const STAFF_ROLES = new Set<Role>(["master", "admin"]);
 
+/** Slugs with a matching render* screen in launchGame below. */
 const GAME_ICONS: Record<string, string> = {
   match3: "🔥💧",
   blockblast: "🧱",
