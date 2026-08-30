@@ -333,7 +333,7 @@ const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
       : "";
   const pendingBookings =
     bookings.kind === "ok"
-      ? bookings.data.filter((row) => row.status === "pending" || row.status === "confirmed").length
+      ? bookings.data.rows.filter((row) => row.status === "pending" || row.status === "confirmed").length
       : 0;
   const todayBlock = `
     <section class="panel dashboard-today">
