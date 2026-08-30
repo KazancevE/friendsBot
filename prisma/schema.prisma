@@ -55,11 +55,19 @@ enum StaffActionKind {
   manual_adjust
   visit_open
   visit_extend
+  visit_close
   coupon_redeem
   guest_search
   booking_table_assign
   booking_table_move
   booking_table_swap
+}
+
+enum FloorElementKind {
+  bar
+  obstacle
+  wall
+  decor
 }
 
 enum BookingStatus {
@@ -80,6 +88,7 @@ enum QuizSessionStatus {
 model User {
   id                  String    @id @default(uuid())
   telegramId          BigInt    @unique
+  telegramUsername    String?
   role                Role      @default(guest)
   firstName           String?
   lastName            String?
@@ -136,6 +145,21 @@ model FloorPlan {
   backgroundImageUrl String?
   active             Boolean      @default(true)
   tables             VenueTable[]
+  elements           FloorElement[]
+}
+
+model FloorElement {
+  id          String           @id @default(uuid())
+  floorPlan   FloorPlan        @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  floorPlanId String
+  kind        FloorElementKind
+  label       String           @default("")
+  posX        Float            @default(0)
+  posY        Float            @default(0)
+  width       Float            @default(10)
+  height      Float            @default(10)
+  rotation    Float            @default(0)
+  sort        Int              @default(0)
 }
 
 model VenueTable {
@@ -398,6 +422,7 @@ model QuizQuestion {
   quizId       String
   sort         Int
   text         String
+  imageUrl     String?
   options      Json
   correctIndex Int
   answers      QuizAnswer[]

@@ -3,6 +3,7 @@ import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard, InputFile } from "grammy";
 import type { Bot } from "grammy";
 import { listActiveMenu } from "../domain/content.ts";
+import { formatContactEntriesText, parseContactEntries } from "../domain/contacts.ts";
 import { DomainError } from "../domain/errors.ts";
 import {
   ensureReferralCode,
@@ -276,7 +277,7 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
 
   bot.hears("Контакты", async (ctx) => {
     const page = await ctx.store.getPage("contacts");
-    const text = page?.body?.trim() || "Контакты пока не добавлены";
+    const text = formatContactEntriesText(parseContactEntries(page?.body ?? ""));
     if (ctx.dbUser?.role === "admin") {
       await ctx.reply(text, { reply_markup: adminContactsKeyboard() });
       return;

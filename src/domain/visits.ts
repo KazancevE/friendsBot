@@ -79,3 +79,24 @@ export async function extendActiveVisit(
     return visit;
   });
 }
+
+export async function closeActiveVisit(
+  store: Store,
+  input: { guestId: string; actorId: string; now: Date },
+) {
+  return store.withTransaction(async (tx) => {
+    await requireStaff(tx, input.actorId);
+    const current = await tx.getActiveVisit(input.guestId, input.now);
+    if (current === null) {
+      throw new DomainError("no_visit", "Нет активного визита");
+    }
+    const visit = await tx.updateVisitEndsAt(current.id, input.now);
+    await logStaffAction(tx, {
+      actorId: input.actorId,
+      guestId: input.guestId,
+      action: "visit_close",
+      payload: { endedAt: input.now.toISOString() },
+    });
+    return visit;
+  });
+}

@@ -8,6 +8,7 @@ import type {
   CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
+  FloorElementRecord,
   FloorPlanRecord,
   FloorPlanView,
   GameRecord,
@@ -68,6 +69,7 @@ export class MemoryStore implements Store {
   staffWeeklySchedules = new Map<string, StaffWeeklyScheduleRecord>();
   floorPlans = new Map<string, FloorPlanRecord>();
   venueTables = new Map<string, VenueTableRecord>();
+  floorElements = new Map<string, FloorElementRecord>();
 
   constructor() {
     const match3Id = crypto.randomUUID();
@@ -135,6 +137,7 @@ export class MemoryStore implements Store {
     const user: UserRecord = {
       id: crypto.randomUUID(),
       telegramId: input.telegramId,
+      telegramUsername: null,
       role: input.role,
       firstName: input.firstName,
       lastName: input.lastName,
@@ -292,6 +295,13 @@ export class MemoryStore implements Store {
       .slice(0, limit)
       .map((u) => ({ ...u }));
   }
+  async searchGuestsByUsername(username: string, limit: number) {
+    const q = username.toLowerCase().replace(/^@/, "");
+    return [...this.users.values()]
+      .filter((u) => u.role === "guest" && (u.telegramUsername ?? "").toLowerCase().includes(q))
+      .slice(0, limit)
+      .map((u) => ({ ...u }));
+  }
   async createStaffActionLog(input: {
     actorId: string;
     guestId: string | null;
@@ -325,7 +335,16 @@ export class MemoryStore implements Store {
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(input.offset, input.offset + input.limit)
-      .map((row) => ({ ...row }));
+      .map((row) => {
+        const guest = row.guestId !== null ? this.users.get(row.guestId) : undefined;
+        return {
+          ...row,
+          guestFirstName: guest?.firstName ?? null,
+          guestLastName: guest?.lastName ?? null,
+          guestTelegramId: guest ? guest.telegramId.toString() : null,
+          guestTelegramUsername: guest?.telegramUsername ?? null,
+        };
+      });
   }
   async countStaffActionsBetween(from: Date, to: Date) {
     return this.staffActionLogs.filter((row) => row.createdAt >= from && row.createdAt <= to).length;
@@ -501,6 +520,9 @@ export class MemoryStore implements Store {
       tables: [...this.venueTables.values()]
         .filter((table) => table.floorPlanId === plan.id)
         .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, "ru")),
+      elements: [...this.floorElements.values()]
+        .filter((element) => element.floorPlanId === plan.id)
+        .sort((a, b) => a.sort - b.sort),
     };
   }
 
@@ -546,6 +568,11 @@ export class MemoryStore implements Store {
     for (const table of [...this.venueTables.values()]) {
       if (table.floorPlanId === id) {
         this.venueTables.delete(table.id);
+      }
+    }
+    for (const element of [...this.floorElements.values()]) {
+      if (element.floorPlanId === id) {
+        this.floorElements.delete(element.id);
       }
     }
   }
@@ -596,6 +623,28 @@ export class MemoryStore implements Store {
 
   async deleteVenueTable(id: string) {
     this.venueTables.delete(id);
+  }
+
+  async upsertFloorElement(input: {
+    id?: string;
+    floorPlanId: string;
+    kind: FloorElementRecord["kind"];
+    label: string;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+  }) {
+    const id = input.id ?? crypto.randomUUID();
+    const row: FloorElementRecord = { id, ...input };
+    this.floorElements.set(id, row);
+    return { ...row };
+  }
+
+  async deleteFloorElement(id: string) {
+    this.floorElements.delete(id);
   }
 
   async addLedger(input: {
@@ -1018,12 +1067,30 @@ export class MemoryStore implements Store {
     quizId: string;
     sort: number;
     text: string;
+    imageUrl?: string | null;
     options: string[];
     correctIndex: number;
   }) {
-    const row: QuizQuestionRecord = { id: crypto.randomUUID(), ...input };
+    const row: QuizQuestionRecord = {
+      id: crypto.randomUUID(),
+      imageUrl: input.imageUrl ?? null,
+      ...input,
+    };
     this.quizQuestions.set(row.id, row);
     return { ...row };
+  }
+
+  async updateQuizQuestion(
+    id: string,
+    patch: Partial<Pick<QuizQuestionRecord, "text" | "imageUrl" | "options" | "correctIndex" | "sort">>,
+  ) {
+    const current = this.quizQuestions.get(id);
+    if (current === undefined) {
+      throw new Error("question missing");
+    }
+    const next = { ...current, ...patch, id: current.id };
+    this.quizQuestions.set(id, next);
+    return { ...next };
   }
 
   async deleteQuizQuestion(id: string) {

@@ -264,13 +264,17 @@ export const staffActionLabel = (action: StaffActionKind): string => {
       return "открыт визит";
     case "visit_extend":
       return "продлён визит";
+    case "visit_close":
+      return "закрыт визит";
     case "coupon_redeem":
       return "купон";
     case "guest_search":
       return "поиск";
-    default: {
-      const _exhaustive: never = action;
-      return _exhaustive;
-    }
+    case "booking_table_assign":
+      return "назначен стол";
+    case "booking_table_move":
+      return "пересадка";
+    case "booking_table_swap":
+      return "обмен столов";
   }
 };

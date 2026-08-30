@@ -6,6 +6,7 @@ import type {
   ContentPage,
   Coupon,
   FloorPlan,
+  FloorElement,
   Game,
   GameSessionLog,
   GameScore,
@@ -37,6 +38,7 @@ import type {
   CheckInMethod,
   ContentPageRecord,
   CouponRecord,
+  FloorElementRecord,
   FloorPlanRecord,
   FloorPlanView,
   GameRecord,
@@ -306,6 +308,7 @@ export class PrismaStore implements Store {
         staffNote: patch.staffNote,
         referralCode: patch.referralCode,
         referredByUserId: patch.referredByUserId,
+        telegramUsername: patch.telegramUsername,
         birthdayWarnedYear: patch.birthdayWarnedYear,
         birthdayGreetedYear: patch.birthdayGreetedYear,
       },
@@ -456,6 +459,18 @@ export class PrismaStore implements Store {
     return rows.map(toUser);
   }
 
+  async searchGuestsByUsername(username: string, limit: number): Promise<UserRecord[]> {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        role: "guest",
+        telegramUsername: { contains: username, mode: "insensitive" },
+      },
+      take: limit,
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toUser);
+  }
+
   async createStaffActionLog(input: {
     actorId: string;
     guestId: string | null;
@@ -470,7 +485,7 @@ export class PrismaStore implements Store {
         payload: input.payload as Prisma.InputJsonValue,
       },
     });
-    return toStaffActionLog(row);
+    return toStaffActionLog(row, null);
   }
 
   async listStaffActionLog(input: {
@@ -485,11 +500,12 @@ export class PrismaStore implements Store {
         createdAt: { gte: input.from, lte: input.to },
         actorId: input.actorId,
       },
+      include: { guest: true },
       orderBy: { createdAt: "desc" },
       take: input.limit,
       skip: input.offset,
     });
-    return rows.map(toStaffActionLog);
+    return rows.map((row) => toStaffActionLog(row, row.guest));
   }
 
   async countStaffActionsBetween(from: Date, to: Date): Promise<number> {
@@ -673,7 +689,10 @@ export class PrismaStore implements Store {
   async getActiveFloorPlan(): Promise<FloorPlanView | null> {
     const plan = await this.prisma.floorPlan.findFirst({
       where: { active: true },
-      include: { tables: { orderBy: [{ sort: "asc" }, { label: "asc" }] } },
+      include: {
+        tables: { orderBy: [{ sort: "asc" }, { label: "asc" }] },
+        elements: { orderBy: [{ sort: "asc" }, { label: "asc" }] },
+      },
     });
     return plan ? toFloorPlanView(plan) : null;
   }
@@ -767,6 +786,39 @@ export class PrismaStore implements Store {
 
   async deleteVenueTable(id: string): Promise<void> {
     await this.prisma.venueTable.delete({ where: { id } });
+  }
+
+  async upsertFloorElement(input: {
+    id?: string;
+    floorPlanId: string;
+    kind: FloorElementRecord["kind"];
+    label: string;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+  }): Promise<FloorElementRecord> {
+    const data = {
+      floorPlanId: input.floorPlanId,
+      kind: input.kind,
+      label: input.label,
+      posX: input.posX,
+      posY: input.posY,
+      width: input.width,
+      height: input.height,
+      rotation: input.rotation,
+      sort: input.sort,
+    };
+    const row = input.id
+      ? await this.prisma.floorElement.update({ where: { id: input.id }, data })
+      : await this.prisma.floorElement.create({ data });
+    return toFloorElement(row);
+  }
+
+  async deleteFloorElement(id: string): Promise<void> {
+    await this.prisma.floorElement.delete({ where: { id } });
   }
 
   async addLedger(input: {
@@ -1325,6 +1377,7 @@ export class PrismaStore implements Store {
     quizId: string;
     sort: number;
     text: string;
+    imageUrl?: string | null;
     options: string[];
     correctIndex: number;
   }): Promise<QuizQuestionRecord> {
@@ -1333,9 +1386,21 @@ export class PrismaStore implements Store {
         quizId: input.quizId,
         sort: input.sort,
         text: input.text,
+        imageUrl: input.imageUrl ?? null,
         options: input.options,
         correctIndex: input.correctIndex,
       },
+    });
+    return toQuizQuestion(row);
+  }
+
+  async updateQuizQuestion(
+    id: string,
+    patch: Partial<Pick<QuizQuestionRecord, "text" | "imageUrl" | "options" | "correctIndex" | "sort">>,
+  ): Promise<QuizQuestionRecord> {
+    const row = await this.prisma.quizQuestion.update({
+      where: { id },
+      data: patch,
     });
     return toQuizQuestion(row);
   }
@@ -1478,6 +1543,7 @@ function toUser(row: User): UserRecord {
   return {
     id: row.id,
     telegramId: row.telegramId,
+    telegramUsername: row.telegramUsername,
     role: toRole(row.role),
     firstName: row.firstName,
     lastName: row.lastName,
@@ -1570,6 +1636,7 @@ function toQuizQuestion(row: QuizQuestion): QuizQuestionRecord {
     quizId: row.quizId,
     sort: row.sort,
     text: row.text,
+    imageUrl: row.imageUrl,
     options: Array.isArray(options) ? options.map(String) : [],
     correctIndex: row.correctIndex,
   };
@@ -1605,6 +1672,7 @@ function toStaffActionKind(value: string): StaffActionKind {
     value === "manual_adjust" ||
     value === "visit_open" ||
     value === "visit_extend" ||
+    value === "visit_close" ||
     value === "coupon_redeem" ||
     value === "guest_search" ||
     value === "booking_table_assign" ||
@@ -1616,7 +1684,7 @@ function toStaffActionKind(value: string): StaffActionKind {
   throw new Error(`unknown staff action: ${value}`);
 }
 
-function toStaffActionLog(row: StaffActionLog): StaffActionLogRecord {
+function toStaffActionLog(row: StaffActionLog, guest: User | null): StaffActionLogRecord {
   return {
     id: row.id,
     actorId: row.actorId,
@@ -1624,6 +1692,10 @@ function toStaffActionLog(row: StaffActionLog): StaffActionLogRecord {
     action: toStaffActionKind(row.action),
     payload: (row.payload as Record<string, unknown>) ?? {},
     createdAt: row.createdAt,
+    guestFirstName: guest?.firstName ?? null,
+    guestLastName: guest?.lastName ?? null,
+    guestTelegramId: guest ? guest.telegramId.toString() : null,
+    guestTelegramUsername: guest?.telegramUsername ?? null,
   };
 }
 
@@ -1682,10 +1754,26 @@ function toVenueTable(row: VenueTable): VenueTableRecord {
   };
 }
 
-function toFloorPlanView(row: FloorPlan & { tables: VenueTable[] }): FloorPlanView {
+function toFloorElement(row: FloorElement): FloorElementRecord {
+  return {
+    id: row.id,
+    floorPlanId: row.floorPlanId,
+    kind: row.kind,
+    label: row.label,
+    posX: row.posX,
+    posY: row.posY,
+    width: row.width,
+    height: row.height,
+    rotation: row.rotation,
+    sort: row.sort,
+  };
+}
+
+function toFloorPlanView(row: FloorPlan & { tables: VenueTable[]; elements: FloorElement[] }): FloorPlanView {
   return {
     ...toFloorPlan(row),
     tables: row.tables.map(toVenueTable),
+    elements: row.elements.map(toFloorElement),
   };
 }
 

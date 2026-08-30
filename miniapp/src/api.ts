@@ -480,6 +480,16 @@ export const extendVisit = (query: GuestQueryBody) => {
   );
 };
 
+export const closeVisit = (query: GuestQueryBody) => {
+  return postJson(
+    "/api/cashier/close-visit",
+    query,
+    (value): value is { readonly visitActive: boolean; readonly card: GuestCard } => {
+      return isRecord(value) && typeof value.visitActive === "boolean" && isGuestCard(value.card);
+    },
+  );
+};
+
 export { guestQueryBody };
 
 type ManualAdjustParameters = {

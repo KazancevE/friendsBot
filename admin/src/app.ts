@@ -2,8 +2,11 @@ import {
   assignBookingTable,
   assignStaffRole,
   createMenuItem,
+  createQuizQuestion,
   createVenueTable,
   deleteMenuGalleryItem,
+  deleteMenuItem,
+  deleteQuizQuestion,
   downloadExport,
   fetchBookings,
   fetchBroadcastSegments,
@@ -16,6 +19,7 @@ import {
   fetchMe,
   fetchMenu,
   fetchPromoRules,
+  fetchQuizQuestions,
   fetchRejectedSessions,
   fetchSettings,
   fetchStaffLog,
@@ -25,6 +29,7 @@ import {
   fetchTimeseries,
   fetchVenueCode,
   patchBooking,
+  patchContacts,
   patchContentPage,
   patchSettings,
   previewBroadcast,
@@ -33,10 +38,24 @@ import {
   sendBroadcast,
   startQuiz,
   updateMenuItem,
+  updateQuizQuestion,
   updateStaffSchedule,
   uploadMenuGallery,
+  type ContactEntry,
   type StatsMetric,
 } from "./api.ts";
+import { mountFloorEditor } from "./floor-editor.ts";
+import { renderScheduleGrid } from "./schedule-grid.ts";
+import {
+  bindInfoIcons,
+  escapeHtml,
+  formatDateTime,
+  formatName,
+  infoIcon,
+  renderVenueQr,
+  settingLabel,
+  SETTING_HINTS,
+} from "./ui-helpers.ts";
 import "./style.css";
 
 type Tab = "dashboard" | "guests" | "bookings" | "broadcasts" | "settings" | "menu" | "staff" | "content" | "export" | "games";
@@ -74,20 +93,6 @@ const tabLabel = (tab: Tab) => {
     case "games":
       return "Игры";
   }
-};
-
-const escapeHtml = (text: string) =>
-  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-
-const formatName = (first: string | null, last: string | null) => {
-  return `${first ?? ""} ${last ?? ""}`.trim() || "—";
-};
-
-const formatDateTime = (value: string | null | undefined) => {
-  if (value === null || value === undefined) {
-    return "—";
-  }
-  return new Date(value).toLocaleString("ru-RU");
 };
 
 const renderPeriodToolbar = (days: number) => {
@@ -282,7 +287,7 @@ const renderGuests = (host: HTMLElement) => {
     results.innerHTML = found.data.guests
       .map(
         (guest) =>
-          `<button type="button" data-guest="${guest.id}">${escapeHtml(formatName(guest.firstName, guest.lastName))} · ${guest.balance} б.</button>`,
+          `<button type="button" data-guest="${guest.id}">${escapeHtml(formatName(guest.firstName, guest.lastName))}${guest.telegramUsername ? ` · @${escapeHtml(guest.telegramUsername)}` : ""} · ${guest.balance} б.</button>`,
       )
       .join("");
     for (const button of results.querySelectorAll("[data-guest]")) {
@@ -364,10 +369,16 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
     return;
   }
   const logRows = log.data.rows
-    .map(
-      (row) =>
-        `<tr><td>${new Date(row.createdAt).toLocaleString("ru-RU")}</td><td>${escapeHtml(row.action)}</td><td>${escapeHtml(row.guestId ?? "—")}</td></tr>`,
-    )
+    .map((row) => {
+      const guestLabel = row.guestId
+        ? `${formatName(row.guestFirstName, row.guestLastName)}${row.guestTelegramUsername ? ` @${row.guestTelegramUsername}` : ""}`
+        : "—";
+      const guestCell =
+        row.guestId === null
+          ? "—"
+          : `<button type="button" class="linkish" data-guest-log="${row.guestId}">${escapeHtml(guestLabel)}</button>`;
+      return `<tr><td>${new Date(row.createdAt).toLocaleString("ru-RU")}</td><td>${escapeHtml(row.action)}</td><td>${guestCell}</td></tr>`;
+    })
     .join("");
   const memberRows =
     members.kind === "ok"
@@ -395,13 +406,19 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
           <h2>Код зала</h2>
           <p>PIN: <strong>${escapeHtml(venueCode.data.pin)}</strong></p>
           <p class="muted">Действует до ${formatDateTime(venueCode.data.validUntil)}</p>
-          <p><code>${escapeHtml(venueCode.data.qrPayload)}</code></p>
+          <canvas data-venue-qr class="venue-qr" aria-label="QR-код зала"></canvas>
         </section>`
       : "";
   host.innerHTML = `
     ${venueBlock}
+    <div data-staff-guest-detail class="panel hidden" style="margin-bottom:1rem"></div>
     <section class="panel">
       <h2>Добавить мастера</h2>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+        <input type="search" placeholder="Имя, @ник или Telegram ID" data-staff-search style="flex:1" />
+        <button type="button" class="action" data-staff-search-btn>Найти</button>
+      </div>
+      <div data-staff-search-results class="list" style="margin-bottom:0.75rem"></div>
       <div class="form-grid">
         <label>Telegram ID<input type="text" data-staff-tg-id /></label>
         <label>Роль
@@ -417,6 +434,7 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
     </section>
     <section class="panel">
       <h2>Сотрудники</h2>
+      <div data-schedule-grid style="margin-bottom:1rem"></div>
       <div class="table-wrap">
         <table><thead><tr><th>Имя</th><th>Telegram</th><th>Роль</th><th>Смены</th><th></th></tr></thead><tbody>${memberRows || '<tr><td colspan="5" class="muted">Пусто</td></tr>'}</tbody></table>
       </div>
@@ -434,6 +452,63 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
   `;
   bindPeriodToolbar(host, (next) => {
     void renderStaff(host, next);
+  });
+  if (venueCode.kind === "ok") {
+    const canvas = host.querySelector("[data-venue-qr]");
+    if (canvas instanceof HTMLCanvasElement) {
+      void renderVenueQr(canvas, venueCode.data.qrPayload);
+    }
+  }
+  const staffGuestDetail = host.querySelector("[data-staff-guest-detail]");
+  for (const button of host.querySelectorAll("[data-guest-log]")) {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-guest-log");
+      if (id !== null && staffGuestDetail instanceof HTMLElement) {
+        void showGuest(staffGuestDetail, id);
+      }
+    });
+  }
+  const runStaffSearch = async () => {
+    const input = host.querySelector("[data-staff-search]");
+    const results = host.querySelector("[data-staff-search-results]");
+    const tgInput = host.querySelector("[data-staff-tg-id]");
+    if (!(input instanceof HTMLInputElement) || !(results instanceof HTMLElement) || !(tgInput instanceof HTMLInputElement)) {
+      return;
+    }
+    const q = input.value.trim();
+    if (q.length < 2) {
+      results.innerHTML = `<p class="muted">Введите минимум 2 символа</p>`;
+      return;
+    }
+    if (/^\d+$/.test(q)) {
+      tgInput.value = q;
+      results.innerHTML = `<p class="muted">Telegram ID подставлен</p>`;
+      return;
+    }
+    results.innerHTML = `<p class="muted">Поиск…</p>`;
+    const found = await searchGuests(q);
+    if (found.kind === "error" || found.data.guests.length === 0) {
+      results.innerHTML = `<p class="muted">Не найдено</p>`;
+      return;
+    }
+    results.innerHTML = found.data.guests
+      .map((guest) => {
+        const username = guest.telegramUsername ? ` @${guest.telegramUsername}` : "";
+        return `<button type="button" class="action" data-pick-tg="${guest.telegramId ?? ""}">${escapeHtml(formatName(guest.firstName, guest.lastName))}${escapeHtml(username)}</button>`;
+      })
+      .join("");
+    for (const pick of results.querySelectorAll("[data-pick-tg]")) {
+      pick.addEventListener("click", () => {
+        const telegramId = pick.getAttribute("data-pick-tg");
+        if (telegramId !== null && telegramId.length > 0) {
+          tgInput.value = telegramId;
+          results.innerHTML = `<p class="muted">Telegram ID подставлен</p>`;
+        }
+      });
+    }
+  };
+  host.querySelector("[data-staff-search-btn]")?.addEventListener("click", () => {
+    void runStaffSearch();
   });
   const staffStatus = host.querySelector("[data-staff-status]");
   host.querySelector("[data-assign-role]")?.addEventListener("click", () => {
@@ -458,6 +533,15 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
     });
   });
   if (members.kind === "ok") {
+    const scheduleGridHost = host.querySelector("[data-schedule-grid]");
+    if (scheduleGridHost instanceof HTMLElement) {
+      renderScheduleGrid(scheduleGridHost, members.data.members, (member) => {
+        const button = host.querySelector(`[data-edit-schedule="${member.id}"]`);
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+        }
+      });
+    }
     for (const button of host.querySelectorAll("[data-edit-schedule]")) {
       button.addEventListener("click", () => {
         const userId = button.getAttribute("data-edit-schedule");
@@ -713,21 +797,21 @@ const renderSettings = async (host: HTMLElement) => {
     <section class="panel">
       <h2>Настройки</h2>
       <form data-settings class="form-grid">
-        <label>% с чека<input type="number" name="percent" value="${s.percent}" min="0" max="100" /></label>
-        <label>Регистрация<input type="number" name="registrationBonus" value="${s.registrationBonus}" min="0" /></label>
-        <label>ДР бонус<input type="number" name="birthdayBonus" value="${s.birthdayBonus}" min="0" /></label>
-        <label>Визит, ч<input type="number" name="visitHours" value="${s.visitHours}" min="1" max="24" /></label>
-        <label>Реф. пригласившему<input type="number" name="referralBonusReferrer" value="${s.referralBonusReferrer}" min="0" /></label>
-        <label>Реф. другу<input type="number" name="referralBonusReferee" value="${s.referralBonusReferee}" min="0" /></label>
-        <label>Античит/ч<input type="number" name="maxSessionsPerHour" value="${s.maxSessionsPerHour}" min="0" /></label>
-        <label>Бронь с<input type="number" name="bookingHoursStart" value="${s.bookingHoursStart}" min="0" max="47" /></label>
-        <label>Бронь до<input type="number" name="bookingHoursEnd" value="${s.bookingHoursEnd}" min="1" max="48" /></label>
-        <label>Шаг, мин<input type="number" name="bookingSlotMinutes" value="${s.bookingSlotMinutes}" min="15" step="15" /></label>
-        <label>Длительность брони, мин<input type="number" name="bookingDurationMinutes" value="${s.bookingDurationMinutes}" min="30" step="30" /></label>
-        <label style="grid-column:1/-1">Закрытые дни (1=Пн … 7=Вс, через запятую)
+        ${settingLabel("percent", "% с чека", `<input type="number" name="percent" value="${s.percent}" min="0" max="100" />`)}
+        ${settingLabel("registrationBonus", "Регистрация", `<input type="number" name="registrationBonus" value="${s.registrationBonus}" min="0" />`)}
+        ${settingLabel("birthdayBonus", "ДР бонус", `<input type="number" name="birthdayBonus" value="${s.birthdayBonus}" min="0" />`)}
+        ${settingLabel("visitHours", "Визит, ч", `<input type="number" name="visitHours" value="${s.visitHours}" min="1" max="24" />`)}
+        ${settingLabel("referralBonusReferrer", "Реф. пригласившему", `<input type="number" name="referralBonusReferrer" value="${s.referralBonusReferrer}" min="0" />`)}
+        ${settingLabel("referralBonusReferee", "Реф. другу", `<input type="number" name="referralBonusReferee" value="${s.referralBonusReferee}" min="0" />`)}
+        ${settingLabel("maxSessionsPerHour", "Античит/ч", `<input type="number" name="maxSessionsPerHour" value="${s.maxSessionsPerHour}" min="0" />`)}
+        ${settingLabel("bookingHoursStart", "Бронь с", `<input type="number" name="bookingHoursStart" value="${s.bookingHoursStart}" min="0" max="47" />`)}
+        ${settingLabel("bookingHoursEnd", "Бронь до", `<input type="number" name="bookingHoursEnd" value="${s.bookingHoursEnd}" min="1" max="48" />`)}
+        ${settingLabel("bookingSlotMinutes", "Шаг, мин", `<input type="number" name="bookingSlotMinutes" value="${s.bookingSlotMinutes}" min="15" step="15" />`)}
+        ${settingLabel("bookingDurationMinutes", "Длительность брони, мин", `<input type="number" name="bookingDurationMinutes" value="${s.bookingDurationMinutes}" min="30" step="30" />`)}
+        <label class="checkbox-row" style="grid-column:1/-1">Закрытые дни (1=Пн … 7=Вс, через запятую) ${infoIcon(SETTING_HINTS.bookingClosedWeekdays ?? "")}
           <input name="bookingClosedWeekdays" value="${s.bookingClosedWeekdays.join(", ")}" />
         </label>
-        <label style="display:flex;align-items:center;gap:0.5rem"><input type="checkbox" name="referralEnabled" ${s.referralEnabled ? "checked" : ""} /> Рефералы вкл</label>
+        <label class="checkbox-row">${infoIcon(SETTING_HINTS.referralEnabled ?? "")}<input type="checkbox" name="referralEnabled" ${s.referralEnabled ? "checked" : ""} /><span>Рефералы вкл</span></label>
       </form>
       <button type="button" class="action" data-save-settings style="margin-top:0.75rem">Сохранить</button>
       <p class="muted" data-settings-status style="margin-top:0.5rem"></p>
@@ -740,6 +824,7 @@ const renderSettings = async (host: HTMLElement) => {
       <p class="muted" style="margin-top:0.5rem">Создание promo rules — в боте</p>
     </section>
   `;
+  bindInfoIcons(host);
   host.querySelector("[data-save-settings]")?.addEventListener("click", () => {
     const form = host.querySelector("[data-settings]");
     const status = host.querySelector("[data-settings-status]");
@@ -790,7 +875,16 @@ const renderMenu = async (host: HTMLElement) => {
   const rows = textItems
     .map(
       (item) =>
-        `<tr><td>${escapeHtml(item.title)}</td><td>${item.priceRubles ?? "—"}</td><td>${item.active ? "да" : "нет"}</td><td><button type="button" class="action" data-toggle="${item.id}" data-active="${item.active ? "0" : "1"}">${item.active ? "Скрыть" : "Показать"}</button></td></tr>`,
+        `<tr>
+          <td>${escapeHtml(item.title)}</td>
+          <td>${item.priceRubles ?? "—"}</td>
+          <td>${item.active ? "да" : "нет"}</td>
+          <td>
+            <button type="button" class="action" data-edit-menu="${item.id}">✎</button>
+            <button type="button" class="action" data-delete-menu="${item.id}">✕</button>
+            <button type="button" class="action" data-toggle="${item.id}" data-active="${item.active ? "0" : "1"}">${item.active ? "Скрыть" : "Показать"}</button>
+          </td>
+        </tr>`,
     )
     .join("");
   const gallery = galleryItems
@@ -825,6 +919,7 @@ const renderMenu = async (host: HTMLElement) => {
       <div class="table-wrap">
         <table><thead><tr><th>Название</th><th>Цена</th><th>Активна</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">Пусто</td></tr>'}</tbody></table>
       </div>
+      <div data-menu-editor class="hidden panel" style="margin-top:1rem"></div>
     </section>
   `;
   const galleryStatus = host.querySelector("[data-gallery-status]");
@@ -887,6 +982,65 @@ const renderMenu = async (host: HTMLElement) => {
       });
     });
   }
+  const editor = host.querySelector("[data-menu-editor]");
+  for (const button of host.querySelectorAll("[data-edit-menu]")) {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-edit-menu");
+      const item = textItems.find((row) => row.id === id);
+      if (id === null || item === undefined || !(editor instanceof HTMLElement)) {
+        return;
+      }
+      editor.classList.remove("hidden");
+      editor.innerHTML = `
+        <h3>Редактировать: ${escapeHtml(item.title)}</h3>
+        <form data-menu-edit class="form-grid">
+          <label>Название<input name="title" value="${escapeHtml(item.title)}" required /></label>
+          <label>Описание<input name="description" value="${escapeHtml(item.description)}" /></label>
+          <label>Цена<input name="priceRubles" type="number" min="0" value="${item.priceRubles ?? ""}" /></label>
+          <label>URL картинки<input name="imageUrl" value="${escapeHtml(item.imageUrl ?? "")}" /></label>
+        </form>
+        <button type="button" class="action" data-save-menu-edit>Сохранить</button>
+        <p class="muted" data-menu-edit-status></p>
+      `;
+      editor.querySelector("[data-save-menu-edit]")?.addEventListener("click", () => {
+        const form = editor.querySelector("[data-menu-edit]");
+        const editStatus = editor.querySelector("[data-menu-edit-status]");
+        if (!(form instanceof HTMLFormElement) || !(editStatus instanceof HTMLElement)) {
+          return;
+        }
+        const data = new FormData(form);
+        const title = String(data.get("title") ?? "").trim();
+        const description = String(data.get("description") ?? "");
+        const priceRaw = String(data.get("priceRubles") ?? "").trim();
+        const priceRubles = priceRaw.length === 0 ? null : Number(priceRaw);
+        const imageUrlRaw = String(data.get("imageUrl") ?? "").trim();
+        editStatus.textContent = "Сохранение…";
+        void updateMenuItem(id, {
+          title,
+          description,
+          priceRubles,
+          imageUrl: imageUrlRaw.length > 0 ? imageUrlRaw : null,
+        }).then((result) => {
+          editStatus.textContent = result.kind === "ok" ? "Сохранено" : result.message;
+          editStatus.className = result.kind === "ok" ? "muted" : "error";
+          if (result.kind === "ok") {
+            void renderMenu(host);
+          }
+        });
+      });
+    });
+  }
+  for (const button of host.querySelectorAll("[data-delete-menu]")) {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-delete-menu");
+      if (id === null || !confirm("Удалить позицию?")) {
+        return;
+      }
+      void deleteMenuItem(id).then(() => {
+        void renderMenu(host);
+      });
+    });
+  }
 };
 
 const renderBookings = async (host: HTMLElement) => {
@@ -932,8 +1086,9 @@ const renderBookings = async (host: HTMLElement) => {
            <button type="button" class="action" data-create-floor-plan>Создать зал</button>
          </section>`
       : `<section class="panel" style="margin-top:1rem">
-           <h2>Столы · ${escapeHtml(floorPlan.name)}</h2>
-           <form data-new-table class="form-grid" style="margin-bottom:1rem">
+           <h2>План зала · ${escapeHtml(floorPlan.name)}</h2>
+           <div data-floor-editor></div>
+           <form data-new-table class="form-grid" style="margin:1rem 0">
              <label>Название<input name="label" required /></label>
              <label>Мест мин<input type="number" name="seatsMin" value="1" min="1" /></label>
              <label>Мест макс<input type="number" name="seatsMax" value="4" min="1" /></label>
@@ -962,6 +1117,14 @@ const renderBookings = async (host: HTMLElement) => {
     </section>
     ${tablesBlock}
   `;
+  if (floorPlan !== null) {
+    const editorHost = host.querySelector("[data-floor-editor]");
+    if (editorHost instanceof HTMLElement) {
+      mountFloorEditor(editorHost, floorPlan, () => {
+        void renderBookings(host);
+      });
+    }
+  }
   host.querySelector("[data-create-floor-plan]")?.addEventListener("click", () => {
     void saveFloorPlan({ name: "Зал" }).then(() => renderBookings(host));
   });
@@ -1015,6 +1178,15 @@ const renderBookings = async (host: HTMLElement) => {
   }
 };
 
+const renderContactEntryRow = (entry: ContactEntry, index: number) => {
+  return `<div class="form-grid contact-row" data-contact-row="${index}" style="margin-bottom:0.75rem">
+    <label>Название<input data-contact-label value="${escapeHtml(entry.label)}" /></label>
+    <label>Значение<input data-contact-value value="${escapeHtml(entry.value)}" /></label>
+    <label>Описание<input data-contact-description value="${escapeHtml(entry.description ?? "")}" placeholder="Необязательно" /></label>
+    <button type="button" class="action" data-remove-contact="${index}">Удалить</button>
+  </div>`;
+};
+
 const renderContent = async (host: HTMLElement) => {
   host.innerHTML = `<section class="panel"><p class="muted">Загрузка…</p></section>`;
   const [contacts, directions] = await Promise.all([fetchContentPage("contacts"), fetchContentPage("directions")]);
@@ -1022,11 +1194,17 @@ const renderContent = async (host: HTMLElement) => {
     host.innerHTML = `<section class="panel"><p class="error">Ошибка загрузки</p></section>`;
     return;
   }
+  const contactEntries: ContactEntry[] =
+    "contacts" in contacts.data && Array.isArray(contacts.data.contacts)
+      ? contacts.data.contacts
+      : [{ label: "Контакты", value: contacts.data.page.body }];
   host.innerHTML = `
     <section class="panel">
       <h2>Контакты</h2>
-      <textarea data-contacts rows="5" style="width:100%">${escapeHtml(contacts.data.page.body)}</textarea>
+      <div data-contacts-list>${contactEntries.map((entry, index) => renderContactEntryRow(entry, index)).join("")}</div>
+      <button type="button" class="action" data-add-contact style="margin-top:0.5rem">Добавить контакт</button>
       <button type="button" class="action" data-save-contacts style="margin-top:0.75rem">Сохранить</button>
+      <p class="muted" data-contacts-status style="margin-top:0.5rem"></p>
     </section>
     <section class="panel">
       <h2>Как доехать</h2>
@@ -1039,12 +1217,52 @@ const renderContent = async (host: HTMLElement) => {
     </section>
   `;
   const status = host.querySelector("[data-content-status]");
-  host.querySelector("[data-save-contacts]")?.addEventListener("click", () => {
-    const textarea = host.querySelector("[data-contacts]");
-    if (!(textarea instanceof HTMLTextAreaElement)) {
+  const contactsStatus = host.querySelector("[data-contacts-status]");
+  const contactsList = host.querySelector("[data-contacts-list]");
+  const readContacts = (): ContactEntry[] => {
+    if (!(contactsList instanceof HTMLElement)) {
+      return [];
+    }
+    return [...contactsList.querySelectorAll("[data-contact-row]")].map((row) => {
+      const label = row.querySelector("[data-contact-label]");
+      const value = row.querySelector("[data-contact-value]");
+      const description = row.querySelector("[data-contact-description]");
+      return {
+        label: label instanceof HTMLInputElement ? label.value.trim() : "",
+        value: value instanceof HTMLInputElement ? value.value.trim() : "",
+        description:
+          description instanceof HTMLInputElement && description.value.trim().length > 0
+            ? description.value.trim()
+            : undefined,
+      };
+    });
+  };
+  host.querySelector("[data-add-contact]")?.addEventListener("click", () => {
+    if (!(contactsList instanceof HTMLElement)) {
       return;
     }
-    void patchContentPage("contacts", textarea.value, null);
+    const index = contactsList.querySelectorAll("[data-contact-row]").length;
+    contactsList.insertAdjacentHTML("beforeend", renderContactEntryRow({ label: "", value: "" }, index));
+  });
+  contactsList?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const remove = target.closest("[data-remove-contact]");
+    if (remove instanceof HTMLElement) {
+      remove.closest("[data-contact-row]")?.remove();
+    }
+  });
+  host.querySelector("[data-save-contacts]")?.addEventListener("click", () => {
+    if (!(contactsStatus instanceof HTMLElement)) {
+      return;
+    }
+    contactsStatus.textContent = "Сохранение…";
+    void patchContacts(readContacts()).then((result) => {
+      contactsStatus.textContent = result.kind === "ok" ? "Сохранено" : result.message;
+      contactsStatus.className = result.kind === "ok" ? "muted" : "error";
+    });
   });
   host.querySelector("[data-save-directions]")?.addEventListener("click", () => {
     const textarea = host.querySelector("[data-directions]");
@@ -1062,7 +1280,11 @@ const renderContent = async (host: HTMLElement) => {
 
 const renderGames = async (host: HTMLElement) => {
   host.innerHTML = `<section class="panel"><p class="muted">Загрузка…</p></section>`;
-  const [quiz, rows] = await Promise.all([fetchLiveQuiz(), fetchRejectedSessions()]);
+  const [quiz, rows, questions] = await Promise.all([
+    fetchLiveQuiz(),
+    fetchRejectedSessions(),
+    fetchQuizQuestions(),
+  ]);
   if (rows.kind === "error") {
     host.innerHTML = `<section class="panel"><p class="error">${escapeHtml(rows.message)}</p></section>`;
     return;
@@ -1071,6 +1293,23 @@ const renderGames = async (host: HTMLElement) => {
     quiz.kind === "ok" && quiz.data.live !== null
       ? `<p>Live викторина · ${quiz.data.live.questionCount} вопр. · до ${new Date(quiz.data.live.endsAt).toLocaleString("ru-RU")}</p>`
       : `<p class="muted">Live викторина не запущена</p>`;
+  const questionRows =
+    questions.kind === "ok"
+      ? questions.data.rows
+          .map(
+            (q) =>
+              `<tr>
+                <td>${q.sort}</td>
+                <td>${escapeHtml(q.text)}</td>
+                <td>${q.imageUrl ? "да" : "—"}</td>
+                <td>
+                  <button type="button" class="action" data-edit-question="${q.id}">✎</button>
+                  <button type="button" class="action" data-delete-question="${q.id}">✕</button>
+                </td>
+              </tr>`,
+          )
+          .join("")
+      : "";
   const body = rows.data.rows
     .map(
       (row) =>
@@ -1083,6 +1322,21 @@ const renderGames = async (host: HTMLElement) => {
       ${quizBlock}
       <button type="button" class="action" data-start-quiz>Запустить на 30 мин</button>
       <p class="muted" data-quiz-status style="margin-top:0.5rem"></p>
+      <h3 style="margin-top:1rem">Вопросы</h3>
+      <form data-quiz-create class="form-grid" style="margin-top:0.5rem">
+        <label style="grid-column:1/-1">Вопрос<input name="text" required /></label>
+        <label>URL картинки<input name="imageUrl" /></label>
+        <label>Вариант 1<input name="opt0" required /></label>
+        <label>Вариант 2<input name="opt1" required /></label>
+        <label>Вариант 3<input name="opt2" required /></label>
+        <label>Вариант 4<input name="opt3" required /></label>
+        <label>Правильный (1-4)<input name="correct" type="number" min="1" max="4" value="1" /></label>
+      </form>
+      <button type="button" class="action" data-add-question style="margin-top:0.5rem">Добавить вопрос</button>
+      <div class="table-wrap" style="margin-top:0.75rem">
+        <table><thead><tr><th>#</th><th>Вопрос</th><th>Фото</th><th></th></tr></thead><tbody>${questionRows || '<tr><td colspan="4" class="muted">Пока нет вопросов</td></tr>'}</tbody></table>
+      </div>
+      <div data-question-editor class="hidden" style="margin-top:1rem"></div>
     </section>
     <section class="panel" style="margin-top:1rem">
       <h2>Подозрительные партии</h2>
@@ -1104,6 +1358,68 @@ const renderGames = async (host: HTMLElement) => {
       void renderGames(host);
     });
   });
+  host.querySelector("[data-add-question]")?.addEventListener("click", () => {
+    const form = host.querySelector("[data-quiz-create]");
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    const data = new FormData(form);
+    const text = String(data.get("text") ?? "").trim();
+    const options = [0, 1, 2, 3].map((index) => String(data.get(`opt${index}`) ?? "").trim());
+    const correct = Number(data.get("correct"));
+    const imageUrlRaw = String(data.get("imageUrl") ?? "").trim();
+    void createQuizQuestion({
+      text,
+      options,
+      correctIndex: Math.max(0, Math.min(3, correct - 1)),
+      imageUrl: imageUrlRaw.length > 0 ? imageUrlRaw : null,
+    }).then(() => {
+      void renderGames(host);
+    });
+  });
+  for (const button of host.querySelectorAll("[data-delete-question]")) {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-delete-question");
+      if (id !== null) {
+        void deleteQuizQuestion(id).then(() => renderGames(host));
+      }
+    });
+  }
+  if (questions.kind === "ok") {
+    const editor = host.querySelector("[data-question-editor]");
+    for (const button of host.querySelectorAll("[data-edit-question]")) {
+      button.addEventListener("click", () => {
+        const id = button.getAttribute("data-edit-question");
+        const q = questions.data.rows.find((row) => row.id === id);
+        if (id === null || q === undefined || !(editor instanceof HTMLElement)) {
+          return;
+        }
+        editor.classList.remove("hidden");
+        editor.innerHTML = `
+          <form data-quiz-edit class="form-grid">
+            <label style="grid-column:1/-1">Вопрос<input name="text" value="${escapeHtml(q.text)}" /></label>
+            <label>URL картинки<input name="imageUrl" value="${escapeHtml(q.imageUrl ?? "")}" /></label>
+            ${q.options.map((opt, index) => `<label>Вариант ${index + 1}<input name="opt${index}" value="${escapeHtml(opt)}" /></label>`).join("")}
+            <label>Правильный (1-4)<input name="correct" type="number" min="1" max="4" value="${q.correctIndex + 1}" /></label>
+          </form>
+          <button type="button" class="action" data-save-question>Сохранить</button>
+        `;
+        editor.querySelector("[data-save-question]")?.addEventListener("click", () => {
+          const editForm = editor.querySelector("[data-quiz-edit]");
+          if (!(editForm instanceof HTMLFormElement)) {
+            return;
+          }
+          const data = new FormData(editForm);
+          void updateQuizQuestion(id, {
+            text: String(data.get("text") ?? ""),
+            imageUrl: String(data.get("imageUrl") ?? "").trim() || null,
+            options: [0, 1, 2, 3].map((index) => String(data.get(`opt${index}`) ?? "")),
+            correctIndex: Number(data.get("correct")) - 1,
+          }).then(() => renderGames(host));
+        });
+      });
+    }
+  }
 };
 
 const renderApp = async (root: HTMLElement, tab: Tab) => {

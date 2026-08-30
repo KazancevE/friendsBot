@@ -10,6 +10,8 @@ import type {
   CouponRecord,
   FloorPlanRecord,
   FloorPlanView,
+  FloorElementKind,
+  FloorElementRecord,
   GameRecord,
   AggregatedScoreRecord,
   GameScoreRecord,
@@ -69,6 +71,7 @@ export interface Store {
   findUserByQrToken(token: string): Promise<UserRecord | null>;
   findUserByReferralCode(code: string): Promise<UserRecord | null>;
   searchGuestsByName(query: string, limit: number): Promise<UserRecord[]>;
+  searchGuestsByUsername(username: string, limit: number): Promise<UserRecord[]>;
   updateUser(id: string, patch: Partial<UserRecord>): Promise<UserRecord>;
   listGuestTelegramIdsForBroadcast(): Promise<bigint[]>;
   listBroadcastGuestCandidates(): Promise<BroadcastGuestCandidate[]>;
@@ -169,6 +172,19 @@ export interface Store {
     active: boolean;
   }): Promise<VenueTableRecord>;
   deleteVenueTable(id: string): Promise<void>;
+  upsertFloorElement(input: {
+    id?: string;
+    floorPlanId: string;
+    kind: FloorElementKind;
+    label: string;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+  }): Promise<FloorElementRecord>;
+  deleteFloorElement(id: string): Promise<void>;
 
   listStaffMembers(): Promise<StaffMemberRecord[]>;
   listStaffWeeklySchedule(userId: string): Promise<StaffWeeklyScheduleRecord[]>;
@@ -305,9 +321,14 @@ export interface Store {
     quizId: string;
     sort: number;
     text: string;
+    imageUrl?: string | null;
     options: string[];
     correctIndex: number;
   }): Promise<QuizQuestionRecord>;
+  updateQuizQuestion(
+    id: string,
+    patch: Partial<Pick<QuizQuestionRecord, "text" | "imageUrl" | "options" | "correctIndex" | "sort">>,
+  ): Promise<QuizQuestionRecord>;
   deleteQuizQuestion(id: string): Promise<void>;
   getLiveQuizSession(now: Date): Promise<QuizSessionRecord | null>;
   findQuizSessionById(id: string): Promise<QuizSessionRecord | null>;

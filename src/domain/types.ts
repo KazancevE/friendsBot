@@ -98,6 +98,7 @@ export type StaffActionKind =
   | "manual_adjust"
   | "visit_open"
   | "visit_extend"
+  | "visit_close"
   | "coupon_redeem"
   | "guest_search"
   | "booking_table_assign"
@@ -111,6 +112,10 @@ export type StaffActionLogRecord = {
   action: StaffActionKind;
   payload: Record<string, unknown>;
   createdAt: Date;
+  guestFirstName?: string | null;
+  guestLastName?: string | null;
+  guestTelegramId?: string | null;
+  guestTelegramUsername?: string | null;
 };
 
 export type StaffWeeklyScheduleRecord = {
@@ -189,8 +194,24 @@ export type VenueTableRecord = {
   active: boolean;
 };
 
+export type FloorElementKind = "bar" | "obstacle" | "wall" | "decor";
+
+export type FloorElementRecord = {
+  id: string;
+  floorPlanId: string;
+  kind: FloorElementKind;
+  label: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  sort: number;
+};
+
 export type FloorPlanView = FloorPlanRecord & {
   tables: VenueTableRecord[];
+  elements: FloorElementRecord[];
 };
 
 export type AvailableBookingSlot = {
@@ -207,6 +228,7 @@ export type AvailableTableSlot = VenueTableRecord & {
 export type UserRecord = {
   id: string;
   telegramId: bigint;
+  telegramUsername: string | null;
   role: Role;
   firstName: string | null;
   lastName: string | null;
@@ -373,6 +395,7 @@ export type QuizQuestionRecord = {
   quizId: string;
   sort: number;
   text: string;
+  imageUrl: string | null;
   options: string[];
   correctIndex: number;
 };
@@ -394,6 +417,12 @@ export type QuizAnswerRecord = {
   elapsedMs: number;
   points: number;
   createdAt: Date;
+};
+
+export type ContactEntry = {
+  label: string;
+  value: string;
+  description?: string;
 };
 
 export type ContentPageRecord = {
