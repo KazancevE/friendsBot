@@ -17,8 +17,23 @@ Telegram-бот кальянной «Друзья»: бонусы, касса, M
 | `POSTGRES_PASSWORD` | пароль Postgres — только в `.env`, не в git |
 | `POSTGRES_DB` | имя базы Postgres |
 | `DATABASE_URL` | строка подключения; в compose: `@postgres:5432`, локально: `@localhost:5432` |
+| `S3_BUCKET` | bucket Yandex Object Storage для фото меню; если пусто — локальная папка `uploads/menu/` |
+| `S3_ENDPOINT` | `https://storage.yandexcloud.net` |
+| `S3_REGION` | `ru-central1` |
+| `S3_ACCESS_KEY_ID` | ключ сервисного аккаунта |
+| `S3_SECRET_ACCESS_KEY` | секрет ключа |
+| `S3_PUBLIC_BASE_URL` | публичный URL bucket (по умолчанию `{S3_ENDPOINT}/{S3_BUCKET}`) |
+| `S3_KEY_PREFIX` | префикс ключей, по умолчанию `menu` |
 
 Пример: `.env.example`. Файл `.env` в git не попадает — все секреты только там.
+
+### Yandex Object Storage (галерея меню)
+
+1. Создайте bucket в Object Storage, включите **публичный доступ на чтение** объектов.
+2. Сервисный аккаунт → статический ключ → роль `storage.editor` на bucket.
+3. Заполните `S3_*` в `.env` или в Timeweb App Platform.
+4. После деплоя загрузите фото в админке — в БД сохранится URL вида `https://storage.yandexcloud.net/<bucket>/menu/<uuid>.jpg`.
+5. Telegram и админка открывают фото по этому URL напрямую; локальный `/uploads/*` нужен только для старых записей и dev без S3.
 
 ## Docker Compose (рекомендуется)
 
