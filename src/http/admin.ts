@@ -11,6 +11,14 @@ import { promoRuleKindLabelRu } from "../domain/promo-rules.ts";
 import { addQuizQuestion, getLiveQuiz, notifyActiveGuestsOfQuiz, removeQuizQuestion, startQuizSession } from "../domain/quiz.ts";
 import { patchAdminSettings } from "../domain/settings.ts";
 import { getStatsSummary, getStatsStaff, getStatsTimeseries, periodLastDays, periodToday } from "../domain/stats.ts";
+import { assignRole } from "../domain/roles.ts";
+import { addMenuGalleryImage, isGalleryMenuItem, removeMenuGalleryImage, reorderMenuGallery, saveMenuUpload } from "../domain/menu-gallery.ts";
+import { handleBookingRequest, formatBookingSlot, assignTableToBooking, moveBookingTable, swapBookingTables, markBookingSeated } from "../domain/booking.ts";
+import { getActiveFloorPlanView, saveFloorPlan, saveVenueTable, removeVenueTable } from "../domain/floor-plan.ts";
+import { moscowDayRange } from "../domain/booking-slots.ts";
+import { savePage } from "../domain/content.ts";
+import { ensureActiveVenueCode, venueQrPayload } from "../domain/venue-code.ts";
+import { replaceStaffWeeklySchedule } from "../domain/staff-schedule.ts";
 import { extendActiveVisit } from "../domain/visits.ts";
 import { DomainError } from "../domain/errors.ts";
 import type { BroadcastSegmentId, Role, Settings } from "../domain/types.ts";
@@ -100,6 +108,11 @@ const settingsToJson = (settings: Settings) => ({
   birthdayCouponTitle: settings.birthdayCouponTitle,
   birthdayCouponClaimDays: settings.birthdayCouponClaimDays,
   maxSessionsPerHour: settings.maxSessionsPerHour,
+  bookingHoursStart: settings.bookingHoursStart,
+  bookingHoursEnd: settings.bookingHoursEnd,
+  bookingSlotMinutes: settings.bookingSlotMinutes,
+  bookingClosedWeekdays: settings.bookingClosedWeekdays,
+  bookingDurationMinutes: settings.bookingDurationMinutes,
 });
 
 const isBroadcastSegment = (value: string): value is BroadcastSegmentId => {
@@ -424,17 +437,465 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
     });
   });
 
+  app.get("/api/admin/live", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const day = moscowDayRange(now);
+    const [visits, checkInsToday] = await Promise.all([
+      store.listActiveVisits(now),
+      store.countCheckInsBetween(day.from, day.to),
+    ]);
+    return c.json({
+      visits: visits.map((visit) => ({
+        visitId: visit.visitId,
+        userId: visit.userId,
+        firstName: visit.firstName,
+        lastName: visit.lastName,
+        startedAt: visit.startedAt.toISOString(),
+        endsAt: visit.endsAt.toISOString(),
+        checkInMethod: visit.checkInMethod,
+      })),
+      checkInsToday,
+    });
+  });
+
+  app.get("/api/admin/venue-code", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const code = await ensureActiveVenueCode(store, now);
+    return c.json({
+      pin: code.pin,
+      token: code.token,
+      qrPayload: venueQrPayload(code.token),
+      validFrom: code.validFrom.toISOString(),
+      validUntil: code.validUntil.toISOString(),
+    });
+  });
+
+  app.get("/api/admin/pages/:slug", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const slugRaw = c.req.param("slug");
+    if (slugRaw !== "contacts" && slugRaw !== "directions") {
+      throw new DomainError("bad_request", "Неизвестная страница");
+    }
+    const page = await store.getPage(slugRaw);
+    return c.json({
+      page: page ?? { slug: slugRaw, body: "", mapUrl: null },
+    });
+  });
+
+  app.patch("/api/admin/pages/:slug", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const slugRaw = c.req.param("slug");
+    if (slugRaw !== "contacts" && slugRaw !== "directions") {
+      throw new DomainError("bad_request", "Неизвестная страница");
+    }
+    const body = await readJsonBody(c);
+    const text = "body" in body && typeof body.body === "string" ? body.body : "";
+    const mapUrl =
+      "mapUrl" in body && (typeof body.mapUrl === "string" || body.mapUrl === null) ? body.mapUrl : null;
+    const page = await savePage(store, {
+      actorId: admin.id,
+      slug: slugRaw,
+      body: text,
+      mapUrl,
+    });
+    return c.json({ page });
+  });
+
+  app.get("/api/admin/bookings", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const now = new Date();
+    const from = parseDate(c.req.query("from"), periodLastDays(now, 7).from);
+    const to = parseDate(c.req.query("to"), periodLastDays(now, 7).to);
+    const statusRaw = c.req.query("status");
+    const status =
+      statusRaw === "pending" ||
+      statusRaw === "confirmed" ||
+      statusRaw === "seated" ||
+      statusRaw === "cancelled" ||
+      statusRaw === "completed" ||
+      statusRaw === "no_show"
+        ? statusRaw
+        : undefined;
+    const rows = await store.listBookingsBetween({ from, to, status });
+    return c.json({
+      rows: rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        guestName: `${row.guestFirstName ?? ""} ${row.guestLastName ?? ""}`.trim(),
+        guestPhone: row.guestPhone,
+        requestedFor: row.requestedFor.toISOString(),
+        endsAt: row.endsAt?.toISOString() ?? null,
+        partySize: row.partySize,
+        comment: row.comment,
+        status: row.status,
+        tableId: row.tableId,
+        tableLabel: row.tableLabel,
+        handledAt: row.handledAt?.toISOString() ?? null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    });
+  });
+
+  app.patch("/api/admin/bookings/:id/assign-table", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const tableId = "tableId" in body && typeof body.tableId === "string" ? body.tableId : null;
+    if (tableId === null) {
+      throw new DomainError("bad_request", "Нужен tableId");
+    }
+    const booking = await assignTableToBooking(store, {
+      bookingId: c.req.param("id"),
+      tableId,
+      actorId: admin.id,
+      now: new Date(),
+    });
+    return c.json({ booking: { id: booking.id, tableId: booking.tableId } });
+  });
+
+  app.patch("/api/admin/bookings/:id/move-table", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const tableId = "tableId" in body && typeof body.tableId === "string" ? body.tableId : null;
+    if (tableId === null) {
+      throw new DomainError("bad_request", "Нужен tableId");
+    }
+    const booking = await moveBookingTable(store, {
+      bookingId: c.req.param("id"),
+      tableId,
+      actorId: admin.id,
+      now: new Date(),
+    });
+    return c.json({ booking: { id: booking.id, tableId: booking.tableId } });
+  });
+
+  app.post("/api/admin/bookings/swap-tables", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const bookingIdA =
+      "bookingIdA" in body && typeof body.bookingIdA === "string" ? body.bookingIdA : null;
+    const bookingIdB =
+      "bookingIdB" in body && typeof body.bookingIdB === "string" ? body.bookingIdB : null;
+    if (bookingIdA === null || bookingIdB === null) {
+      throw new DomainError("bad_request", "Нужны bookingIdA и bookingIdB");
+    }
+    const result = await swapBookingTables(store, {
+      bookingIdA,
+      bookingIdB,
+      actorId: admin.id,
+      now: new Date(),
+    });
+    return c.json({
+      bookings: [
+        { id: result.a.id, tableId: result.a.tableId },
+        { id: result.b.id, tableId: result.b.tableId },
+      ],
+    });
+  });
+
+  app.patch("/api/admin/bookings/:id/seated", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const booking = await markBookingSeated(store, {
+      bookingId: c.req.param("id"),
+      actorId: admin.id,
+      now: new Date(),
+    });
+    return c.json({ booking: { id: booking.id, status: booking.status } });
+  });
+
+  app.get("/api/admin/floor-plan", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const floorPlan = await getActiveFloorPlanView(store);
+    if (floorPlan === null) {
+      return c.json({ floorPlan: null });
+    }
+    return c.json({
+      floorPlan: {
+        ...floorPlan,
+        tables: floorPlan.tables.map((table) => ({
+          ...table,
+        })),
+      },
+    });
+  });
+
+  app.put("/api/admin/floor-plan", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const name = "name" in body && typeof body.name === "string" ? body.name : "Зал";
+    const floorPlan = await saveFloorPlan(store, {
+      id: "id" in body && typeof body.id === "string" ? body.id : undefined,
+      name,
+      width: "width" in body ? Number(body.width) : undefined,
+      height: "height" in body ? Number(body.height) : undefined,
+      backgroundImageUrl:
+        "backgroundImageUrl" in body &&
+        (typeof body.backgroundImageUrl === "string" || body.backgroundImageUrl === null)
+          ? body.backgroundImageUrl
+          : undefined,
+      active: true,
+    });
+    return c.json({ floorPlan });
+  });
+
+  app.post("/api/admin/tables", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const floorPlanId = "floorPlanId" in body && typeof body.floorPlanId === "string" ? body.floorPlanId : null;
+    const label = "label" in body && typeof body.label === "string" ? body.label : null;
+    if (floorPlanId === null || label === null) {
+      throw new DomainError("bad_request", "Нужны floorPlanId и label");
+    }
+    const table = await saveVenueTable(store, {
+      floorPlanId,
+      label,
+      description: "description" in body && typeof body.description === "string" ? body.description : "",
+      highlights: "highlights" in body ? body.highlights : [],
+      photoUrl:
+        "photoUrl" in body && (typeof body.photoUrl === "string" || body.photoUrl === null)
+          ? body.photoUrl
+          : null,
+      seatsMin: "seatsMin" in body ? Number(body.seatsMin) : undefined,
+      seatsMax: "seatsMax" in body ? Number(body.seatsMax) : undefined,
+      posX: "posX" in body ? Number(body.posX) : undefined,
+      posY: "posY" in body ? Number(body.posY) : undefined,
+      width: "width" in body ? Number(body.width) : undefined,
+      height: "height" in body ? Number(body.height) : undefined,
+      rotation: "rotation" in body ? Number(body.rotation) : undefined,
+      sort: "sort" in body ? Number(body.sort) : undefined,
+      active: "active" in body ? Boolean(body.active) : undefined,
+    });
+    return c.json({ table });
+  });
+
+  app.patch("/api/admin/tables/:id", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const existing = await store.findTableById(c.req.param("id"));
+    if (existing === null) {
+      throw new DomainError("not_found", "Стол не найден");
+    }
+    const table = await saveVenueTable(store, {
+      id: existing.id,
+      floorPlanId: existing.floorPlanId,
+      label: "label" in body && typeof body.label === "string" ? body.label : existing.label,
+      description:
+        "description" in body && typeof body.description === "string" ? body.description : existing.description,
+      highlights: "highlights" in body ? body.highlights : existing.highlights,
+      photoUrl:
+        "photoUrl" in body && (typeof body.photoUrl === "string" || body.photoUrl === null)
+          ? body.photoUrl
+          : existing.photoUrl,
+      seatsMin: "seatsMin" in body ? Number(body.seatsMin) : existing.seatsMin,
+      seatsMax: "seatsMax" in body ? Number(body.seatsMax) : existing.seatsMax,
+      posX: "posX" in body ? Number(body.posX) : existing.posX,
+      posY: "posY" in body ? Number(body.posY) : existing.posY,
+      width: "width" in body ? Number(body.width) : existing.width,
+      height: "height" in body ? Number(body.height) : existing.height,
+      rotation: "rotation" in body ? Number(body.rotation) : existing.rotation,
+      sort: "sort" in body ? Number(body.sort) : existing.sort,
+      active: "active" in body ? Boolean(body.active) : existing.active,
+    });
+    return c.json({ table });
+  });
+
+  app.delete("/api/admin/tables/:id", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    await removeVenueTable(store, c.req.param("id"));
+    return c.json({ ok: true });
+  });
+
+  app.patch("/api/admin/bookings/:id", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const statusRaw = "status" in body && typeof body.status === "string" ? body.status : null;
+    if (statusRaw !== "confirmed" && statusRaw !== "cancelled") {
+      throw new DomainError("bad_request", "Статус: confirmed или cancelled");
+    }
+    const booking = await handleBookingRequest(store, {
+      bookingId: c.req.param("id"),
+      actorId: admin.id,
+      status: statusRaw,
+      now: new Date(),
+    });
+    if (botApi !== undefined) {
+      const guest = await store.findUserById(booking.userId);
+      if (guest !== null) {
+        const label = statusRaw === "confirmed" ? "подтверждена" : "отменена";
+        try {
+          await botApi.sendMessage(
+            guest.telegramId.toString(),
+            `Ваша заявка на ${formatBookingSlot(booking.requestedFor)} ${label}`,
+          );
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return c.json({
+      booking: {
+        id: booking.id,
+        status: booking.status,
+        handledAt: booking.handledAt?.toISOString() ?? null,
+      },
+    });
+  });
+
+  app.get("/api/admin/staff", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const members = await store.listStaffMembers();
+    const schedules = await store.listAllStaffWeeklySchedules();
+    return c.json({
+      members: members.map((member) => ({
+        id: member.id,
+        telegramId: member.telegramId.toString(),
+        role: member.role,
+        firstName: member.firstName,
+        lastName: member.lastName,
+        schedule: schedules
+          .filter((slot) => slot.userId === member.id)
+          .map((slot) => ({
+            weekday: slot.weekday,
+            startHour: slot.startHour,
+            endHour: slot.endHour,
+          })),
+      })),
+    });
+  });
+
+  app.post("/api/admin/staff/role", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const telegramIdRaw = "telegramId" in body ? body.telegramId : null;
+    const roleRaw = "role" in body && typeof body.role === "string" ? body.role : null;
+    if (telegramIdRaw === null || roleRaw === null) {
+      throw new DomainError("bad_request", "Нужны telegramId и role");
+    }
+    if (roleRaw !== "guest" && roleRaw !== "master" && roleRaw !== "admin") {
+      throw new DomainError("bad_request", "Роль: guest, master или admin");
+    }
+    const user = await assignRole(store, {
+      actorId: admin.id,
+      telegramId: BigInt(String(telegramIdRaw)),
+      role: roleRaw,
+    });
+    return c.json({
+      user: {
+        id: user.id,
+        telegramId: user.telegramId.toString(),
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
+    });
+  });
+
+  app.put("/api/admin/staff/:id/schedule", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const slots =
+      "slots" in body && Array.isArray(body.slots)
+        ? body.slots.map((slot) => {
+            if (typeof slot !== "object" || slot === null) {
+              throw new DomainError("bad_request", "Некорректное расписание");
+            }
+            return {
+              weekday: Number((slot as { weekday?: unknown }).weekday),
+              startHour: Number((slot as { startHour?: unknown }).startHour),
+              endHour: Number((slot as { endHour?: unknown }).endHour),
+            };
+          })
+        : [];
+    const schedule = await replaceStaffWeeklySchedule(store, {
+      actorId: admin.id,
+      userId: c.req.param("id"),
+      slots,
+    });
+    return c.json({
+      schedule: schedule.map((slot) => ({
+        weekday: slot.weekday,
+        startHour: slot.startHour,
+        endHour: slot.endHour,
+      })),
+    });
+  });
+
+  app.post("/api/admin/menu/upload", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File)) {
+      throw new DomainError("bad_request", "Нужен файл");
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const imageUrl = await saveMenuUpload({ bytes, originalName: file.name });
+    const item = await addMenuGalleryImage(store, {
+      actorId: admin.id,
+      imageUrl,
+      imageFileId: null,
+    });
+    return c.json({
+      item: {
+        id: item.id,
+        imageUrl: item.imageUrl,
+        sort: item.sort,
+        active: item.active,
+      },
+    });
+  });
+
+  app.post("/api/admin/menu/gallery", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const fileId = "fileId" in body && typeof body.fileId === "string" ? body.fileId.trim() : "";
+    if (fileId.length === 0) {
+      throw new DomainError("bad_request", "Нужен fileId");
+    }
+    const item = await addMenuGalleryImage(store, {
+      actorId: admin.id,
+      imageUrl: null,
+      imageFileId: fileId,
+    });
+    return c.json({
+      item: {
+        id: item.id,
+        imageFileId: item.imageFileId,
+        sort: item.sort,
+        active: item.active,
+      },
+    });
+  });
+
+  app.delete("/api/admin/menu/gallery/:id", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    await removeMenuGalleryImage(store, { actorId: admin.id, id: c.req.param("id") });
+    return c.json({ ok: true });
+  });
+
+  app.patch("/api/admin/menu/gallery/order", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const orderedIds =
+      "orderedIds" in body && Array.isArray(body.orderedIds) ? body.orderedIds.map(String) : [];
+    await reorderMenuGallery(store, { actorId: admin.id, orderedIds });
+    return c.json({ ok: true });
+  });
+
   app.get("/api/admin/menu", async (c) => {
     await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
-    const rows = await store.listMenu();
+    const rows = await store.listAllMenuItems();
     return c.json({
       rows: rows.map((row) => ({
         id: row.id,
         title: row.title,
         description: row.description,
         priceRubles: row.priceRubles,
+        imageFileId: row.imageFileId,
+        imageUrl: row.imageUrl,
         sort: row.sort,
         active: row.active,
+        isGallery: isGalleryMenuItem(row),
       })),
     });
   });
@@ -468,7 +929,7 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
 
   app.patch("/api/admin/menu/:id", async (c) => {
     await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
-    const existing = (await store.listMenu()).find((row) => row.id === c.req.param("id"));
+    const existing = (await store.listAllMenuItems()).find((row) => row.id === c.req.param("id"));
     if (existing === undefined) {
       throw new DomainError("not_found", "Позиция не найдена");
     }
@@ -487,6 +948,7 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
       description,
       priceRubles,
       imageFileId: existing.imageFileId,
+      imageUrl: existing.imageUrl,
       sort: existing.sort,
       active,
     });

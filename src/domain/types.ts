@@ -42,6 +42,11 @@ export type Settings = {
   birthdayCouponTitle: string | null;
   birthdayCouponClaimDays: number;
   maxSessionsPerHour: number;
+  bookingHoursStart: number;
+  bookingHoursEnd: number;
+  bookingSlotMinutes: number;
+  bookingClosedWeekdays: number[];
+  bookingDurationMinutes: number;
 };
 
 export type BroadcastSegmentId =
@@ -94,7 +99,10 @@ export type StaffActionKind =
   | "visit_open"
   | "visit_extend"
   | "coupon_redeem"
-  | "guest_search";
+  | "guest_search"
+  | "booking_table_assign"
+  | "booking_table_move"
+  | "booking_table_swap";
 
 export type StaffActionLogRecord = {
   id: string;
@@ -105,19 +113,95 @@ export type StaffActionLogRecord = {
   createdAt: Date;
 };
 
-export type BookingStatus = "pending" | "confirmed" | "cancelled" | "completed";
+export type StaffWeeklyScheduleRecord = {
+  id: string;
+  userId: string;
+  weekday: number;
+  startHour: number;
+  endHour: number;
+};
+
+export type StaffMemberRecord = {
+  id: string;
+  telegramId: bigint;
+  role: Role;
+  firstName: string | null;
+  lastName: string | null;
+};
+
+export type BookingStatus =
+  | "pending"
+  | "confirmed"
+  | "seated"
+  | "cancelled"
+  | "completed"
+  | "no_show";
 
 export type BookingRequestRecord = {
   id: string;
   userId: string;
+  tableId: string | null;
   requestedFor: Date;
+  endsAt: Date | null;
+  durationMinutes: number | null;
   partySize: number;
   comment: string | null;
   status: BookingStatus;
   handledBy: string | null;
   handledAt: Date | null;
+  seatedAt: Date | null;
+  tableAssignedAt: Date | null;
   reminderSent: boolean;
   createdAt: Date;
+};
+
+export type BookingListRow = BookingRequestRecord & {
+  guestFirstName: string | null;
+  guestLastName: string | null;
+  guestPhone: string | null;
+  tableLabel: string | null;
+};
+
+export type FloorPlanRecord = {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  backgroundImageUrl: string | null;
+  active: boolean;
+};
+
+export type VenueTableRecord = {
+  id: string;
+  floorPlanId: string;
+  label: string;
+  description: string;
+  highlights: string[];
+  photoUrl: string | null;
+  seatsMin: number;
+  seatsMax: number;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  sort: number;
+  active: boolean;
+};
+
+export type FloorPlanView = FloorPlanRecord & {
+  tables: VenueTableRecord[];
+};
+
+export type AvailableBookingSlot = {
+  hour: number;
+  minute: number;
+  requestedFor: Date;
+  freeTables: number;
+};
+
+export type AvailableTableSlot = VenueTableRecord & {
+  free: boolean;
 };
 
 export type UserRecord = {
@@ -249,6 +333,7 @@ export type MenuItemRecord = {
   description: string;
   priceRubles: number | null;
   imageFileId: string | null;
+  imageUrl: string | null;
   sort: number;
   active: boolean;
 };

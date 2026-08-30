@@ -17,12 +17,14 @@ export async function addMenuItem(
     description: string;
     priceRubles: number | null;
     imageFileId?: string | null;
+    imageUrl?: string | null;
   },
 ) {
   await requireAdmin(store, input.actorId);
   const title = input.title.trim();
   const imageFileId = input.imageFileId ?? null;
-  if (title.length === 0 && imageFileId === null) {
+  const imageUrl = input.imageUrl ?? null;
+  if (title.length === 0 && imageFileId === null && imageUrl === null) {
     throw new DomainError("invalid", "Нужно название или фото");
   }
   return store.upsertMenuItem({
@@ -30,6 +32,7 @@ export async function addMenuItem(
     description: input.description,
     priceRubles: input.priceRubles,
     imageFileId,
+    imageUrl: input.imageUrl ?? null,
     sort: 0,
     active: true,
   });

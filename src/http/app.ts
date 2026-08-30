@@ -4,6 +4,7 @@ import { webhookCallback } from "grammy";
 import { Hono } from "hono";
 import type { Store } from "../store/types.ts";
 import { createAdminRoutes } from "./admin.ts";
+import { createBookingRoutes } from "./booking.ts";
 import { createCashierRoutes } from "./cashier.ts";
 import { createCheckInRoutes } from "./check-in.ts";
 import { createGameRoutes } from "./games.ts";
@@ -33,9 +34,11 @@ const rewriteAdminPath = (path: string) => {
 export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters) => {
   const app = new Hono();
   app.get("/health", (c) => c.json({ ok: true }));
+  app.use("/uploads/*", serveStatic({ root: "." }));
   app.route("/", createCashierRoutes({ store, botToken }));
   app.route("/", createCheckInRoutes({ store, botToken, botApi: bot?.api }));
   app.route("/", createGameRoutes({ store, botToken }));
+  app.route("/", createBookingRoutes({ store, botToken, botApi: bot?.api }));
   app.route("/", createAdminRoutes({ store, botToken, botApi: bot?.api }));
 
   if (bot !== undefined) {

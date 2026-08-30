@@ -1,3 +1,4 @@
+import { listOnDutyStaffTelegramIds } from "../domain/staff-schedule.ts";
 import { DateTime } from "luxon";
 import type { Api } from "grammy";
 import type { UserRecord, VisitRecord } from "./types.ts";
@@ -34,7 +35,7 @@ export async function notifyStaffOfCheckIn(
   const recipients =
     settings.checkInNotifyTelegramIds.length > 0
       ? settings.checkInNotifyTelegramIds
-      : await store.listStaffTelegramIds();
+      : await listOnDutyStaffTelegramIds(store, input.now);
 
   const text = [
     `🟢 Отметился в зале: ${guestDisplayName(input.guest)}`,

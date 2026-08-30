@@ -5,6 +5,7 @@ import type {
   CheckInLog,
   ContentPage,
   Coupon,
+  FloorPlan,
   Game,
   GameSessionLog,
   GameScore,
@@ -22,6 +23,7 @@ import type {
   StaffActionLog,
   User,
   VenueCode,
+  VenueTable,
   Visit,
 } from "@prisma/client";
 import { DomainError } from "../domain/errors.ts";
@@ -35,6 +37,8 @@ import type {
   CheckInMethod,
   ContentPageRecord,
   CouponRecord,
+  FloorPlanRecord,
+  FloorPlanView,
   GameRecord,
   GameScoreRecord,
   GameSessionLogRecord,
@@ -58,6 +62,7 @@ import type {
   StaffActionLogRecord,
   UserRecord,
   VenueCodeRecord,
+  VenueTableRecord,
   VisitRecord,
 } from "../domain/types.ts";
 import { moscowYearStart, MOSCOW } from "../domain/week.ts";
@@ -88,7 +93,27 @@ const SETTING_KEYS = [
   "birthdayCouponTitle",
   "birthdayCouponClaimDays",
   "maxSessionsPerHour",
+  "bookingHoursStart",
+  "bookingHoursEnd",
+  "bookingSlotMinutes",
+  "bookingClosedWeekdays",
+  "bookingDurationMinutes",
 ] as const;
+
+const parseWeekdayList = (raw: string | undefined): number[] => {
+  if (raw === undefined || raw.length === 0) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((value) => Number(value)).filter((value) => Number.isInteger(value));
+  } catch {
+    return [];
+  }
+};
 
 const parseTelegramIds = (raw: string | undefined): bigint[] => {
   if (raw === undefined || raw.length === 0) {
@@ -169,6 +194,15 @@ export class PrismaStore implements Store {
       maxSessionsPerHour: Number(
         map.get("maxSessionsPerHour") ?? DEFAULT_SETTINGS.maxSessionsPerHour,
       ),
+      bookingHoursStart: Number(map.get("bookingHoursStart") ?? DEFAULT_SETTINGS.bookingHoursStart),
+      bookingHoursEnd: Number(map.get("bookingHoursEnd") ?? DEFAULT_SETTINGS.bookingHoursEnd),
+      bookingSlotMinutes: Number(
+        map.get("bookingSlotMinutes") ?? DEFAULT_SETTINGS.bookingSlotMinutes,
+      ),
+      bookingClosedWeekdays: parseWeekdayList(map.get("bookingClosedWeekdays")),
+      bookingDurationMinutes: Number(
+        map.get("bookingDurationMinutes") ?? DEFAULT_SETTINGS.bookingDurationMinutes,
+      ),
     };
   }
 
@@ -198,6 +232,11 @@ export class PrismaStore implements Store {
       birthdayCouponTitle: next.birthdayCouponTitle ?? "",
       birthdayCouponClaimDays: String(next.birthdayCouponClaimDays),
       maxSessionsPerHour: String(next.maxSessionsPerHour),
+      bookingHoursStart: String(next.bookingHoursStart),
+      bookingHoursEnd: String(next.bookingHoursEnd),
+      bookingSlotMinutes: String(next.bookingSlotMinutes),
+      bookingClosedWeekdays: JSON.stringify(next.bookingClosedWeekdays),
+      bookingDurationMinutes: String(next.bookingDurationMinutes),
     };
     await Promise.all(
       SETTING_KEYS.map((key) =>
@@ -348,6 +387,54 @@ export class PrismaStore implements Store {
     return rows.map((row) => row.telegramId);
   }
 
+  async listStaffMembers() {
+    const rows = await this.prisma.user.findMany({
+      where: { role: { in: ["master", "admin"] } },
+      orderBy: [{ role: "asc" }, { firstName: "asc" }],
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      telegramId: row.telegramId,
+      role: row.role as import("../domain/types.ts").Role,
+      firstName: row.firstName,
+      lastName: row.lastName,
+    }));
+  }
+
+  async listStaffWeeklySchedule(userId: string) {
+    const rows = await this.prisma.staffWeeklySchedule.findMany({
+      where: { userId },
+      orderBy: { weekday: "asc" },
+    });
+    return rows.map(toStaffWeeklySchedule);
+  }
+
+  async listAllStaffWeeklySchedules() {
+    const rows = await this.prisma.staffWeeklySchedule.findMany({
+      orderBy: [{ userId: "asc" }, { weekday: "asc" }],
+    });
+    return rows.map(toStaffWeeklySchedule);
+  }
+
+  async replaceStaffWeeklySchedule(
+    userId: string,
+    slots: ReadonlyArray<{ weekday: number; startHour: number; endHour: number }>,
+  ) {
+    await this.prisma.staffWeeklySchedule.deleteMany({ where: { userId } });
+    if (slots.length === 0) {
+      return [];
+    }
+    await this.prisma.staffWeeklySchedule.createMany({
+      data: slots.map((slot) => ({
+        userId,
+        weekday: slot.weekday,
+        startHour: slot.startHour,
+        endHour: slot.endHour,
+      })),
+    });
+    return this.listStaffWeeklySchedule(userId);
+  }
+
   async countRegistrationsBetween(from: Date, to: Date): Promise<number> {
     return this.prisma.user.count({
       where: { role: "guest", createdAt: { gte: from, lte: to } },
@@ -492,10 +579,23 @@ export class PrismaStore implements Store {
   async createBookingRequest(input: {
     userId: string;
     requestedFor: Date;
+    endsAt: Date;
+    durationMinutes: number;
     partySize: number;
     comment: string | null;
+    tableId?: string | null;
   }): Promise<BookingRequestRecord> {
-    const row = await this.prisma.bookingRequest.create({ data: input });
+    const row = await this.prisma.bookingRequest.create({
+      data: {
+        userId: input.userId,
+        requestedFor: input.requestedFor,
+        endsAt: input.endsAt,
+        durationMinutes: input.durationMinutes,
+        partySize: input.partySize,
+        comment: input.comment,
+        tableId: input.tableId ?? null,
+      },
+    });
     return toBooking(row);
   }
 
@@ -514,7 +614,18 @@ export class PrismaStore implements Store {
   async updateBooking(
     id: string,
     patch: Partial<
-      Pick<BookingRequestRecord, "status" | "handledBy" | "handledAt" | "reminderSent">
+      Pick<
+        BookingRequestRecord,
+        | "status"
+        | "handledBy"
+        | "handledAt"
+        | "reminderSent"
+        | "tableId"
+        | "tableAssignedAt"
+        | "seatedAt"
+        | "endsAt"
+        | "durationMinutes"
+      >
     >,
   ): Promise<BookingRequestRecord> {
     const row = await this.prisma.bookingRequest.update({ where: { id }, data: patch });
@@ -539,6 +650,123 @@ export class PrismaStore implements Store {
       orderBy: { requestedFor: "asc" },
     });
     return rows.map(toBooking);
+  }
+
+  async listBookingsBetween(input: { from: Date; to: Date; status?: import("../domain/types.ts").BookingStatus }) {
+    const rows = await this.prisma.bookingRequest.findMany({
+      where: {
+        requestedFor: { gte: input.from, lte: input.to },
+        ...(input.status === undefined ? {} : { status: input.status }),
+      },
+      include: { user: true, table: true },
+      orderBy: { requestedFor: "asc" },
+    });
+    return rows.map((row) => ({
+      ...toBooking(row),
+      guestFirstName: row.user.firstName,
+      guestLastName: row.user.lastName,
+      guestPhone: row.user.phone,
+      tableLabel: row.table?.label ?? null,
+    }));
+  }
+
+  async getActiveFloorPlan(): Promise<FloorPlanView | null> {
+    const plan = await this.prisma.floorPlan.findFirst({
+      where: { active: true },
+      include: { tables: { orderBy: [{ sort: "asc" }, { label: "asc" }] } },
+    });
+    return plan ? toFloorPlanView(plan) : null;
+  }
+
+  async listFloorPlans(): Promise<FloorPlanRecord[]> {
+    const rows = await this.prisma.floorPlan.findMany({ orderBy: { name: "asc" } });
+    return rows.map(toFloorPlan);
+  }
+
+  async findFloorPlanById(id: string): Promise<FloorPlanRecord | null> {
+    const row = await this.prisma.floorPlan.findUnique({ where: { id } });
+    return row ? toFloorPlan(row) : null;
+  }
+
+  async upsertFloorPlan(input: {
+    id?: string;
+    name: string;
+    width: number;
+    height: number;
+    backgroundImageUrl: string | null;
+    active: boolean;
+  }): Promise<FloorPlanRecord> {
+    if (input.active) {
+      await this.prisma.floorPlan.updateMany({
+        where: input.id ? { active: true, id: { not: input.id } } : { active: true },
+        data: { active: false },
+      });
+    }
+    const row = input.id
+      ? await this.prisma.floorPlan.update({
+          where: { id: input.id },
+          data: {
+            name: input.name,
+            width: input.width,
+            height: input.height,
+            backgroundImageUrl: input.backgroundImageUrl,
+            active: input.active,
+          },
+        })
+      : await this.prisma.floorPlan.create({ data: input });
+    return toFloorPlan(row);
+  }
+
+  async deleteFloorPlan(id: string): Promise<void> {
+    await this.prisma.floorPlan.delete({ where: { id } });
+  }
+
+  async findTableById(id: string): Promise<VenueTableRecord | null> {
+    const row = await this.prisma.venueTable.findUnique({ where: { id } });
+    return row ? toVenueTable(row) : null;
+  }
+
+  async upsertVenueTable(input: {
+    id?: string;
+    floorPlanId: string;
+    label: string;
+    description: string;
+    highlights: string[];
+    photoUrl: string | null;
+    seatsMin: number;
+    seatsMax: number;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+    active: boolean;
+  }): Promise<VenueTableRecord> {
+    const data = {
+      floorPlanId: input.floorPlanId,
+      label: input.label,
+      description: input.description,
+      highlights: input.highlights,
+      photoUrl: input.photoUrl,
+      seatsMin: input.seatsMin,
+      seatsMax: input.seatsMax,
+      posX: input.posX,
+      posY: input.posY,
+      width: input.width,
+      height: input.height,
+      rotation: input.rotation,
+      sort: input.sort,
+      active: input.active,
+    };
+    const row = input.id
+      ? await this.prisma.venueTable.update({ where: { id: input.id }, data })
+      : await this.prisma.venueTable.create({ data });
+    return toVenueTable(row);
+  }
+
+  async deleteVenueTable(id: string): Promise<void> {
+    await this.prisma.venueTable.delete({ where: { id } });
   }
 
   async addLedger(input: {
@@ -765,6 +993,13 @@ export class PrismaStore implements Store {
     return rows.map(toMenuItem);
   }
 
+  async listAllMenuItems(): Promise<MenuItemRecord[]> {
+    const rows = await this.prisma.menuItem.findMany({
+      orderBy: [{ sort: "asc" }, { title: "asc" }],
+    });
+    return rows.map(toMenuItem);
+  }
+
   async upsertMenuItem(item: Omit<MenuItemRecord, "id"> & { id?: string }): Promise<MenuItemRecord> {
     if (item.id) {
       const row = await this.prisma.menuItem.upsert({
@@ -775,6 +1010,7 @@ export class PrismaStore implements Store {
           description: item.description,
           priceRubles: item.priceRubles,
           imageFileId: item.imageFileId,
+          imageUrl: item.imageUrl,
           sort: item.sort,
           active: item.active,
         },
@@ -783,6 +1019,7 @@ export class PrismaStore implements Store {
           description: item.description,
           priceRubles: item.priceRubles,
           imageFileId: item.imageFileId,
+          imageUrl: item.imageUrl,
           sort: item.sort,
           active: item.active,
         },
@@ -795,6 +1032,7 @@ export class PrismaStore implements Store {
         description: item.description,
         priceRubles: item.priceRubles,
         imageFileId: item.imageFileId,
+        imageUrl: item.imageUrl,
         sort: item.sort,
         active: item.active,
       },
@@ -1368,7 +1606,10 @@ function toStaffActionKind(value: string): StaffActionKind {
     value === "visit_open" ||
     value === "visit_extend" ||
     value === "coupon_redeem" ||
-    value === "guest_search"
+    value === "guest_search" ||
+    value === "booking_table_assign" ||
+    value === "booking_table_move" ||
+    value === "booking_table_swap"
   ) {
     return value;
   }
@@ -1390,14 +1631,61 @@ function toBooking(row: BookingRequest): BookingRequestRecord {
   return {
     id: row.id,
     userId: row.userId,
+    tableId: row.tableId,
     requestedFor: row.requestedFor,
+    endsAt: row.endsAt,
+    durationMinutes: row.durationMinutes,
     partySize: row.partySize,
     comment: row.comment,
     status: row.status,
     handledBy: row.handledBy,
     handledAt: row.handledAt,
+    seatedAt: row.seatedAt,
+    tableAssignedAt: row.tableAssignedAt,
     reminderSent: row.reminderSent,
     createdAt: row.createdAt,
+  };
+}
+
+function toFloorPlan(row: FloorPlan): FloorPlanRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    width: row.width,
+    height: row.height,
+    backgroundImageUrl: row.backgroundImageUrl,
+    active: row.active,
+  };
+}
+
+function toVenueTable(row: VenueTable): VenueTableRecord {
+  const highlightsRaw = row.highlights;
+  const highlights = Array.isArray(highlightsRaw)
+    ? highlightsRaw.filter((item): item is string => typeof item === "string")
+    : [];
+  return {
+    id: row.id,
+    floorPlanId: row.floorPlanId,
+    label: row.label,
+    description: row.description,
+    highlights,
+    photoUrl: row.photoUrl,
+    seatsMin: row.seatsMin,
+    seatsMax: row.seatsMax,
+    posX: row.posX,
+    posY: row.posY,
+    width: row.width,
+    height: row.height,
+    rotation: row.rotation,
+    sort: row.sort,
+    active: row.active,
+  };
+}
+
+function toFloorPlanView(row: FloorPlan & { tables: VenueTable[] }): FloorPlanView {
+  return {
+    ...toFloorPlan(row),
+    tables: row.tables.map(toVenueTable),
   };
 }
 
@@ -1431,8 +1719,19 @@ function toMenuItem(row: MenuItem): MenuItemRecord {
     description: row.description,
     priceRubles: row.priceRubles,
     imageFileId: row.imageFileId,
+    imageUrl: row.imageUrl,
     sort: row.sort,
     active: row.active,
+  };
+}
+
+function toStaffWeeklySchedule(row: import("@prisma/client").StaffWeeklySchedule) {
+  return {
+    id: row.id,
+    userId: row.userId,
+    weekday: row.weekday,
+    startHour: row.startHour,
+    endHour: row.endHour,
   };
 }
 

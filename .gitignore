@@ -1,6 +1,8 @@
 node_modules
 dist
 .env
+uploads/menu/*
+!uploads/menu/.gitkeep
 src/generated
 .worktrees
 .superpowers/

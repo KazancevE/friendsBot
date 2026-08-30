@@ -28,6 +28,11 @@ export const DEFAULT_SETTINGS: Settings = {
   birthdayCouponTitle: null,
   birthdayCouponClaimDays: 14,
   maxSessionsPerHour: 30,
+  bookingHoursStart: 18,
+  bookingHoursEnd: 26,
+  bookingSlotMinutes: 30,
+  bookingClosedWeekdays: [],
+  bookingDurationMinutes: 120,
 };
 
 export function expiresAfterDays(from: Date, days: number): Date {
@@ -80,6 +85,37 @@ export async function patchAdminSettings(store: Store, patch: Partial<Settings>)
   }
   if (patch.maxSessionsPerHour !== undefined) {
     assertNonNegativeInt(patch.maxSessionsPerHour, "Лимит сессий");
+  }
+  if (patch.bookingHoursStart !== undefined) {
+    assertNonNegativeInt(patch.bookingHoursStart, "Начало бронирования");
+    if (patch.bookingHoursStart > 47) {
+      throw new DomainError("bad_request", "Начало бронирования не больше 47");
+    }
+  }
+  if (patch.bookingHoursEnd !== undefined) {
+    assertNonNegativeInt(patch.bookingHoursEnd, "Конец бронирования");
+    if (patch.bookingHoursEnd < 1 || patch.bookingHoursEnd > 48) {
+      throw new DomainError("bad_request", "Конец бронирования от 1 до 48");
+    }
+  }
+  if (patch.bookingSlotMinutes !== undefined) {
+    assertNonNegativeInt(patch.bookingSlotMinutes, "Шаг бронирования");
+    if (![15, 30, 60].includes(patch.bookingSlotMinutes)) {
+      throw new DomainError("bad_request", "Шаг бронирования: 15, 30 или 60");
+    }
+  }
+  if (patch.bookingClosedWeekdays !== undefined) {
+    for (const day of patch.bookingClosedWeekdays) {
+      if (!Number.isInteger(day) || day < 1 || day > 7) {
+        throw new DomainError("bad_request", "День недели от 1 до 7");
+      }
+    }
+  }
+  if (patch.bookingDurationMinutes !== undefined) {
+    assertNonNegativeInt(patch.bookingDurationMinutes, "Длительность брони");
+    if (patch.bookingDurationMinutes < 30 || patch.bookingDurationMinutes > 480) {
+      throw new DomainError("bad_request", "Длительность брони от 30 до 480 минут");
+    }
   }
   if (Object.keys(patch).length === 0) {
     throw new DomainError("bad_request", "Нет полей для обновления");
