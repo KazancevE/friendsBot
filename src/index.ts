@@ -7,6 +7,7 @@ import { prisma } from "./db.ts";
 import { createHttpApp } from "./http/app.ts";
 import { startScheduler } from "./jobs/scheduler.ts";
 import { PrismaStore } from "./store/prisma-store.ts";
+import { miniAppUrl } from "./web-app-url.ts";
 
 const envFile = resolve(process.cwd(), ".env");
 if (existsSync(envFile) && typeof process.loadEnvFile === "function") {
@@ -30,5 +31,12 @@ const publicUrl = config.publicUrl.replace(/\/$/, "");
 
 serve({ fetch: app.fetch, port: config.port }, async () => {
   await bot.api.setWebhook(`${publicUrl}/tg/${config.botToken}`);
+  await bot.api.setChatMenuButton({
+    menu_button: {
+      type: "web_app",
+      text: "🎮 Игры",
+      web_app: { url: miniAppUrl(config.publicUrl) },
+    },
+  });
   console.log("listening", config.port);
 });

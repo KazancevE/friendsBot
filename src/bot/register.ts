@@ -86,7 +86,7 @@ export async function registerGuestConversation(
   const buf = await qrPngBuffer(result.qrToken);
   await ctx.replyWithPhoto(new InputFile(buf), {
     caption: `✅ Регистрация завершена!\n\n💰 Баланс: ${result.balance} бонусов\n📱 Ваш QR для кассы — на фото\n\n🎮 Отметьтесь в зале, чтобы открыть игры недели.`,
-    reply_markup: mainKeyboard({ role: result.role, publicUrl: ctx.config.publicUrl }),
+    reply_markup: mainKeyboard({ role: result.role }),
   });
 };
 

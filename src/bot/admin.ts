@@ -10,7 +10,6 @@ import { addMenuItem, savePage } from "../domain/content.ts";
 import { DomainError } from "../domain/errors.ts";
 import { assignRole } from "../domain/roles.ts";
 import type { PrizePlace, Role, Settings } from "../domain/types.ts";
-import { adminAppUrl } from "../web-app-url.ts";
 import {
   askCancellableInt,
   askCancellablePriceOrSkip,
@@ -1155,15 +1154,6 @@ export function wireAdminHandlers(bot: Bot<BotContext>) {
       return;
     }
     await enterConversation(ctx, "addQuizQuestion");
-  });
-
-  bot.hears(["Веб-админ", "🖥 Веб-админ"], async (ctx) => {
-    if (!(await requireAdminOrReply(ctx))) {
-      return;
-    }
-    await ctx.reply("Откройте панель администратора", {
-      reply_markup: new InlineKeyboard().webApp("Открыть веб-админ", adminAppUrl(ctx.config.publicUrl)),
-    });
   });
 
   bot.callbackQuery(

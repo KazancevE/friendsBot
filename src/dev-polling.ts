@@ -4,6 +4,7 @@ import { createBot } from "./bot/create-bot.ts";
 import { loadConfig } from "./config.ts";
 import { prisma } from "./db.ts";
 import { PrismaStore } from "./store/prisma-store.ts";
+import { miniAppUrl } from "./web-app-url.ts";
 
 const envFile = resolve(process.cwd(), ".env");
 if (existsSync(envFile) && typeof process.loadEnvFile === "function") {
@@ -15,6 +16,14 @@ const store = new PrismaStore(prisma);
 const bot = createBot(config.botToken, store, {
   adminTelegramId: config.adminTelegramId,
   publicUrl: config.publicUrl,
+});
+
+await bot.api.setChatMenuButton({
+  menu_button: {
+    type: "web_app",
+    text: "🎮 Игры",
+    web_app: { url: miniAppUrl(config.publicUrl) },
+  },
 });
 
 await bot.start();

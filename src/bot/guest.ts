@@ -39,18 +39,17 @@ import {
   BTN_PROMOS,
   BTN_QR,
   BTN_REFERRAL,
-  mainKeyboard,
+  inlineMiniAppKeyboard,
+  MINI_APP_GUEST_LABEL,
 } from "./keyboards.ts";
 import { qrPngBuffer } from "./qr.ts";
-import { miniAppUrl } from "../web-app-url.ts";
 
 const formatMoscowTime = (value: Date): string => {
   return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("HH:mm");
 };
 
 const guestHomeInlineKeyboard = (publicUrl: string) => {
-  return new InlineKeyboard()
-    .webApp("🎮 Игры", miniAppUrl(publicUrl))
+  return inlineMiniAppKeyboard(publicUrl, MINI_APP_GUEST_LABEL)
     .text("📱 QR", "guest:qr")
     .text("📅 Забронировать", "guest:book");
 };

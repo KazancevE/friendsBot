@@ -43,6 +43,7 @@ import {
   staffVisitConversation,
   wireStaffHandlers,
 } from "./staff.ts";
+import { wireMiniAppLaunchHandlers } from "./mini-app-launch.ts";
 import { wireVenueCodeHandlers } from "./venue-code.ts";
 
 export function createBot(
@@ -94,6 +95,7 @@ export function createBot(
   bot.use(createConversation(createPromoConversation, "createPromo"));
   bot.use(requireRegisteredUser);
   wireGuestHandlers(bot);
+  wireMiniAppLaunchHandlers(bot);
   wireStaffHandlers(bot);
   wireVenueCodeHandlers(bot);
   wireAdminHandlers(bot);

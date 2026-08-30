@@ -58,7 +58,7 @@ export const replyMainMenu = async ({ ctx, text }: ReplyMainMenuParameters) => {
     return;
   }
   await ctx.reply(text, {
-    reply_markup: mainKeyboard({ role, publicUrl: ctx.config.publicUrl }),
+    reply_markup: mainKeyboard({ role }),
   });
 };
 
