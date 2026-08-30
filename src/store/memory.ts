@@ -5,9 +5,11 @@ import type {
   BonusLotRecord,
   BookingRequestRecord,
   BookingStatus,
+  BroadcastSegmentId,
   CheckInLogRecord,
   ContentPageRecord,
   CouponRecord,
+  FloorElementRecord,
   FloorPlanRecord,
   FloorPlanView,
   GameRecord,
@@ -68,6 +70,7 @@ export class MemoryStore implements Store {
   staffWeeklySchedules = new Map<string, StaffWeeklyScheduleRecord>();
   floorPlans = new Map<string, FloorPlanRecord>();
   venueTables = new Map<string, VenueTableRecord>();
+  floorElements = new Map<string, FloorElementRecord>();
 
   constructor() {
     const match3Id = crypto.randomUUID();
@@ -135,6 +138,7 @@ export class MemoryStore implements Store {
     const user: UserRecord = {
       id: crypto.randomUUID(),
       telegramId: input.telegramId,
+      telegramUsername: null,
       role: input.role,
       firstName: input.firstName,
       lastName: input.lastName,
@@ -292,6 +296,13 @@ export class MemoryStore implements Store {
       .slice(0, limit)
       .map((u) => ({ ...u }));
   }
+  async searchGuestsByUsername(username: string, limit: number) {
+    const q = username.toLowerCase().replace(/^@/, "");
+    return [...this.users.values()]
+      .filter((u) => u.role === "guest" && (u.telegramUsername ?? "").toLowerCase().includes(q))
+      .slice(0, limit)
+      .map((u) => ({ ...u }));
+  }
   async createStaffActionLog(input: {
     actorId: string;
     guestId: string | null;
@@ -325,7 +336,16 @@ export class MemoryStore implements Store {
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(input.offset, input.offset + input.limit)
-      .map((row) => ({ ...row }));
+      .map((row) => {
+        const guest = row.guestId !== null ? this.users.get(row.guestId) : undefined;
+        return {
+          ...row,
+          guestFirstName: guest?.firstName ?? null,
+          guestLastName: guest?.lastName ?? null,
+          guestTelegramId: guest ? guest.telegramId.toString() : null,
+          guestTelegramUsername: guest?.telegramUsername ?? null,
+        };
+      });
   }
   async countStaffActionsBetween(from: Date, to: Date) {
     return this.staffActionLogs.filter((row) => row.createdAt >= from && row.createdAt <= to).length;
@@ -338,6 +358,44 @@ export class MemoryStore implements Store {
       .filter((v) => v.userId === userId)
       .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
     return visits[0]?.startedAt ?? null;
+  }
+  async listVisitStartsForUser(userId: string) {
+    return [...this.visits.values()]
+      .filter((visit) => visit.userId === userId)
+      .map((visit) => ({ startedAt: visit.startedAt }));
+  }
+  async listGuestDirectoryRows(now: Date) {
+    const guests = [...this.users.values()].filter((user) => user.role === "guest");
+    return Promise.all(
+      guests.map(async (guest) => {
+        const visit = await this.getActiveVisit(guest.id, now);
+        const totalVisits = await this.countVisitsForUser(guest.id);
+        const lastVisitAt = await this.lastVisitStartedAt(guest.id);
+        return {
+          id: guest.id,
+          firstName: guest.firstName,
+          lastName: guest.lastName,
+          telegramUsername: guest.telegramUsername,
+          phone: guest.phone,
+          balance: guest.balance,
+          totalVisits,
+          lastVisitAt,
+          visitActive: visit !== null,
+          broadcastOptOut: guest.broadcastOptOut,
+          createdAt: guest.createdAt,
+        };
+      }),
+    );
+  }
+  async listUsersCreatedBetween(from: Date, to: Date) {
+    return [...this.users.values()]
+      .filter((user) => user.role === "guest" && user.createdAt >= from && user.createdAt <= to)
+      .map((user) => ({ createdAt: user.createdAt }));
+  }
+  async listAcceptedGameSessionsBetween(from: Date, to: Date) {
+    return this.gameSessionLogs
+      .filter((row) => row.accepted && row.createdAt >= from && row.createdAt <= to)
+      .map((row) => ({ createdAt: row.createdAt }));
   }
   async hasCheckInToday(userId: string, now: Date) {
     const start = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
@@ -501,6 +559,9 @@ export class MemoryStore implements Store {
       tables: [...this.venueTables.values()]
         .filter((table) => table.floorPlanId === plan.id)
         .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, "ru")),
+      elements: [...this.floorElements.values()]
+        .filter((element) => element.floorPlanId === plan.id)
+        .sort((a, b) => a.sort - b.sort),
     };
   }
 
@@ -546,6 +607,11 @@ export class MemoryStore implements Store {
     for (const table of [...this.venueTables.values()]) {
       if (table.floorPlanId === id) {
         this.venueTables.delete(table.id);
+      }
+    }
+    for (const element of [...this.floorElements.values()]) {
+      if (element.floorPlanId === id) {
+        this.floorElements.delete(element.id);
       }
     }
   }
@@ -596,6 +662,28 @@ export class MemoryStore implements Store {
 
   async deleteVenueTable(id: string) {
     this.venueTables.delete(id);
+  }
+
+  async upsertFloorElement(input: {
+    id?: string;
+    floorPlanId: string;
+    kind: FloorElementRecord["kind"];
+    label: string;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+  }) {
+    const id = input.id ?? crypto.randomUUID();
+    const row: FloorElementRecord = { id, ...input };
+    this.floorElements.set(id, row);
+    return { ...row };
+  }
+
+  async deleteFloorElement(id: string) {
+    this.floorElements.delete(id);
   }
 
   async addLedger(input: {
@@ -781,13 +869,51 @@ export class MemoryStore implements Store {
     return page;
   }
 
-  async createPromo(input: { body: string; photos: string[]; showInFeed: boolean }) {
-    const row: PromoRecord = { id: crypto.randomUUID(), createdAt: new Date(), ...input };
+  async createPromo(input: {
+    body: string;
+    photos: string[];
+    showInFeed: boolean;
+    broadcastSegment?: BroadcastSegmentId | null;
+    broadcastRecipients?: number | null;
+    broadcastSent?: number | null;
+    broadcastFailed?: number | null;
+  }) {
+    const row: PromoRecord = {
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      body: input.body,
+      photos: input.photos,
+      showInFeed: input.showInFeed,
+      broadcastSegment: input.broadcastSegment ?? null,
+      broadcastRecipients: input.broadcastRecipients ?? null,
+      broadcastSent: input.broadcastSent ?? null,
+      broadcastFailed: input.broadcastFailed ?? null,
+    };
     this.promos.set(row.id, row);
+    return row;
+  }
+  async updatePromo(
+    id: string,
+    patch: Partial<
+      Pick<PromoRecord, "broadcastSegment" | "broadcastRecipients" | "broadcastSent" | "broadcastFailed">
+    >,
+  ) {
+    const existing = this.promos.get(id);
+    if (existing === undefined) {
+      throw new Error("promo not found");
+    }
+    const row = { ...existing, ...patch };
+    this.promos.set(id, row);
     return row;
   }
   async listFeedPromos() {
     return [...this.promos.values()].filter((p) => p.showInFeed);
+  }
+  async listPromos(limit: number) {
+    return [...this.promos.values()]
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, limit)
+      .map((row) => ({ ...row }));
   }
 
   async createPromoRule(input: {
@@ -1018,12 +1144,30 @@ export class MemoryStore implements Store {
     quizId: string;
     sort: number;
     text: string;
+    imageUrl?: string | null;
     options: string[];
     correctIndex: number;
   }) {
-    const row: QuizQuestionRecord = { id: crypto.randomUUID(), ...input };
+    const row: QuizQuestionRecord = {
+      id: crypto.randomUUID(),
+      imageUrl: input.imageUrl ?? null,
+      ...input,
+    };
     this.quizQuestions.set(row.id, row);
     return { ...row };
+  }
+
+  async updateQuizQuestion(
+    id: string,
+    patch: Partial<Pick<QuizQuestionRecord, "text" | "imageUrl" | "options" | "correctIndex" | "sort">>,
+  ) {
+    const current = this.quizQuestions.get(id);
+    if (current === undefined) {
+      throw new Error("question missing");
+    }
+    const next = { ...current, ...patch, id: current.id };
+    this.quizQuestions.set(id, next);
+    return { ...next };
   }
 
   async deleteQuizQuestion(id: string) {

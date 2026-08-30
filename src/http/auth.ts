@@ -71,6 +71,12 @@ export const verifyInitData = (raw: string, botToken: string) => {
 export const resolveActor = async (store: Store, initData: string, botToken: string) => {
   const telegramUser = verifyInitData(initData, botToken);
   const telegramId = BigInt(telegramUser.id);
-  const user = (await store.findUserByTelegramId(telegramId)) ?? undefined;
+  let user = (await store.findUserByTelegramId(telegramId)) ?? undefined;
+  if (user !== undefined) {
+    const username = telegramUser.username ?? null;
+    if (username !== user.telegramUsername) {
+      user = await store.updateUser(user.id, { telegramUsername: username });
+    }
+  }
   return { telegramId, user } satisfies ResolvedActor;
 };

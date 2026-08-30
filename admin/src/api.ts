@@ -74,6 +74,10 @@ export type StatsSummary = {
   referralActivations: number;
   gameSessions: number;
   uniqueGamePlayers: number;
+  avgVisitsPerDay: number;
+  peakHour: number | null;
+  peakWeekday: number | null;
+  returningGuestsPct: number | null;
 };
 
 const isStatsSummary = (value: unknown): value is StatsSummary => {
@@ -108,12 +112,48 @@ const isTimeseries = (value: unknown): value is { points: StatsTimeseriesPoint[]
   return typeof value === "object" && value !== null && Array.isArray((value as { points: unknown }).points);
 };
 
-export type StatsMetric = "visits" | "bonuses" | "checkins";
+export type StatsMetric =
+  | "visits"
+  | "bonuses"
+  | "checkins"
+  | "registrations"
+  | "gameSessions"
+  | "uniqueGuests";
 
-export const fetchTimeseries = (metric: StatsMetric, days: number) => {
+export type StatsGranularity = "day" | "week" | "month";
+
+export const fetchTimeseries = (
+  metric: StatsMetric,
+  days: number,
+  granularity: StatsGranularity = "day",
+) => {
   const params = periodParams(days);
   params.set("metric", metric);
+  params.set("granularity", granularity);
   return getJson(`/api/admin/stats/timeseries?${params.toString()}`, isTimeseries);
+};
+
+export type StatsHeatmapCell = {
+  weekday: number;
+  hour: number;
+  count: number;
+};
+
+const isHeatmap = (
+  value: unknown,
+): value is { cells: StatsHeatmapCell[]; peak: StatsHeatmapCell | null; total: number; source: string } => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { cells: unknown }).cells) &&
+    typeof (value as { total: number }).total === "number"
+  );
+};
+
+export const fetchHeatmap = (days: number, source: "visits" | "checkins" = "visits") => {
+  const params = periodParams(days);
+  params.set("source", source);
+  return getJson(`/api/admin/stats/heatmap?${params.toString()}`, isHeatmap);
 };
 
 export type StatsStaffRow = {
@@ -136,7 +176,10 @@ export type GuestHit = {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  telegramUsername: string | null;
+  telegramId?: string;
   balance: number;
+  visitActive?: boolean;
 };
 
 const isGuestHits = (value: unknown): value is { guests: GuestHit[] } => {
@@ -192,6 +235,10 @@ export type StaffLogRow = {
   action: string;
   actorId: string;
   guestId: string | null;
+  guestFirstName: string | null;
+  guestLastName: string | null;
+  guestTelegramId: string | null;
+  guestTelegramUsername: string | null;
   payload: Record<string, unknown>;
   createdAt: string;
 };
@@ -352,11 +399,96 @@ export const sendBroadcast = (input: {
   segment: string;
   body: string;
   showInFeed: boolean;
+  sendNow?: boolean;
   photoId?: string;
   params?: { balanceMin?: number };
 }) =>
   postJson("/api/admin/broadcast/send", input, (value): value is { sent: number; failed: number; recipients: number } => {
     return typeof value === "object" && value !== null && typeof (value as { sent: number }).sent === "number";
+  });
+
+export type BroadcastHistoryRow = {
+  promoId: string;
+  body: string;
+  createdAt: string;
+  showInFeed: boolean;
+  segment: string | null;
+  recipients: number | null;
+  sent: number | null;
+  failed: number | null;
+};
+
+const isBroadcastHistory = (value: unknown): value is { rows: BroadcastHistoryRow[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
+};
+
+export const fetchBroadcastHistory = () => getJson("/api/admin/broadcasts?limit=20", isBroadcastHistory);
+
+export type GuestDirectoryRow = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  telegramUsername: string | null;
+  phoneMasked: string | null;
+  balance: number;
+  totalVisits: number;
+  lastVisitAt: string | null;
+  visitActive: boolean;
+  broadcastOptOut: boolean;
+  createdAt: string;
+};
+
+const isGuestDirectory = (
+  value: unknown,
+): value is { guests: GuestDirectoryRow[]; total: number; offset: number; limit: number } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { guests: unknown }).guests);
+};
+
+export const fetchGuestDirectory = (input: {
+  offset?: number;
+  limit?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  filter?: string;
+}) => {
+  const params = new URLSearchParams();
+  if (input.offset !== undefined) {
+    params.set("offset", String(input.offset));
+  }
+  if (input.limit !== undefined) {
+    params.set("limit", String(input.limit));
+  }
+  if (input.sort !== undefined) {
+    params.set("sort", input.sort);
+  }
+  if (input.order !== undefined) {
+    params.set("order", input.order);
+  }
+  if (input.filter !== undefined && input.filter.length > 0) {
+    params.set("filter", input.filter);
+  }
+  return getJson(`/api/admin/guests?${params.toString()}`, isGuestDirectory);
+};
+
+export type GuestVisitPattern = {
+  totalVisits: number;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number | null;
+  topWeekdays: string[];
+  topHours: string[];
+  visitsPerMonth: number | null;
+};
+
+const isVisitPattern = (value: unknown): value is GuestVisitPattern => {
+  return typeof value === "object" && value !== null && typeof (value as GuestVisitPattern).totalVisits === "number";
+};
+
+export const fetchGuestVisitPattern = (guestId: string) =>
+  getJson(`/api/admin/guest/${guestId}/visit-pattern`, isVisitPattern);
+
+export const sendGuestMessage = (guestId: string, body: string) =>
+  postJson(`/api/admin/guest/${guestId}/message`, { body }, (value): value is { ok: true } => {
+    return typeof value === "object" && value !== null && (value as { ok: boolean }).ok === true;
   });
 
 export const patchSettings = (patch: Partial<SettingsView>) =>
@@ -383,6 +515,56 @@ export const patchSettings = (patch: Partial<SettingsView>) =>
 export const startQuiz = (durationMinutes = 30) =>
   postJson("/api/admin/quiz/start", { durationMinutes }, (value): value is { sessionId: string; endsAt: string } => {
     return typeof value === "object" && value !== null && typeof (value as { sessionId: string }).sessionId === "string";
+  });
+
+export type QuizQuestionView = {
+  id: string;
+  sort: number;
+  text: string;
+  imageUrl: string | null;
+  options: string[];
+  correctIndex: number;
+};
+
+const isQuizQuestions = (value: unknown): value is { rows: QuizQuestionView[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
+};
+
+export const fetchQuizQuestions = () => getJson("/api/admin/quiz/questions", isQuizQuestions);
+
+export const createQuizQuestion = (input: {
+  text: string;
+  options: string[];
+  correctIndex: number;
+  imageUrl?: string | null;
+}) => postJson("/api/admin/quiz/questions", input, (value): value is { question: QuizQuestionView } => {
+  return typeof value === "object" && value !== null && typeof (value as { question: QuizQuestionView }).question?.id === "string";
+});
+
+export const updateQuizQuestion = (
+  id: string,
+  patch: Partial<{ text: string; options: string[]; correctIndex: number; imageUrl: string | null }>,
+) =>
+  fetch(`/api/admin/quiz/questions/${id}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(patch),
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const deleteQuizQuestion = (id: string) =>
+  fetch(`/api/admin/quiz/questions/${id}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initData() },
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
   });
 
 export type MenuItem = {
@@ -412,7 +594,7 @@ export const createMenuItem = (input: { title: string; description: string; pric
 
 export const updateMenuItem = (
   id: string,
-  patch: Partial<{ title: string; description: string; priceRubles: number | null; active: boolean }>,
+  patch: Partial<{ title: string; description: string; priceRubles: number | null; active: boolean; imageUrl: string | null }>,
 ) =>
   fetch(`/api/admin/menu/${id}`, {
     method: "PATCH",
@@ -432,6 +614,17 @@ export const updateMenuItem = (
       return { kind: "error" as const, message: "Некорректный ответ" };
     }
     return { kind: "ok" as const, data: parsed.item };
+  });
+
+export const deleteMenuItem = (id: string) =>
+  fetch(`/api/admin/menu/${id}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initData() },
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка удаления" };
+    }
+    return { kind: "ok" as const, data: null };
   });
 
 export type LiveVisitRow = {
@@ -464,10 +657,26 @@ const isVenueCode = (value: unknown): value is VenueCodeView => {
 
 export const fetchVenueCode = () => getJson("/api/admin/venue-code", isVenueCode);
 
+export type ContactEntry = {
+  label: string;
+  value: string;
+  description?: string;
+};
+
 export type ContentPageView = {
   slug: string;
   body: string;
   mapUrl: string | null;
+};
+
+const isContactsPage = (
+  value: unknown,
+): value is { page: ContentPageView; contacts: ContactEntry[] } => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { contacts: unknown }).contacts)
+  );
 };
 
 const isContentPage = (value: unknown): value is { page: ContentPageView } => {
@@ -475,7 +684,19 @@ const isContentPage = (value: unknown): value is { page: ContentPageView } => {
 };
 
 export const fetchContentPage = (slug: "contacts" | "directions") =>
-  getJson(`/api/admin/pages/${slug}`, isContentPage);
+  getJson(`/api/admin/pages/${slug}`, slug === "contacts" ? isContactsPage : isContentPage);
+
+export const patchContacts = (contacts: ContactEntry[]) =>
+  fetch("/api/admin/pages/contacts", {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ contacts }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
 
 export const patchContentPage = (slug: "contacts" | "directions", body: string, mapUrl: string | null) =>
   fetch(`/api/admin/pages/${slug}`, {
@@ -558,6 +779,19 @@ export type VenueTableView = {
   active: boolean;
 };
 
+export type FloorElementView = {
+  id: string;
+  floorPlanId: string;
+  kind: string;
+  label: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  sort: number;
+};
+
 export type FloorPlanView = {
   id: string;
   name: string;
@@ -566,6 +800,7 @@ export type FloorPlanView = {
   backgroundImageUrl: string | null;
   active: boolean;
   tables: VenueTableView[];
+  elements: FloorElementView[];
 };
 
 const isFloorPlan = (value: unknown): value is { floorPlan: FloorPlanView | null } => {
@@ -712,6 +947,55 @@ export const deleteMenuGalleryItem = (id: string) =>
   }).then(async (res) => {
     if (!res.ok) {
       return { kind: "error" as const, message: "Ошибка удаления" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const patchVenueTable = (
+  id: string,
+  patch: Partial<{ posX: number; posY: number; width: number; height: number; rotation: number; label: string }>,
+) =>
+  fetch(`/api/admin/tables/${id}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(patch),
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const saveFloorElement = (input: {
+  id?: string;
+  floorPlanId: string;
+  kind: string;
+  label?: string;
+  posX?: number;
+  posY?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  sort?: number;
+}) =>
+  fetch(input.id ? `/api/admin/floor-elements/${input.id}` : "/api/admin/floor-elements", {
+    method: input.id ? "PATCH" : "POST",
+    headers: headers(),
+    body: JSON.stringify(input),
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const deleteFloorElement = (id: string) =>
+  fetch(`/api/admin/floor-elements/${id}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initData() },
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
     }
     return { kind: "ok" as const, data: null };
   });

@@ -4,11 +4,11 @@ import type { Bot } from "grammy";
 import { redeemCoupon } from "../domain/coupons.ts";
 import { DomainError } from "../domain/errors.ts";
 import { buildStaffGuestCard, formatStaffGuestCard, type StaffGuestCard } from "../domain/guest-card.ts";
-import { guestSearchButtonLabel, searchGuestsByName } from "../domain/guest-search.ts";
+import { guestSearchButtonLabel, searchGuests } from "../domain/guest-search.ts";
 import { applyCheck, manualAdjust, redeemBonuses } from "../domain/ledger.ts";
 import { normalizePhone } from "../domain/phone.ts";
 import type { Role } from "../domain/types.ts";
-import { extendActiveVisit, staffOpenVisit } from "../domain/visits.ts";
+import { closeActiveVisit, extendActiveVisit, staffOpenVisit } from "../domain/visits.ts";
 import { MOSCOW } from "../domain/week.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
@@ -43,7 +43,7 @@ const guestCardKeyboard = (card: StaffGuestCard): InlineKeyboard => {
     .row()
     .text("Заметка", "staff:note");
   if (card.visitActive) {
-    keyboard.text("Продлить визит", "staff:extend");
+    keyboard.text("Продлить визит", "staff:extend").text("Закончить визит", "staff:close");
   }
   for (const coupon of card.coupons) {
     keyboard.row().text(`Погасить: ${coupon.title}`, `staff:coupon:${coupon.id}`);
@@ -105,7 +105,7 @@ export async function staffFindConversation(conversation: BotConversation, ctx: 
         }
         return { ok: true as const, kind: "single" as const, guestId: guest.id };
       }
-      const hits = await searchGuestsByName(outer.store, { query: raw, now });
+      const hits = await searchGuests(outer.store, { query: raw, now });
       if (hits.length === 0) {
         return { ok: false as const, message: "Гость не найден. Попробуйте телефон или QR" };
       }
@@ -406,6 +406,31 @@ export function wireStaffHandlers(bot: Bot<BotContext>) {
       return;
     }
     await showGuestCard(ctx, guestId);
+  });
+
+  bot.callbackQuery("staff:close", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!isStaffRole(ctx.dbUser?.role) || !ctx.dbUser) {
+      await ctx.reply("Недостаточно прав");
+      return;
+    }
+    const guestId = ctx.session.staffGuestId;
+    if (guestId === undefined) {
+      await ctx.reply("Сначала найдите гостя");
+      return;
+    }
+    try {
+      await closeActiveVisit(ctx.store, {
+        guestId,
+        actorId: ctx.dbUser.id,
+        now: new Date(),
+      });
+      await showGuestCard(ctx, guestId);
+      await ctx.reply("Визит завершён");
+    } catch (err) {
+      const message = err instanceof DomainError ? err.message : "Ошибка";
+      await ctx.reply(message);
+    }
   });
 
   bot.callbackQuery("staff:extend", async (ctx) => {

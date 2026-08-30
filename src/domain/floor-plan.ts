@@ -1,5 +1,5 @@
 import { DomainError } from "./errors.ts";
-import type { FloorPlanRecord, FloorPlanView, VenueTableRecord } from "./types.ts";
+import type { FloorElementKind, FloorElementRecord, FloorPlanRecord, FloorPlanView, VenueTableRecord } from "./types.ts";
 import type { Store } from "../store/types.ts";
 
 const assertLabel = (label: string) => {
@@ -119,4 +119,48 @@ export async function removeVenueTable(store: Store, tableId: string) {
 
 export async function removeFloorPlan(store: Store, floorPlanId: string) {
   await store.deleteFloorPlan(floorPlanId);
+}
+
+const assertElementKind = (kind: string): FloorElementKind => {
+  if (kind === "bar" || kind === "obstacle" || kind === "wall" || kind === "decor") {
+    return kind;
+  }
+  throw new DomainError("bad_request", "Некорректный тип элемента");
+};
+
+export async function saveFloorElement(
+  store: Store,
+  input: {
+    id?: string;
+    floorPlanId: string;
+    kind: string;
+    label?: string;
+    posX?: number;
+    posY?: number;
+    width?: number;
+    height?: number;
+    rotation?: number;
+    sort?: number;
+  },
+): Promise<FloorElementRecord> {
+  const floorPlan = await store.findFloorPlanById(input.floorPlanId);
+  if (floorPlan === null) {
+    throw new DomainError("not_found", "План зала не найден");
+  }
+  return store.upsertFloorElement({
+    id: input.id,
+    floorPlanId: input.floorPlanId,
+    kind: assertElementKind(input.kind),
+    label: (input.label ?? "").trim(),
+    posX: input.posX ?? 0,
+    posY: input.posY ?? 0,
+    width: input.width ?? 10,
+    height: input.height ?? 10,
+    rotation: input.rotation ?? 0,
+    sort: input.sort ?? 0,
+  });
+}
+
+export async function removeFloorElement(store: Store, elementId: string) {
+  await store.deleteFloorElement(elementId);
 }

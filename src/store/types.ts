@@ -10,11 +10,14 @@ import type {
   CouponRecord,
   FloorPlanRecord,
   FloorPlanView,
+  FloorElementKind,
+  FloorElementRecord,
   GameRecord,
   AggregatedScoreRecord,
   GameScoreRecord,
   GameSessionLogRecord,
   GameWeekRecord,
+  GuestListRow,
   LedgerRecord,
   LedgerType,
   MenuItemRecord,
@@ -69,6 +72,7 @@ export interface Store {
   findUserByQrToken(token: string): Promise<UserRecord | null>;
   findUserByReferralCode(code: string): Promise<UserRecord | null>;
   searchGuestsByName(query: string, limit: number): Promise<UserRecord[]>;
+  searchGuestsByUsername(username: string, limit: number): Promise<UserRecord[]>;
   updateUser(id: string, patch: Partial<UserRecord>): Promise<UserRecord>;
   listGuestTelegramIdsForBroadcast(): Promise<bigint[]>;
   listBroadcastGuestCandidates(): Promise<BroadcastGuestCandidate[]>;
@@ -96,6 +100,10 @@ export interface Store {
 
   countVisitsForUser(userId: string): Promise<number>;
   lastVisitStartedAt(userId: string): Promise<Date | null>;
+  listVisitStartsForUser(userId: string): Promise<Array<{ startedAt: Date }>>;
+  listGuestDirectoryRows(now: Date): Promise<GuestListRow[]>;
+  listUsersCreatedBetween(from: Date, to: Date): Promise<Array<{ createdAt: Date }>>;
+  listAcceptedGameSessionsBetween(from: Date, to: Date): Promise<Array<{ createdAt: Date }>>;
   hasCheckInToday(userId: string, now: Date): Promise<boolean>;
   countVisitsBetween(from: Date, to: Date): Promise<number>;
   countUniqueGuestsWithVisitBetween(from: Date, to: Date): Promise<number>;
@@ -169,6 +177,19 @@ export interface Store {
     active: boolean;
   }): Promise<VenueTableRecord>;
   deleteVenueTable(id: string): Promise<void>;
+  upsertFloorElement(input: {
+    id?: string;
+    floorPlanId: string;
+    kind: FloorElementKind;
+    label: string;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    sort: number;
+  }): Promise<FloorElementRecord>;
+  deleteFloorElement(id: string): Promise<void>;
 
   listStaffMembers(): Promise<StaffMemberRecord[]>;
   listStaffWeeklySchedule(userId: string): Promise<StaffWeeklyScheduleRecord[]>;
@@ -244,8 +265,23 @@ export interface Store {
   getPage(slug: "contacts" | "directions" | "game_rules"): Promise<ContentPageRecord | null>;
   upsertPage(page: ContentPageRecord): Promise<ContentPageRecord>;
 
-  createPromo(input: { body: string; photos: string[]; showInFeed: boolean }): Promise<PromoRecord>;
+  createPromo(input: {
+    body: string;
+    photos: string[];
+    showInFeed: boolean;
+    broadcastSegment?: BroadcastSegmentId | null;
+    broadcastRecipients?: number | null;
+    broadcastSent?: number | null;
+    broadcastFailed?: number | null;
+  }): Promise<PromoRecord>;
+  updatePromo(
+    id: string,
+    patch: Partial<
+      Pick<PromoRecord, "broadcastSegment" | "broadcastRecipients" | "broadcastSent" | "broadcastFailed">
+    >,
+  ): Promise<PromoRecord>;
   listFeedPromos(): Promise<PromoRecord[]>;
+  listPromos(limit: number): Promise<PromoRecord[]>;
 
   createPromoRule(input: {
     promoId: string | null;
@@ -305,9 +341,14 @@ export interface Store {
     quizId: string;
     sort: number;
     text: string;
+    imageUrl?: string | null;
     options: string[];
     correctIndex: number;
   }): Promise<QuizQuestionRecord>;
+  updateQuizQuestion(
+    id: string,
+    patch: Partial<Pick<QuizQuestionRecord, "text" | "imageUrl" | "options" | "correctIndex" | "sort">>,
+  ): Promise<QuizQuestionRecord>;
   deleteQuizQuestion(id: string): Promise<void>;
   getLiveQuizSession(now: Date): Promise<QuizSessionRecord | null>;
   findQuizSessionById(id: string): Promise<QuizSessionRecord | null>;

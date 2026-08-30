@@ -98,11 +98,13 @@ export type StaffActionKind =
   | "manual_adjust"
   | "visit_open"
   | "visit_extend"
+  | "visit_close"
   | "coupon_redeem"
   | "guest_search"
   | "booking_table_assign"
   | "booking_table_move"
-  | "booking_table_swap";
+  | "booking_table_swap"
+  | "guest_message";
 
 export type StaffActionLogRecord = {
   id: string;
@@ -111,6 +113,10 @@ export type StaffActionLogRecord = {
   action: StaffActionKind;
   payload: Record<string, unknown>;
   createdAt: Date;
+  guestFirstName?: string | null;
+  guestLastName?: string | null;
+  guestTelegramId?: string | null;
+  guestTelegramUsername?: string | null;
 };
 
 export type StaffWeeklyScheduleRecord = {
@@ -189,8 +195,24 @@ export type VenueTableRecord = {
   active: boolean;
 };
 
+export type FloorElementKind = "bar" | "obstacle" | "wall" | "decor";
+
+export type FloorElementRecord = {
+  id: string;
+  floorPlanId: string;
+  kind: FloorElementKind;
+  label: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  sort: number;
+};
+
 export type FloorPlanView = FloorPlanRecord & {
   tables: VenueTableRecord[];
+  elements: FloorElementRecord[];
 };
 
 export type AvailableBookingSlot = {
@@ -207,6 +229,7 @@ export type AvailableTableSlot = VenueTableRecord & {
 export type UserRecord = {
   id: string;
   telegramId: bigint;
+  telegramUsername: string | null;
   role: Role;
   firstName: string | null;
   lastName: string | null;
@@ -343,8 +366,30 @@ export type PromoRecord = {
   body: string;
   photos: string[];
   showInFeed: boolean;
+  broadcastSegment: BroadcastSegmentId | null;
+  broadcastRecipients: number | null;
+  broadcastSent: number | null;
+  broadcastFailed: number | null;
   createdAt: Date;
 };
+
+export type GuestListRow = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  telegramUsername: string | null;
+  phone: string | null;
+  balance: number;
+  totalVisits: number;
+  lastVisitAt: Date | null;
+  visitActive: boolean;
+  broadcastOptOut: boolean;
+  createdAt: Date;
+};
+
+export type GuestListFilter = "in_venue" | "inactive_30d" | "opt_out" | "has_coupon";
+
+export type GuestListSort = "lastVisitAt" | "createdAt" | "balance" | "totalVisits";
 
 export type GameSessionLogRecord = {
   id: string;
@@ -373,6 +418,7 @@ export type QuizQuestionRecord = {
   quizId: string;
   sort: number;
   text: string;
+  imageUrl: string | null;
   options: string[];
   correctIndex: number;
 };
@@ -394,6 +440,12 @@ export type QuizAnswerRecord = {
   elapsedMs: number;
   points: number;
   createdAt: Date;
+};
+
+export type ContactEntry = {
+  label: string;
+  value: string;
+  description?: string;
 };
 
 export type ContentPageRecord = {

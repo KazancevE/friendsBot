@@ -2,11 +2,11 @@ import { Hono } from "hono";
 import { redeemCoupon } from "../domain/coupons.ts";
 import { DomainError } from "../domain/errors.ts";
 import { buildStaffGuestCard } from "../domain/guest-card.ts";
-import { searchGuestsByName } from "../domain/guest-search.ts";
+import { searchGuests } from "../domain/guest-search.ts";
 import { applyCheck, manualAdjust, redeemBonuses } from "../domain/ledger.ts";
 import { normalizePhone } from "../domain/phone.ts";
 import type { Role, UserRecord } from "../domain/types.ts";
-import { extendActiveVisit, staffOpenVisit } from "../domain/visits.ts";
+import { extendActiveVisit, closeActiveVisit, staffOpenVisit } from "../domain/visits.ts";
 import type { Store } from "../store/types.ts";
 import { resolveActor } from "./auth.ts";
 
@@ -99,7 +99,7 @@ const findGuest = async (store: Store, query: GuestQuery, now: Date) => {
       return guest;
     }
     case "name": {
-      const hits = await searchGuestsByName(store, { query: query.name, now });
+      const hits = await searchGuests(store, { query: query.name, now });
       if (hits.length !== 1) {
         throw new DomainError("ambiguous", "Найдено несколько гостей");
       }
@@ -171,7 +171,7 @@ export const createCashierRoutes = ({ store, botToken }: CreateCashierRoutesPara
     const now = new Date();
     const query = parseGuestQuery(staff.loaded.body);
     if (query.kind === "name") {
-      const hits = await searchGuestsByName(store, { query: query.name, now });
+      const hits = await searchGuests(store, { query: query.name, now });
       if (hits.length === 0) {
         throw new DomainError("not_found", "Гость не найден. Попробуйте телефон или QR");
       }
@@ -275,6 +275,22 @@ export const createCashierRoutes = ({ store, botToken }: CreateCashierRoutesPara
     });
     const card = await guestCard(store, guest, now);
     return c.json({ endsAt: visit.endsAt.toISOString(), visitActive: true, card });
+  });
+
+  app.post("/api/cashier/close-visit", async (c) => {
+    const staff = await staffFromRequest(c);
+    if (!staff.ok) {
+      return c.json({ code: "forbidden", message: "Недостаточно прав" }, 403);
+    }
+    const now = new Date();
+    const guest = await findGuest(store, parseGuestQuery(staff.loaded.body), now);
+    await closeActiveVisit(store, {
+      guestId: guest.id,
+      actorId: staff.loaded.user.id,
+      now,
+    });
+    const card = await guestCard(store, guest, now);
+    return c.json({ visitActive: false, card });
   });
 
   app.post("/api/cashier/staff-note", async (c) => {

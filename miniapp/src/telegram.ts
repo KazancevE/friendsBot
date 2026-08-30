@@ -39,7 +39,7 @@ type TelegramNamespace = {
 };
 
 const APP_BG = "#1a1210";
-const WEBAPP_BUILD = "20260830";
+const WEBAPP_BUILD = "20260831";
 
 const applySafeAreaInsets = (webApp: TelegramWebApp) => {
   const inset = webApp.contentSafeAreaInset ?? webApp.safeAreaInset;

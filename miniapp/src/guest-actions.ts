@@ -1,6 +1,7 @@
 import type { GuestCard } from "./api.ts";
 import {
   applyCheck,
+  closeVisit,
   extendVisit,
   guestQueryBody,
   manualAdjust,
@@ -80,6 +81,7 @@ export const guestActionsMarkup = () => {
       </form>
       <button type="button" data-visit>Открыть визит</button>
       <button type="button" data-extend hidden>Продлить визит</button>
+      <button type="button" data-close-visit hidden>Закончить визит</button>
     </section>
     <p data-guest-status class="status"></p>
   `;
@@ -109,6 +111,14 @@ const renderGuestCard = (root: HTMLElement, card: GuestCard) => {
   const extendButton = root.querySelector("[data-extend]");
   if (extendButton instanceof HTMLButtonElement) {
     extendButton.hidden = !card.visitActive;
+  }
+  const closeButton = root.querySelector("[data-close-visit]");
+  if (closeButton instanceof HTMLButtonElement) {
+    closeButton.hidden = !card.visitActive;
+  }
+  const visitButton = root.querySelector("[data-visit]");
+  if (visitButton instanceof HTMLButtonElement) {
+    visitButton.hidden = card.visitActive === true;
   }
 };
 
@@ -280,6 +290,24 @@ export const bindGuestActions = ({
           return;
         }
         updateGuest(result.data.card, "Визит продлён");
+      })();
+    });
+  }
+
+  const closeVisitButton = root.querySelector("[data-close-visit]");
+  if (closeVisitButton instanceof HTMLButtonElement) {
+    closeVisitButton.addEventListener("click", () => {
+      const guest = requireGuest();
+      if (guest === undefined) {
+        return;
+      }
+      void (async () => {
+        const result = await closeVisit(queryFromCard(guest));
+        if (result.kind === "error") {
+          setStatus(result.message, true);
+          return;
+        }
+        updateGuest(result.data.card, "Визит завершён");
       })();
     });
   }
