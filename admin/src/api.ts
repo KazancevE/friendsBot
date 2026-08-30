@@ -739,8 +739,11 @@ const isBookings = (value: unknown): value is { rows: BookingRow[] } => {
   return typeof value === "object" && value !== null && Array.isArray((value as { rows: unknown }).rows);
 };
 
-export const fetchBookings = (days = 14) => {
+export const fetchBookings = (days = 14, status?: string) => {
   const params = periodParams(days);
+  if (status !== undefined && status.length > 0) {
+    params.set("status", status);
+  }
   return getJson(`/api/admin/bookings?${params.toString()}`, isBookings);
 };
 
@@ -966,6 +969,15 @@ export const patchVenueTable = (
     return { kind: "ok" as const, data: null };
   });
 
+const isFloorElement = (value: unknown): value is FloorElementView => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof (value as { id: unknown }).id === "string"
+  );
+};
+
 export const saveFloorElement = (input: {
   id?: string;
   floorPlanId: string;
@@ -986,7 +998,15 @@ export const saveFloorElement = (input: {
     if (!res.ok) {
       return { kind: "error" as const, message: "Ошибка" };
     }
-    return { kind: "ok" as const, data: null };
+    const parsed: unknown = await res.json();
+    if (typeof parsed !== "object" || parsed === null || !("element" in parsed)) {
+      return { kind: "error" as const, message: "Некорректный ответ" };
+    }
+    const element = (parsed as { element: unknown }).element;
+    if (!isFloorElement(element)) {
+      return { kind: "error" as const, message: "Некорректный ответ" };
+    }
+    return { kind: "ok" as const, data: element };
   });
 
 export const deleteFloorElement = (id: string) =>
