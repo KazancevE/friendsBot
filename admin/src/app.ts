@@ -1592,7 +1592,9 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
         <button type="button" class="action" data-create-floor-plan>Создать зал</button>
       </section>`;
     floorHost.querySelector("[data-create-floor-plan]")?.addEventListener("click", () => {
-      void saveFloorPlan({ name: "Зал" }).then(() => void preserveScroll(() => renderBookings(host)));
+      void saveFloorPlan({ name: "Зал", width: 200, height: 150 }).then(() =>
+        void preserveScroll(() => renderBookings(host)),
+      );
     });
     return;
   }
@@ -1600,6 +1602,11 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
   floorHost.innerHTML = `
     <section class="panel" style="margin-top:1rem">
       <h2>План зала · ${escapeHtml(floorPlan.name)}</h2>
+      <div class="floor-plan-size-row">
+        <label>Ширина зала<input type="number" data-floor-width value="${floorPlan.width}" min="10" max="1000" step="1" /></label>
+        <label>Высота зала<input type="number" data-floor-height value="${floorPlan.height}" min="10" max="1000" step="1" /></label>
+        <button type="button" class="action" data-apply-floor-size>Применить размер</button>
+      </div>
       <div data-floor-editor></div>
       <form data-new-table class="form-grid" style="margin:1rem 0">
         <label>Название<input name="label" required /></label>
@@ -1615,8 +1622,11 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
       </div>
     </section>`;
   const editorHost = floorHost.querySelector("[data-floor-editor]");
-  if (editorHost instanceof HTMLElement) {
-    mountFloorEditor(editorHost, floorPlan, {
+  const remountFloorEditor = (plan: FloorPlanView) => {
+    if (!(editorHost instanceof HTMLElement)) {
+      return;
+    }
+    mountFloorEditor(editorHost, plan, {
       onStructureChange: () => {
         const list = floorHost.querySelector("[data-tables-list]");
         if (list instanceof HTMLElement && bookingsFloorPlanCache !== null) {
@@ -1624,7 +1634,26 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
         }
       },
     });
-  }
+  };
+  remountFloorEditor(floorPlan);
+  floorHost.querySelector("[data-apply-floor-size]")?.addEventListener("click", () => {
+    const widthInput = floorHost.querySelector("[data-floor-width]");
+    const heightInput = floorHost.querySelector("[data-floor-height]");
+    if (!(widthInput instanceof HTMLInputElement) || !(heightInput instanceof HTMLInputElement)) {
+      return;
+    }
+    const width = Number(widthInput.value);
+    const height = Number(heightInput.value);
+    void saveFloorPlan({ id: floorPlan.id, name: floorPlan.name, width, height }).then((result) => {
+      if (result.kind !== "ok") {
+        return;
+      }
+      floorPlan.width = result.data.width;
+      floorPlan.height = result.data.height;
+      bookingsFloorPlanCache = { ...floorPlan, tables: floorPlan.tables, elements: floorPlan.elements };
+      remountFloorEditor(bookingsFloorPlanCache);
+    });
+  });
   floorHost.querySelector("[data-add-table]")?.addEventListener("click", () => {
     const form = floorHost.querySelector("[data-new-table]");
     if (!(form instanceof HTMLFormElement)) {
@@ -1653,16 +1682,7 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
         if (list instanceof HTMLElement) {
           list.innerHTML = renderVenueTablesList(refreshed.data.floorPlan);
         }
-        if (editorHost instanceof HTMLElement) {
-          mountFloorEditor(editorHost, refreshed.data.floorPlan, {
-            onStructureChange: () => {
-              const list = floorHost.querySelector("[data-tables-list]");
-              if (list instanceof HTMLElement && bookingsFloorPlanCache !== null) {
-                list.innerHTML = renderVenueTablesList(bookingsFloorPlanCache);
-              }
-            },
-          });
-        }
+        remountFloorEditor(refreshed.data.floorPlan);
         form.reset();
         void refreshBookingsList(host);
       }
