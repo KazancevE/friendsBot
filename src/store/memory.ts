@@ -34,6 +34,7 @@ import type {
   StaffActionLogRecord,
   StaffMemberRecord,
   StaffWeeklyScheduleRecord,
+  StaffShiftRecord,
   UserRecord,
   VenueCodeRecord,
   VenueTableRecord,
@@ -69,6 +70,7 @@ export class MemoryStore implements Store {
   staffActionLogs: StaffActionLogRecord[] = [];
   bookings = new Map<string, BookingRequestRecord>();
   staffWeeklySchedules = new Map<string, StaffWeeklyScheduleRecord>();
+  staffShifts = new Map<string, StaffShiftRecord>();
   floorPlans = new Map<string, FloorPlanRecord>();
   venueTables = new Map<string, VenueTableRecord>();
   floorElements = new Map<string, FloorElementRecord>();
@@ -284,6 +286,62 @@ export class MemoryStore implements Store {
       this.staffWeeklySchedules.set(row.id, row);
     }
     return this.listStaffWeeklySchedule(userId);
+  }
+  async listStaffShiftsBetween(from: Date, to: Date) {
+    return [...this.staffShifts.values()]
+      .filter((row) => row.date >= from && row.date <= to)
+      .sort((a, b) => a.date.getTime() - b.date.getTime() || a.startHour - b.startHour)
+      .map((row) => ({ ...row }));
+  }
+  async listStaffShiftsForDate(date: Date) {
+    const key = date.getTime();
+    return [...this.staffShifts.values()]
+      .filter((row) => row.date.getTime() === key)
+      .sort((a, b) => a.startHour - b.startHour)
+      .map((row) => ({ ...row }));
+  }
+  async upsertStaffShift(input: {
+    userId: string;
+    date: Date;
+    startHour: number;
+    endHour: number;
+  }) {
+    const existing = [...this.staffShifts.values()].find(
+      (row) => row.userId === input.userId && row.date.getTime() === input.date.getTime(),
+    );
+    const row: StaffShiftRecord = {
+      id: existing?.id ?? crypto.randomUUID(),
+      userId: input.userId,
+      date: input.date,
+      startHour: input.startHour,
+      endHour: input.endHour,
+    };
+    this.staffShifts.set(row.id, row);
+    return { ...row };
+  }
+  async deleteStaffShift(id: string) {
+    this.staffShifts.delete(id);
+  }
+  async replaceStaffShiftsForDate(
+    date: Date,
+    shifts: ReadonlyArray<{ userId: string; startHour: number; endHour: number }>,
+  ) {
+    for (const [id, row] of this.staffShifts) {
+      if (row.date.getTime() === date.getTime()) {
+        this.staffShifts.delete(id);
+      }
+    }
+    for (const shift of shifts) {
+      const row: StaffShiftRecord = {
+        id: crypto.randomUUID(),
+        userId: shift.userId,
+        date,
+        startHour: shift.startHour,
+        endHour: shift.endHour,
+      };
+      this.staffShifts.set(row.id, row);
+    }
+    return this.listStaffShiftsForDate(date);
   }
   async countRegistrationsBetween(from: Date, to: Date) {
     return [...this.users.values()].filter(

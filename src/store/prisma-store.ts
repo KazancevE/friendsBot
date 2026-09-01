@@ -102,6 +102,7 @@ const SETTING_KEYS = [
   "bookingSlotMinutes",
   "bookingClosedWeekdays",
   "bookingDurationMinutes",
+  "venueTimezone",
 ] as const;
 
 const parseWeekdayList = (raw: string | undefined): number[] => {
@@ -207,6 +208,7 @@ export class PrismaStore implements Store {
       bookingDurationMinutes: Number(
         map.get("bookingDurationMinutes") ?? DEFAULT_SETTINGS.bookingDurationMinutes,
       ),
+      venueTimezone: map.get("venueTimezone") ?? DEFAULT_SETTINGS.venueTimezone,
     };
   }
 
@@ -241,6 +243,7 @@ export class PrismaStore implements Store {
       bookingSlotMinutes: String(next.bookingSlotMinutes),
       bookingClosedWeekdays: JSON.stringify(next.bookingClosedWeekdays),
       bookingDurationMinutes: String(next.bookingDurationMinutes),
+      venueTimezone: next.venueTimezone,
     };
     await Promise.all(
       SETTING_KEYS.map((key) =>
@@ -451,6 +454,67 @@ export class PrismaStore implements Store {
       })),
     });
     return this.listStaffWeeklySchedule(userId);
+  }
+
+  async listStaffShiftsBetween(from: Date, to: Date) {
+    const rows = await this.prisma.staffShift.findMany({
+      where: { date: { gte: from, lte: to } },
+      orderBy: [{ date: "asc" }, { startHour: "asc" }],
+    });
+    return rows.map(toStaffShift);
+  }
+
+  async listStaffShiftsForDate(date: Date) {
+    const rows = await this.prisma.staffShift.findMany({
+      where: { date },
+      orderBy: { startHour: "asc" },
+    });
+    return rows.map(toStaffShift);
+  }
+
+  async upsertStaffShift(input: {
+    userId: string;
+    date: Date;
+    startHour: number;
+    endHour: number;
+  }) {
+    const row = await this.prisma.staffShift.upsert({
+      where: { userId_date: { userId: input.userId, date: input.date } },
+      create: {
+        userId: input.userId,
+        date: input.date,
+        startHour: input.startHour,
+        endHour: input.endHour,
+      },
+      update: {
+        startHour: input.startHour,
+        endHour: input.endHour,
+      },
+    });
+    return toStaffShift(row);
+  }
+
+  async deleteStaffShift(id: string) {
+    await this.prisma.staffShift.delete({ where: { id } });
+  }
+
+  async replaceStaffShiftsForDate(
+    date: Date,
+    shifts: ReadonlyArray<{ userId: string; startHour: number; endHour: number }>,
+  ) {
+    await this.prisma.staffShift.deleteMany({ where: { date } });
+    if (shifts.length === 0) {
+      return [];
+    }
+    await this.prisma.staffShift.createMany({
+      data: shifts.map((shift) => ({
+        userId: shift.userId,
+        date,
+        startHour: shift.startHour,
+        endHour: shift.endHour,
+      })),
+    });
+    return this.listStaffShiftsForDate(date);
   }
 
   async countRegistrationsBetween(from: Date, to: Date): Promise<number> {
@@ -1945,6 +2009,16 @@ function toStaffWeeklySchedule(row: import("@prisma/client").StaffWeeklySchedule
     id: row.id,
     userId: row.userId,
     weekday: row.weekday,
+    startHour: row.startHour,
+    endHour: row.endHour,
+  };
+}
+
+function toStaffShift(row: import("@prisma/client").StaffShift) {
+  return {
+    id: row.id,
+    userId: row.userId,
+    date: row.date,
     startHour: row.startHour,
     endHour: row.endHour,
   };

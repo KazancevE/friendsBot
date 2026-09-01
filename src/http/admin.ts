@@ -38,10 +38,18 @@ import {
 } from "../domain/theme.ts";
 import { handleBookingRequest, formatBookingSlot, assignTableToBooking, moveBookingTable, swapBookingTables, markBookingSeated } from "../domain/booking.ts";
 import { getActiveFloorPlanView, saveFloorPlan, saveVenueTable, removeVenueTable, saveFloorElement, removeFloorElement } from "../domain/floor-plan.ts";
-import { moscowDayRange } from "../domain/booking-slots.ts";
+import { venueDayRangeFor } from "../domain/booking-slots.ts";
 import { savePage } from "../domain/content.ts";
 import { ensureActiveVenueCode, venueQrPayload } from "../domain/venue-code.ts";
 import { replaceStaffWeeklySchedule } from "../domain/staff-schedule.ts";
+import {
+  fillStaffShiftsFromTemplate,
+  listStaffShiftsView,
+  removeStaffShift,
+  replaceStaffShiftsForDay,
+  upsertStaffShift,
+} from "../domain/staff-shifts.ts";
+import { parseVenueDay, toStoreCalendarDate } from "../domain/venue-time.ts";
 import { extendActiveVisit } from "../domain/visits.ts";
 import { DomainError } from "../domain/errors.ts";
 import type { BroadcastSegmentId, GuestListFilter, GuestListSort, Role, Settings } from "../domain/types.ts";
@@ -136,6 +144,7 @@ const settingsToJson = (settings: Settings) => ({
   bookingSlotMinutes: settings.bookingSlotMinutes,
   bookingClosedWeekdays: settings.bookingClosedWeekdays,
   bookingDurationMinutes: settings.bookingDurationMinutes,
+  venueTimezone: settings.venueTimezone,
 });
 
 const isBroadcastSegment = (value: string): value is BroadcastSegmentId => {
@@ -646,7 +655,8 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
   app.get("/api/admin/live", async (c) => {
     await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
     const now = new Date();
-    const day = moscowDayRange(now);
+    const settings = await store.getSettings();
+    const day = venueDayRangeFor(now, settings);
     const [visits, checkInsToday] = await Promise.all([
       store.listActiveVisits(now),
       store.countCheckInsBetween(day.from, day.to),
@@ -1011,11 +1021,12 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
     if (botApi !== undefined) {
       const guest = await store.findUserById(booking.userId);
       if (guest !== null) {
+        const settings = await store.getSettings();
         const label = statusRaw === "confirmed" ? "подтверждена" : "отменена";
         try {
           await botApi.sendMessage(
             guest.telegramId.toString(),
-            `Ваша заявка на ${formatBookingSlot(booking.requestedFor)} ${label}`,
+            `Ваша заявка на ${formatBookingSlot(booking.requestedFor, settings)} ${label}`,
           );
         } catch {
           // ignore
@@ -1078,6 +1089,120 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
         lastName: user.lastName,
       },
     });
+  });
+
+  app.get("/api/admin/staff/shifts", async (c) => {
+    await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const settings = await store.getSettings();
+    const fromRaw = c.req.query("from");
+    const toRaw = c.req.query("to");
+    const fromParsed = fromRaw ? parseVenueDay(fromRaw, settings) : null;
+    const toParsed = toRaw ? parseVenueDay(toRaw, settings) : null;
+    if (fromParsed === null || toParsed === null) {
+      throw new DomainError("bad_request", "Нужны from и to (YYYY-MM-DD)");
+    }
+    const shifts = await listStaffShiftsView(store, {
+      from: toStoreCalendarDate(fromParsed.toJSDate(), settings),
+      to: toStoreCalendarDate(toParsed.toJSDate(), settings),
+      settings,
+    });
+    return c.json({ shifts });
+  });
+
+  app.put("/api/admin/staff/shifts/day", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const dateRaw = "date" in body && typeof body.date === "string" ? body.date : null;
+    if (dateRaw === null) {
+      throw new DomainError("bad_request", "Нужна date");
+    }
+    const settings = await store.getSettings();
+    const parsed = parseVenueDay(dateRaw, settings);
+    if (parsed === null) {
+      throw new DomainError("bad_request", "Некорректная дата");
+    }
+    const shifts =
+      "shifts" in body && Array.isArray(body.shifts)
+        ? body.shifts.map((slot) => {
+            if (typeof slot !== "object" || slot === null) {
+              throw new DomainError("bad_request", "Некорректные смены");
+            }
+            return {
+              userId: String((slot as { userId?: unknown }).userId),
+              startHour: Number((slot as { startHour?: unknown }).startHour),
+              endHour: Number((slot as { endHour?: unknown }).endHour),
+            };
+          })
+        : [];
+    const saved = await replaceStaffShiftsForDay(store, {
+      actorId: admin.id,
+      date: parsed.toJSDate(),
+      shifts,
+    });
+    return c.json({
+      shifts: saved.map((shift) => ({
+        id: shift.id,
+        userId: shift.userId,
+        startHour: shift.startHour,
+        endHour: shift.endHour,
+      })),
+    });
+  });
+
+  app.post("/api/admin/staff/shifts", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const dateRaw = "date" in body && typeof body.date === "string" ? body.date : null;
+    const userId = "userId" in body && typeof body.userId === "string" ? body.userId : null;
+    if (dateRaw === null || userId === null) {
+      throw new DomainError("bad_request", "Нужны date и userId");
+    }
+    const settings = await store.getSettings();
+    const parsed = parseVenueDay(dateRaw, settings);
+    if (parsed === null) {
+      throw new DomainError("bad_request", "Некорректная дата");
+    }
+    const shift = await upsertStaffShift(store, {
+      actorId: admin.id,
+      userId,
+      date: parsed.toJSDate(),
+      startHour: Number(body.startHour ?? 18),
+      endHour: Number(body.endHour ?? 26),
+    });
+    return c.json({
+      shift: {
+        id: shift.id,
+        userId: shift.userId,
+        startHour: shift.startHour,
+        endHour: shift.endHour,
+      },
+    });
+  });
+
+  app.delete("/api/admin/staff/shifts/:id", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    await removeStaffShift(store, { actorId: admin.id, shiftId: c.req.param("id") });
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/admin/staff/shifts/fill-template", async (c) => {
+    const admin = await requireAdmin(store, readInitData(c.req.header("X-Telegram-Init-Data")), botToken);
+    const body = await readJsonBody(c);
+    const weekStartRaw = "weekStart" in body && typeof body.weekStart === "string" ? body.weekStart : null;
+    if (weekStartRaw === null) {
+      throw new DomainError("bad_request", "Нужен weekStart");
+    }
+    const settings = await store.getSettings();
+    const parsed = parseVenueDay(weekStartRaw, settings);
+    if (parsed === null) {
+      throw new DomainError("bad_request", "Некорректная дата");
+    }
+    await fillStaffShiftsFromTemplate(store, {
+      actorId: admin.id,
+      weekStart: parsed.toJSDate(),
+      settings,
+    });
+    return c.json({ ok: true });
   });
 
   app.put("/api/admin/staff/:id/schedule", async (c) => {

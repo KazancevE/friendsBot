@@ -1,4 +1,5 @@
 import { showGameOver } from "./game-over.ts";
+import { bindFinishGameButton, gameFinishButtonHtml } from "./game-finish.ts";
 import { fetchGameSkin, tileImageUrl, type GameSkin } from "./theme-client.ts";
 import "./game2048.css";
 
@@ -237,6 +238,7 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
       <div class="game2048-stat"><span class="muted">Лучшая плитка</span><div data-best>—</div></div>
     </div>
     <div class="game2048-board" data-board></div>
+    ${gameFinishButtonHtml()}
   `;
 
   scoreElement = root.querySelector("[data-score]") ?? undefined;
@@ -246,6 +248,11 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
     boardElement.style.backgroundSize = "cover";
   }
   root.querySelector("[data-back]")?.addEventListener("click", onBack);
+  bindFinishGameButton({
+    root,
+    onFinish: () => finishGame(false),
+    canFinish: () => !finished,
+  });
 
   syncBoard();
 

@@ -15,6 +15,7 @@
 body {
   margin: 0;
   min-height: var(--tg-viewport-height, 100dvh);
+  overflow-x: clip;
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", system-ui, sans-serif;
@@ -36,36 +37,6 @@ header {
   margin-bottom: 1rem;
 }
 
-nav {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  overflow-x: auto;
-  padding-bottom: 0.25rem;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: linear-gradient(var(--bg) 70%, transparent);
-  -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
-}
-
-nav button {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 999px;
-  padding: 0.4rem 0.85rem;
-  cursor: pointer;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-
-nav button.active {
-  border-color: var(--accent);
-  color: var(--accent);
-}
 
 .panel {
   background: var(--panel);
@@ -563,6 +534,91 @@ td {
   color: var(--accent);
 }
 
+.staff-calendar-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.staff-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.staff-day-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 5.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.staff-day-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.staff-day-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.staff-chip {
+  display: block;
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.staff-chip--a {
+  background: rgba(212, 120, 74, 0.18);
+}
+
+.staff-chip--b {
+  background: rgba(96, 165, 250, 0.18);
+}
+
+.staff-chip--c {
+  background: rgba(74, 222, 128, 0.18);
+}
+
+.staff-chip--d {
+  background: rgba(244, 114, 182, 0.18);
+}
+
+.staff-chip--e {
+  background: rgba(250, 204, 21, 0.18);
+}
+
+.staff-day-members {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.staff-member-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.staff-member-row.active {
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .contact-row {
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;
@@ -572,6 +628,16 @@ td {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.75rem;
+  min-width: 0;
+}
+
+.admin-body {
+  min-width: 0;
+  overflow-x: clip;
+}
+
+main[data-view] {
+  min-width: 0;
 }
 
 .admin-sidebar {
@@ -585,7 +651,12 @@ td {
   margin-bottom: 1rem;
   overflow-x: auto;
   padding-bottom: 0.25rem;
+  position: static;
+  top: auto;
+  z-index: auto;
+  background: none;
   -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
 .admin-subnav button {
@@ -610,8 +681,11 @@ td {
   grid-template-columns: repeat(4, 1fr);
   gap: 0.35rem;
   position: sticky;
+  top: auto;
   bottom: 0;
   margin-top: 1rem;
+  margin-bottom: 0;
+  overflow-x: visible;
   padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(transparent, var(--bg) 25%);
 }
@@ -668,6 +742,11 @@ td {
 
   .admin-bottom-nav {
     display: none;
+  }
+
+  .admin-subnav {
+    overflow-x: visible;
+    flex-wrap: wrap;
   }
 }
 

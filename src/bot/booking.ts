@@ -9,7 +9,7 @@ import {
   handleBookingRequest,
   listAvailableBookingSlots,
   listAvailableTablesForSlot,
-  listBookingsForMoscowDay,
+  listBookingsForVenueDay,
   moveBookingTable,
 } from "../domain/booking.ts";
 import { DomainError } from "../domain/errors.ts";
@@ -17,7 +17,7 @@ import { listOnDutyStaffTelegramIds } from "../domain/staff-schedule.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
 import { BTN_BOOK, BTN_BOOKINGS_TODAY } from "./keyboards.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { venueTimezone } from "../domain/venue-time.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
 
@@ -29,13 +29,16 @@ export async function guestBookingConversation(conversation: BotConversation, ct
     return;
   }
 
-  await ctx.reply("Дата брони (ДД.ММ.ГГГГ)");
+  const settings = await conversation.external((outer) => outer.store.getSettings());
+  const zone = venueTimezone(settings);
+
+  await ctx.reply(`Дата брони (ДД.ММ.ГГГГ)\nВремя заведения: ${zone}`);
   const dateRaw = (
     await conversation.waitFor(":text", {
       otherwise: (c) => c.reply("Отправьте дату"),
     })
   ).msg.text.trim();
-  const parsedDate = DateTime.fromFormat(dateRaw, "dd.MM.yyyy", { zone: MOSCOW });
+  const parsedDate = DateTime.fromFormat(dateRaw, "dd.MM.yyyy", { zone });
   if (!parsedDate.isValid) {
     await ctx.reply("Некорректная дата");
     return;
@@ -134,18 +137,21 @@ export async function guestBookingConversation(conversation: BotConversation, ct
       ? tables.find((table) => table.id === result.booking.tableId)?.label
       : null;
   const tablePart = tableLabel !== undefined && tableLabel !== null ? `, стол ${tableLabel}` : "";
-  await ctx.reply(`Заявка отправлена на ${formatBookingSlot(result.booking.requestedFor)}${tablePart}`);
+  await ctx.reply(
+    `Заявка отправлена на ${formatBookingSlot(result.booking.requestedFor, settings)}${tablePart}`,
+  );
 
   await conversation.external(async (outer) => {
     const guest = outer.dbUser;
     if (guest === null) {
       return;
     }
+    const bookingSettings = await outer.store.getSettings();
     const notifyIds = await listOnDutyStaffTelegramIds(outer.store, new Date());
     const text = [
       "📅 Новая заявка на бронь",
       `${guest.firstName ?? ""} ${guest.lastName ?? ""}`.trim(),
-      formatBookingSlot(result.booking.requestedFor),
+      formatBookingSlot(result.booking.requestedFor, bookingSettings),
       `${result.booking.partySize} чел.`,
       tableLabel !== undefined && tableLabel !== null ? `Стол: ${tableLabel}` : "",
       result.booking.comment ?? "",
@@ -173,7 +179,8 @@ export function wireBookingHandlers(bot: Bot<BotContext>) {
       await ctx.reply("Недостаточно прав");
       return;
     }
-    const rows = await listBookingsForMoscowDay(ctx.store, new Date());
+    const rows = await listBookingsForVenueDay(ctx.store, new Date());
+    const settings = await ctx.store.getSettings();
     const active = rows.filter(
       (row) => row.status === "pending" || row.status === "confirmed" || row.status === "seated",
     );
@@ -188,7 +195,7 @@ export function wireBookingHandlers(bot: Bot<BotContext>) {
           ? `${guest.firstName ?? ""} ${guest.lastName ?? ""}`.trim() || "Гость"
           : "Гость";
         const tablePart = row.tableLabel ? ` · ${row.tableLabel}` : "";
-        return `${formatBookingSlot(row.requestedFor)} · ${name} · ${row.partySize} чел.${tablePart} · ${row.status}`;
+        return `${formatBookingSlot(row.requestedFor, settings)} · ${name} · ${row.partySize} чел.${tablePart} · ${row.status}`;
       }),
     );
     await ctx.reply(["Брони на сегодня:", ...lines].join("\n"));
@@ -223,10 +230,11 @@ export function wireBookingHandlers(bot: Bot<BotContext>) {
       });
       const guest = await ctx.store.findUserById(booking.userId);
       if (guest !== null) {
+        const settings = await ctx.store.getSettings();
         const label = action === "confirm" ? "подтверждена" : "отменена";
         await ctx.api.sendMessage(
           guest.telegramId.toString(),
-          `Ваша заявка на ${formatBookingSlot(booking.requestedFor)} ${label}`,
+          `Ваша заявка на ${formatBookingSlot(booking.requestedFor, settings)} ${label}`,
         );
       }
       await ctx.reply(`Заявка ${action === "confirm" ? "подтверждена" : "отменена"}`);

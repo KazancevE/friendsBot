@@ -1,6 +1,7 @@
 import { DomainError } from "./errors.ts";
 import type { PrizePlace, Settings } from "./types.ts";
 import type { Store } from "../store/types.ts";
+import { assertValidVenueTimezone } from "./venue-time.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
   percent: 10,
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bookingSlotMinutes: 30,
   bookingClosedWeekdays: [],
   bookingDurationMinutes: 120,
+  venueTimezone: "Europe/Moscow",
 };
 
 export function expiresAfterDays(from: Date, days: number): Date {
@@ -115,6 +117,13 @@ export async function patchAdminSettings(store: Store, patch: Partial<Settings>)
     assertNonNegativeInt(patch.bookingDurationMinutes, "Длительность брони");
     if (patch.bookingDurationMinutes < 30 || patch.bookingDurationMinutes > 480) {
       throw new DomainError("bad_request", "Длительность брони от 30 до 480 минут");
+    }
+  }
+  if (patch.venueTimezone !== undefined) {
+    try {
+      assertValidVenueTimezone(patch.venueTimezone);
+    } catch {
+      throw new DomainError("bad_request", "Некорректный часовой пояс (IANA, например Europe/Moscow)");
     }
   }
   if (Object.keys(patch).length === 0) {

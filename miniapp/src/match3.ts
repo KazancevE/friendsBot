@@ -6,6 +6,7 @@ import {
   type Board,
 } from "../../src/domain/match3.ts";
 import { showGameOver } from "./game-over.ts";
+import { bindFinishGameButton, gameFinishButtonHtml } from "./game-finish.ts";
 import { fetchGameSkin } from "./theme-client.ts";
 import { createMatch3Board, type Cell } from "./match3-board.ts";
 import { bindMatch3Gestures, cellsEqual } from "./match3-gestures.ts";
@@ -102,6 +103,9 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
   };
 
   const finishGame = async () => {
+    if (finished) {
+      return;
+    }
     finished = true;
     boardApi.setBusy(true);
     await showGameOver({
@@ -236,6 +240,7 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
         <div class="match3-board" data-grid></div>
       </div>
       <p data-status class="status"></p>
+      ${gameFinishButtonHtml()}
     `;
 
     scoreElement = root.querySelector("[data-score]") ?? undefined;
@@ -249,6 +254,11 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
     }
 
     bindBackButtons(onBack);
+    bindFinishGameButton({
+      root,
+      onFinish: finishGame,
+      canFinish: () => !finished && !busy,
+    });
 
     gridElement.dataset.rows = String(board.length);
     gridElement.dataset.cols = String(board[0]?.length ?? 0);

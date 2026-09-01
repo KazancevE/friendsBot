@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { bookingSlotStarts, isBookingDayClosed, moscowDayRange } from "./booking-slots.ts";
+import { bookingSlotStarts, isBookingDayClosed, venueDayRangeFor } from "./booking-slots.ts";
 import type {
   AvailableBookingSlot,
   AvailableTableSlot,
@@ -8,7 +8,7 @@ import type {
   VenueTableRecord,
 } from "./types.ts";
 import type { Store } from "../store/types.ts";
-import { MOSCOW } from "./week.ts";
+import { venueDateTime } from "./venue-time.ts";
 
 const OCCUPYING_STATUSES = new Set<BookingRequestRecord["status"]>(["confirmed", "seated"]);
 
@@ -134,8 +134,8 @@ export const buildAvailableTablesForSlot = (
     .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, "ru"));
 };
 
-export async function loadDayBookings(store: Store, day: Date) {
-  const { from, to } = moscowDayRange(day);
+export async function loadDayBookings(store: Store, day: Date, settings: Settings) {
+  const { from, to } = venueDayRangeFor(day, settings);
   return store.listBookingsBetween({ from, to });
 }
 
@@ -143,12 +143,12 @@ export async function listAvailableBookingSlots(
   store: Store,
   input: { day: Date; partySize: number; now: Date },
 ) {
-  const [settings, floorPlan, bookings] = await Promise.all([
+  const [settings, floorPlan] = await Promise.all([
     store.getSettings(),
     store.getActiveFloorPlan(),
-    loadDayBookings(store, input.day),
   ]);
-  const day = DateTime.fromJSDate(input.day, { zone: MOSCOW });
+  const bookings = await loadDayBookings(store, input.day, settings);
+  const day = venueDateTime(input.day, settings);
   const tables = floorPlan?.tables ?? [];
   return buildAvailableSlots(settings, day, input.partySize, tables, bookings, input.now);
 }
@@ -157,11 +157,11 @@ export async function listAvailableTablesForSlot(
   store: Store,
   input: { requestedFor: Date; partySize: number; excludeBookingId?: string },
 ) {
-  const [settings, floorPlan, bookings] = await Promise.all([
+  const [settings, floorPlan] = await Promise.all([
     store.getSettings(),
     store.getActiveFloorPlan(),
-    loadDayBookings(store, input.requestedFor),
   ]);
+  const bookings = await loadDayBookings(store, input.requestedFor, settings);
   const tables = floorPlan?.tables ?? [];
   return buildAvailableTablesForSlot(
     settings,
@@ -191,7 +191,7 @@ export async function assertTableAvailable(
   }
   const [settings, bookings] = await Promise.all([
     store.getSettings(),
-    loadDayBookings(store, input.requestedFor),
+    store.getSettings().then((resolved) => loadDayBookings(store, input.requestedFor, resolved)),
   ]);
   const interval = {
     start: input.requestedFor,

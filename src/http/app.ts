@@ -9,6 +9,7 @@ import { createCashierRoutes } from "./cashier.ts";
 import { createCheckInRoutes } from "./check-in.ts";
 import { createGameRoutes } from "./games.ts";
 import { createPublicGameSkinRoutes } from "./game-skin.ts";
+import { createScheduleRoutes } from "./schedule.ts";
 import { createThemeRoutes } from "./theme.ts";
 import { applyWebAppCacheHeaders } from "./web-app-cache.ts";
 
@@ -43,6 +44,7 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
   app.route("/", createPublicGameSkinRoutes({ store }));
   app.route("/", createThemeRoutes({ store }));
   app.route("/", createBookingRoutes({ store, botToken, botApi: bot?.api }));
+  app.route("/", createScheduleRoutes({ store, botToken }));
   app.route("/", createAdminRoutes({ store, botToken, botApi: bot?.api }));
 
   if (bot !== undefined) {

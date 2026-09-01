@@ -1,4 +1,3 @@
-import { DateTime } from "luxon";
 import { Hono } from "hono";
 import type { Api } from "grammy";
 import {
@@ -15,7 +14,7 @@ import {
 } from "../domain/booking.ts";
 import { DomainError } from "../domain/errors.ts";
 import type { Store } from "../store/types.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { parseVenueDay } from "../domain/venue-time.ts";
 import { resolveActor } from "./auth.ts";
 
 type CreateBookingRoutesParameters = {
@@ -59,17 +58,14 @@ const readJsonBody = async (c: { req: { json(): Promise<unknown> } }) => {
   return body as Record<string, unknown>;
 };
 
-const parseMoscowDay = (value: string | undefined) => {
+const parseVenueDayParam = async (store: Store, value: string | undefined) => {
   if (value === undefined || value.length === 0) {
     throw new DomainError("bad_request", "Нужна date");
   }
-  const parsed = DateTime.fromISO(value, { zone: MOSCOW });
-  if (!parsed.isValid) {
-    const alt = DateTime.fromFormat(value, "dd.MM.yyyy", { zone: MOSCOW });
-    if (!alt.isValid) {
-      throw new DomainError("bad_request", "Некорректная дата");
-    }
-    return alt.startOf("day").toJSDate();
+  const settings = await store.getSettings();
+  const parsed = parseVenueDay(value, settings);
+  if (parsed === null) {
+    throw new DomainError("bad_request", "Некорректная дата");
   }
   return parsed.startOf("day").toJSDate();
 };
@@ -152,7 +148,7 @@ export const createBookingRoutes = ({ store, botToken, botApi }: CreateBookingRo
 
   app.get("/api/booking/availability", async (c) => {
     await requireGuest(store, readInitData(c.req.header("X-Telegram-Init-Data"), {}), botToken);
-    const day = parseMoscowDay(c.req.query("date"));
+    const day = await parseVenueDayParam(store, c.req.query("date"));
     const partySize = Number(c.req.query("partySize") ?? "0");
     if (!Number.isInteger(partySize) || partySize < 1 || partySize > 20) {
       throw new DomainError("bad_request", "partySize от 1 до 20");
@@ -294,11 +290,12 @@ export const createBookingRoutes = ({ store, botToken, botApi }: CreateBookingRo
     if (botApi !== undefined) {
       const guest = await store.findUserById(booking.userId);
       if (guest !== null) {
+        const settings = await store.getSettings();
         const label = statusRaw === "confirmed" ? "подтверждена" : "отменена";
         try {
           await botApi.sendMessage(
             guest.telegramId.toString(),
-            `Ваша заявка на ${formatBookingSlot(booking.requestedFor)} ${label}`,
+            `Ваша заявка на ${formatBookingSlot(booking.requestedFor, settings)} ${label}`,
           );
         } catch {
           // ignore

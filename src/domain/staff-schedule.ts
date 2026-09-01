@@ -1,54 +1,17 @@
-import { DateTime } from "luxon";
 import { DomainError } from "./errors.ts";
-import type { StaffWeeklyScheduleRecord } from "./types.ts";
-import { MOSCOW } from "./week.ts";
 import type { Store } from "../store/types.ts";
-
-export const isScheduleSlotActive = (slot: StaffWeeklyScheduleRecord, at: Date) => {
-  const local = DateTime.fromJSDate(at, { zone: MOSCOW });
-  const weekday = local.weekday;
-  const minutes = local.hour * 60 + local.minute;
-  const start = slot.startHour * 60;
-  const end = slot.endHour * 60;
-  const dayEnd = 24 * 60;
-
-  if (end <= dayEnd) {
-    return slot.weekday === weekday && minutes >= start && minutes < end;
-  }
-
-  if (slot.weekday === weekday && minutes >= start) {
-    return true;
-  }
-
-  const nextWeekday = slot.weekday === 7 ? 1 : slot.weekday + 1;
-  if (nextWeekday === weekday && minutes < end - dayEnd) {
-    return true;
-  }
-
-  return false;
-};
+import { listOnDutyStaffUserIds } from "./staff-shifts.ts";
 
 export async function listOnDutyStaffTelegramIds(store: Store, now: Date): Promise<bigint[]> {
-  const schedules = await store.listAllStaffWeeklySchedules();
-  if (schedules.length === 0) {
-    return store.listStaffTelegramIds();
-  }
-
-  const activeUserIds = new Set<string>();
-  for (const slot of schedules) {
-    if (isScheduleSlotActive(slot, now)) {
-      activeUserIds.add(slot.userId);
-    }
-  }
-
-  if (activeUserIds.size === 0) {
-    return store.listStaffTelegramIds();
+  const settings = await store.getSettings();
+  const activeUserIds = await listOnDutyStaffUserIds(store, now, settings);
+  if (activeUserIds.length === 0) {
+    return [];
   }
 
   const staff = await store.listStaffMembers();
-  return staff
-    .filter((member) => activeUserIds.has(member.id))
-    .map((member) => member.telegramId);
+  const idSet = new Set(activeUserIds);
+  return staff.filter((member) => idSet.has(member.id)).map((member) => member.telegramId);
 }
 
 export async function replaceStaffWeeklySchedule(

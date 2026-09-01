@@ -177,8 +177,12 @@ export const setActiveAdminTab = (root: HTMLElement, active: AdminTab) => {
     const tab = button.getAttribute("data-tab");
     const isActive = tab === active;
     button.classList.toggle("active", isActive);
-    if (isActive) {
-      button.scrollIntoView({ inline: "nearest", block: "nearest" });
+    if (isActive && button instanceof HTMLElement) {
+      const subnav = button.closest("[data-subnav]");
+      if (subnav instanceof HTMLElement && subnav.scrollWidth > subnav.clientWidth) {
+        const left = button.offsetLeft - (subnav.clientWidth - button.offsetWidth) / 2;
+        subnav.scrollTo({ left, behavior: "smooth" });
+      }
     }
   }
 };

@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 import { bookingSlotStarts, isBookingDayClosed } from "../../src/domain/booking-slots.ts";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings.ts";
-import { isScheduleSlotActive, listOnDutyStaffTelegramIds } from "../../src/domain/staff-schedule.ts";
+import { isScheduleSlotActive } from "../../src/domain/staff-schedule-weekly.ts";
+import { listOnDutyStaffTelegramIds } from "../../src/domain/staff-schedule.ts";
 import { MemoryStore } from "../../src/store/memory.ts";
 import { DateTime } from "luxon";
 import { MOSCOW } from "../../src/domain/week.ts";

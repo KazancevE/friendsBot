@@ -2,6 +2,20 @@ import { submitCheckIn } from "./api.ts";
 import { canScanCamera, canScanQr, prefersTelegramScanner, scanQr } from "./qr-scan.ts";
 import { hapticImpact } from "./telegram.ts";
 
+const VENUE_QR_PREFIX = "friends://checkin?t=";
+
+const parseVenueToken = (raw: string) => {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith(VENUE_QR_PREFIX)) {
+    return trimmed.slice(VENUE_QR_PREFIX.length);
+  }
+  const queryMatch = /[?&]t=([^&]+)/.exec(trimmed);
+  if (queryMatch?.[1] !== undefined) {
+    return queryMatch[1];
+  }
+  return trimmed;
+};
+
 type RenderCheckInOptions = {
   readonly root: HTMLElement;
   readonly onSuccess: () => void;
@@ -98,8 +112,13 @@ export const renderCheckIn = ({ root, onSuccess, compact = false }: RenderCheckI
   };
 
   const submitToken = async (token: string) => {
+    const parsed = parseVenueToken(token);
+    if (parsed.length === 0) {
+      setStatus(root, "Не удалось прочитать QR-код", true);
+      return;
+    }
     setStatus(root, "Проверяем…");
-    const result = await submitCheckIn({ method: "qr", token });
+    const result = await submitCheckIn({ method: "qr", token: parsed });
     if (result.kind === "error") {
       setStatus(root, result.message, true);
       return;
@@ -129,6 +148,10 @@ export const renderCheckIn = ({ root, onSuccess, compact = false }: RenderCheckI
   };
 
   const startScan = async () => {
+    if (scanButton instanceof HTMLButtonElement) {
+      scanButton.disabled = true;
+    }
+    setStatus(root, "Открываем сканер…");
     const video = root.querySelector("[data-preview]");
     const stop = await scanQr({
       hint: "Наведите на QR с экрана персонала",
@@ -138,12 +161,18 @@ export const renderCheckIn = ({ root, onSuccess, compact = false }: RenderCheckI
         resetScanButton();
         await submitToken(value);
       },
+      onCancel: () => {
+        setStatus(root, "");
+      },
       onError: (message) => {
         scanStop = undefined;
         resetScanButton();
         setStatus(root, message, true);
       },
     });
+    if (scanButton instanceof HTMLButtonElement) {
+      scanButton.disabled = false;
+    }
     if (stop !== undefined) {
       scanStop = stop;
       if (scanButton instanceof HTMLButtonElement) {

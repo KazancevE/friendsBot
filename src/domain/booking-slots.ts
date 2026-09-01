@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import type { Settings } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { venueDayRange, venueTimezone } from "./venue-time.ts";
 
 export const bookingSlotStarts = (settings: Settings) => {
   const slots: Array<{ hour: number; minute: number }> = [];
@@ -19,8 +19,14 @@ export const isBookingDayClosed = (date: DateTime, settings: Settings) => {
   return settings.bookingClosedWeekdays.includes(date.weekday);
 };
 
+export const venueDayRangeFor = (at: Date, settings: Settings) => {
+  return venueDayRange(at, settings);
+};
+
+/** @deprecated Use venueDayRangeFor */
 export const moscowDayRange = (at: Date) => {
-  const local = DateTime.fromJSDate(at, { zone: MOSCOW });
+  const zone = venueTimezone({ venueTimezone: "Europe/Moscow" });
+  const local = DateTime.fromJSDate(at, { zone });
   return {
     from: local.startOf("day").toJSDate(),
     to: local.endOf("day").toJSDate(),

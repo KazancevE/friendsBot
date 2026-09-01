@@ -1,5 +1,6 @@
 import {
   fetchGameRules,
+  fetchGuestSchedule,
   fetchGames,
   fetchLeaderboard,
   fetchMe,
@@ -11,12 +12,13 @@ import {
   type PrizePlace,
   type Role,
 } from "./api.ts";
+import { renderCheckIn } from "./check-in.ts";
 import { renderBlockBlast } from "./block-blast.ts";
 import { renderFlappy } from "./flappy.ts";
 import { renderGame2048 } from "./game2048.ts";
 import { formatWeekCountdown } from "./hub-week.ts";
 import { renderMatch3 } from "./match3.ts";
-import { renderQuiz } from "./quiz.ts";
+import { renderGuestSchedulePanel } from "./schedule-panel.ts";
 
 import { getCachedTheme, fetchGameSkin, gameCoverUrl } from "./theme-client.ts";
 import { bindMainButton, hideMainButton } from "./telegram.ts";
@@ -58,6 +60,7 @@ type HubViewModel = {
   readonly staffViewer: boolean;
   readonly visitLocked: boolean;
   readonly myUserId: string;
+  readonly scheduleHtml: string;
 };
 
 const escapeHtml = (text: string) => {
@@ -571,6 +574,7 @@ const renderBoard = (root: HTMLElement, viewModel: HubViewModel) => {
       ${visitEndedBanner}
       ${renderHero(rules, now)}
       ${renderStatusRow(me, overallBoard, staffViewer)}
+      ${viewModel.scheduleHtml}
       ${staffBanner}
       ${renderHubLinks()}
       ${renderGameGrid(gameBoards, visitLocked)}
@@ -597,10 +601,11 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
   const staffViewer = isStaffViewer(role, options.staffMode === true);
   const visitLocked = !staffViewer && !me.data.visitActive;
 
-  const [games, rules, overallBoard] = await Promise.all([
+  const [games, rules, overallBoard, schedule] = await Promise.all([
     fetchGames(),
     fetchGameRules(),
     fetchOverallLeaderboard(),
+    fetchGuestSchedule(7),
   ]);
   if (games.kind === "error") {
     root.textContent = games.message;
@@ -650,5 +655,6 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
     staffViewer,
     visitLocked,
     myUserId: me.data.id,
+    scheduleHtml: schedule.kind === "ok" ? renderGuestSchedulePanel(schedule.data) : "",
   });
 };

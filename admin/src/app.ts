@@ -28,17 +28,20 @@ import {
   fetchSettings,
   fetchStaffLog,
   fetchStaffMembers,
+  fetchStaffShifts,
   fetchStaffStats,
   fetchStats,
   fetchStatsBetween,
   fetchTimeseries,
   fetchVenueCode,
+  fillStaffWeekTemplate,
   patchBooking,
   patchContacts,
   patchContentPage,
   patchSettings,
   previewBroadcast,
   saveFloorPlan,
+  saveStaffDay,
   searchGuests,
   sendBroadcast,
   sendGuestMessage,
@@ -58,7 +61,7 @@ import { type AdminTab, renderAdminShell, setActiveAdminTab } from "./admin-nav.
 import { renderBrandPanel } from "./brand-panel.ts";
 import { renderGameSkinsPanel } from "./game-skins-panel.ts";
 import { mountFloorEditor } from "./floor-editor.ts";
-import { renderScheduleGrid } from "./schedule-grid.ts";
+import { renderStaffCalendar, renderStaffDayEditor } from "./staff-calendar.ts";
 import {
   encodedToTimeValue,
   formatShiftRange,
@@ -712,6 +715,22 @@ const showGuest = async (detail: Element | null, guestId: string) => {
   });
 };
 
+const staffWeekStart = (weekOffset: number) => {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  const monday = new Date(now);
+  monday.setHours(12, 0, 0, 0);
+  monday.setDate(now.getDate() + diff + weekOffset * 7);
+  return monday.toISOString().slice(0, 10);
+};
+
+const addDaysIso = (isoDate: string, days: number) => {
+  const date = new Date(`${isoDate}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
 const renderStaff = async (host: HTMLElement, days = 7) => {
   showLoadingIfEmpty(host);
   const [log, members, venueCode] = await Promise.all([fetchStaffLog(days), fetchStaffMembers(), fetchVenueCode()]);
@@ -746,7 +765,7 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
               <td><code>${escapeHtml(member.telegramId)}</code></td>
               <td>${escapeHtml(member.role)}</td>
               <td class="muted">${escapeHtml(schedule)}</td>
-              <td><button type="button" class="action" data-edit-schedule="${member.id}">Смены</button></td>
+              <td><button type="button" class="action" data-edit-schedule="${member.id}">Шаблон</button></td>
             </tr>`;
           })
           .join("")
@@ -784,10 +803,14 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
       <p class="muted" data-staff-status style="margin-top:0.5rem"></p>
     </section>
     <section class="panel">
+      <h2>График смен</h2>
+      <div data-staff-calendar style="margin-bottom:1rem"></div>
+      <div data-staff-day-editor class="hidden" style="margin-top:1rem"></div>
+    </section>
+    <section class="panel">
       <h2>Сотрудники</h2>
-      <div data-schedule-grid style="margin-bottom:1rem"></div>
       <div class="table-wrap">
-        <table><thead><tr><th>Имя</th><th>Telegram</th><th>Роль</th><th>Смены</th><th></th></tr></thead><tbody>${memberRows || '<tr><td colspan="5" class="muted">Пусто</td></tr>'}</tbody></table>
+        <table><thead><tr><th>Имя</th><th>Telegram</th><th>Роль</th><th>Шаблон</th><th></th></tr></thead><tbody>${memberRows || '<tr><td colspan="5" class="muted">Пусто</td></tr>'}</tbody></table>
       </div>
       <div data-schedule-editor class="hidden" style="margin-top:1rem"></div>
     </section>
@@ -884,15 +907,65 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
     });
   });
   if (members.kind === "ok") {
-    const scheduleGridHost = host.querySelector("[data-schedule-grid]");
-    if (scheduleGridHost instanceof HTMLElement) {
-      renderScheduleGrid(scheduleGridHost, members.data.members, (member) => {
-        const button = host.querySelector(`[data-edit-schedule="${member.id}"]`);
-        if (button instanceof HTMLButtonElement) {
-          button.click();
-        }
+    const weekOffset = Number(host.dataset.staffWeekOffset ?? "0");
+    const weekStart = staffWeekStart(weekOffset);
+    const weekEnd = addDaysIso(weekStart, 6);
+    const calendarHost = host.querySelector("[data-staff-calendar]");
+    const dayEditorHost = host.querySelector("[data-staff-day-editor]");
+
+    const mountCalendar = async () => {
+      if (!(calendarHost instanceof HTMLElement)) {
+        return;
+      }
+      const shiftsResult = await fetchStaffShifts(weekStart, weekEnd);
+      const shifts = shiftsResult.kind === "ok" ? shiftsResult.data.shifts : [];
+      renderStaffCalendar(calendarHost, {
+        weekStart,
+        weekOffset,
+        members: members.data.members,
+        shifts,
+        onDayClick: (date) => {
+          if (!(dayEditorHost instanceof HTMLElement)) {
+            return;
+          }
+          dayEditorHost.classList.remove("hidden");
+          renderStaffDayEditor(dayEditorHost, {
+            date,
+            members: members.data.members,
+            shifts: shifts.filter((shift) => shift.date === date),
+            onClose: () => {
+              dayEditorHost.classList.add("hidden");
+            },
+            onSave: (dayShifts) => {
+              void saveStaffDay(date, dayShifts).then((result) => {
+                if (result.kind === "ok") {
+                  void mountCalendar();
+                  dayEditorHost.classList.add("hidden");
+                }
+              });
+            },
+          });
+        },
+        onPrevWeek: () => {
+          host.dataset.staffWeekOffset = String(weekOffset - 1);
+          void preserveScroll(() => renderStaff(host, days));
+        },
+        onNextWeek: () => {
+          host.dataset.staffWeekOffset = String(weekOffset + 1);
+          void preserveScroll(() => renderStaff(host, days));
+        },
+        onFillTemplate: () => {
+          void fillStaffWeekTemplate(weekStart).then((result) => {
+            if (result.kind === "ok") {
+              void mountCalendar();
+            }
+          });
+        },
       });
-    }
+    };
+
+    void mountCalendar();
+
     for (const button of host.querySelectorAll("[data-edit-schedule]")) {
       button.addEventListener("click", () => {
         const userId = button.getAttribute("data-edit-schedule");
@@ -990,18 +1063,6 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
                       : slots
                           .map((slot) => `${WEEKDAY_LABELS[slot.weekday] ?? slot.weekday} ${formatShiftRange(slot.startHour, slot.endHour)}`)
                           .join(", ");
-                }
-                const gridHost = host.querySelector("[data-schedule-grid]");
-                if (gridHost instanceof HTMLElement && members.kind === "ok") {
-                  const updated = members.data.members.map((row) =>
-                    row.id === userId ? { ...row, schedule: [...slots] } : row,
-                  );
-                  renderScheduleGrid(gridHost, updated, (edited) => {
-                    const editButton = host.querySelector(`[data-edit-schedule="${edited.id}"]`);
-                    if (editButton instanceof HTMLButtonElement) {
-                      editButton.click();
-                    }
-                  });
                 }
               }
             });
@@ -1214,6 +1275,15 @@ const renderSettings = async (host: HTMLElement) => {
         ${settingLabel("bookingHoursEnd", "Бронь до", `<input type="time" name="bookingHoursEnd" value="${encodedToTimeValue(s.bookingHoursEnd)}" step="3600" />`)}
         ${settingLabel("bookingSlotMinutes", "Шаг, мин", `<input type="number" name="bookingSlotMinutes" value="${s.bookingSlotMinutes}" min="15" step="15" />`)}
         ${settingLabel("bookingDurationMinutes", "Длительность брони, мин", `<input type="number" name="bookingDurationMinutes" value="${s.bookingDurationMinutes}" min="30" step="30" />`)}
+        ${settingLabel("venueTimezone", "Часовой пояс", `<select name="venueTimezone">
+          <option value="Europe/Moscow" ${s.venueTimezone === "Europe/Moscow" ? "selected" : ""}>Москва (UTC+3)</option>
+          <option value="Europe/Samara" ${s.venueTimezone === "Europe/Samara" ? "selected" : ""}>Самара (UTC+4)</option>
+          <option value="Asia/Yekaterinburg" ${s.venueTimezone === "Asia/Yekaterinburg" ? "selected" : ""}>Екатеринбург (UTC+5)</option>
+          <option value="Asia/Omsk" ${s.venueTimezone === "Asia/Omsk" ? "selected" : ""}>Омск (UTC+6)</option>
+          <option value="Asia/Novosibirsk" ${s.venueTimezone === "Asia/Novosibirsk" ? "selected" : ""}>Новосибирск (UTC+7)</option>
+          <option value="Asia/Krasnoyarsk" ${s.venueTimezone === "Asia/Krasnoyarsk" ? "selected" : ""}>Красноярск (UTC+7)</option>
+          <option value="Asia/Vladivostok" ${s.venueTimezone === "Asia/Vladivostok" ? "selected" : ""}>Владивосток (UTC+10)</option>
+        </select>`)}
         <label class="checkbox-row" style="grid-column:1/-1">Закрытые дни (1=Пн … 7=Вс, через запятую) ${infoIcon(SETTING_HINTS.bookingClosedWeekdays ?? "")}
           <input name="bookingClosedWeekdays" value="${s.bookingClosedWeekdays.join(", ")}" />
         </label>
@@ -1267,6 +1337,7 @@ const renderSettings = async (host: HTMLElement) => {
       bookingSlotMinutes: Number(data.get("bookingSlotMinutes")),
       bookingDurationMinutes: Number(data.get("bookingDurationMinutes")),
       bookingClosedWeekdays,
+      venueTimezone: String(data.get("venueTimezone") ?? "Europe/Moscow"),
       referralEnabled: data.get("referralEnabled") === "on",
     };
     status.textContent = "Сохранение…";
