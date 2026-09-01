@@ -125,6 +125,7 @@ model User {
   gameSessionLogs     GameSessionLog[]
   quizAnswers         QuizAnswer[]
   weeklySchedules     StaffWeeklySchedule[]
+  staffShifts         StaffShift[]
 }
 
 model StaffWeeklySchedule {
@@ -136,6 +137,18 @@ model StaffWeeklySchedule {
   endHour   Int
 
   @@unique([userId, weekday])
+}
+
+model StaffShift {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  date      DateTime @db.Date
+  startHour Int
+  endHour   Int
+
+  @@unique([userId, date])
+  @@index([date])
 }
 
 model FloorPlan {

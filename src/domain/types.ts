@@ -47,6 +47,7 @@ export type Settings = {
   bookingSlotMinutes: number;
   bookingClosedWeekdays: number[];
   bookingDurationMinutes: number;
+  venueTimezone: string;
 };
 
 export type BroadcastSegmentId =
@@ -123,6 +124,14 @@ export type StaffWeeklyScheduleRecord = {
   id: string;
   userId: string;
   weekday: number;
+  startHour: number;
+  endHour: number;
+};
+
+export type StaffShiftRecord = {
+  id: string;
+  userId: string;
+  date: Date;
   startHour: number;
   endHour: number;
 };

@@ -115,7 +115,11 @@ export const hapticImpact = (style: "light" | "medium" | "heavy" = "light") => {
 };
 
 export const canScanViaTelegram = () => {
-  return telegramWebApp()?.showScanQrPopup !== undefined;
+  const webApp = telegramWebApp();
+  if (webApp?.showScanQrPopup === undefined) {
+    return false;
+  }
+  return webApp.isVersionAtLeast?.("6.4") ?? true;
 };
 
 export const scanViaTelegramPopup = (hint?: string): Promise<string | undefined> => {

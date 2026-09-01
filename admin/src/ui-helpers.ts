@@ -27,6 +27,7 @@ export const SETTING_HINTS: Record<string, string> = {
   bookingSlotMinutes: "Шаг слотов бронирования в минутах.",
   bookingDurationMinutes: "Сколько минут длится одна бронь.",
   bookingClosedWeekdays: "Дни недели без брони: 1=Пн … 7=Вс, через запятую.",
+  venueTimezone: "Часовой пояс заведения для брони и графика смен.",
   referralEnabled: "Включить или выключить реферальную программу для гостей.",
 };
 

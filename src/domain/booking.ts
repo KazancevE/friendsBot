@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { bookingSlotStarts, isBookingDayClosed } from "./booking-slots.ts";
+import { bookingSlotStarts, isBookingDayClosed, venueDayRangeFor } from "./booking-slots.ts";
 import {
   assertTableAvailable,
   bookingDurationMinutes,
@@ -8,14 +8,14 @@ import {
 } from "./booking-availability.ts";
 import { DomainError } from "./errors.ts";
 import type { Store } from "../store/types.ts";
-import { MOSCOW } from "./week.ts";
+import { formatVenueDateTime, venueDateTime } from "./venue-time.ts";
 
-export { bookingSlotStarts, isBookingDayClosed, moscowDayRange } from "./booking-slots.ts";
+export { bookingSlotStarts, isBookingDayClosed, venueDayRangeFor, moscowDayRange } from "./booking-slots.ts";
 export { listAvailableBookingSlots, listAvailableTablesForSlot } from "./booking-availability.ts";
 export { getActiveFloorPlanView } from "./floor-plan.ts";
 
-export const formatBookingSlot = (at: Date) => {
-  return DateTime.fromJSDate(at, { zone: MOSCOW }).toFormat("dd.MM.yyyy HH:mm");
+export const formatBookingSlot = (at: Date, settings: { venueTimezone: string }) => {
+  return formatVenueDateTime(at, settings);
 };
 
 export async function loadBookingSlots(store: Store) {
@@ -42,8 +42,8 @@ export async function createBookingRequest(
     throw new DomainError("booking_pending_exists", "У вас уже есть заявка на бронь");
   }
   const settings = await store.getSettings();
-  const requested = DateTime.fromJSDate(input.requestedFor, { zone: MOSCOW });
-  if (requested <= DateTime.fromJSDate(input.now, { zone: MOSCOW })) {
+  const requested = venueDateTime(input.requestedFor, settings);
+  if (requested <= venueDateTime(input.now, settings)) {
     throw new DomainError("bad_request", "Выберите время в будущем");
   }
   if (isBookingDayClosed(requested, settings)) {
@@ -274,15 +274,17 @@ export async function markBookingSeated(
   });
 }
 
-export async function listBookingsForMoscowDay(store: Store, at: Date) {
-  const local = DateTime.fromJSDate(at, { zone: MOSCOW });
-  return store.listBookingsBetween({
-    from: local.startOf("day").toJSDate(),
-    to: local.endOf("day").toJSDate(),
-  });
+export async function listBookingsForVenueDay(store: Store, at: Date) {
+  const settings = await store.getSettings();
+  const { from, to } = venueDayRangeFor(at, settings);
+  return store.listBookingsBetween({ from, to });
 }
 
+/** @deprecated Use listBookingsForVenueDay */
+export const listBookingsForMoscowDay = listBookingsForVenueDay;
+
 export async function runBookingReminders(store: Store, api: import("grammy").Api, now: Date) {
+  const settings = await store.getSettings();
   const due = await store.listBookingsNeedingReminder(now);
   for (const booking of due) {
     const guest = await store.findUserById(booking.userId);
@@ -294,7 +296,7 @@ export async function runBookingReminders(store: Store, api: import("grammy").Ap
     try {
       await api.sendMessage(
         guest.telegramId.toString(),
-        `Напоминание: бронь на ${formatBookingSlot(booking.requestedFor)}${tablePart}, ${booking.partySize} чел.`,
+        `Напоминание: бронь на ${formatVenueDateTime(booking.requestedFor, settings)}${tablePart}, ${booking.partySize} чел.`,
       );
       await store.updateBooking(booking.id, { reminderSent: true });
     } catch {

@@ -306,6 +306,7 @@ export type SettingsView = {
   bookingSlotMinutes: number;
   bookingClosedWeekdays: number[];
   bookingDurationMinutes: number;
+  venueTimezone: string;
 };
 
 const isSettingsResponse = (value: unknown): value is { settings: SettingsView } => {
@@ -916,6 +917,45 @@ export const updateStaffSchedule = (
       return { kind: "error" as const, message };
     }
     return { kind: "ok" as const, data: null };
+  });
+
+export type StaffShiftView = {
+  id: string;
+  userId: string;
+  date: string;
+  startHour: number;
+  endHour: number;
+  firstName: string | null;
+  lastName: string | null;
+};
+
+const isStaffShifts = (value: unknown): value is { shifts: StaffShiftView[] } => {
+  return typeof value === "object" && value !== null && Array.isArray((value as { shifts: unknown }).shifts);
+};
+
+export const fetchStaffShifts = (from: string, to: string) =>
+  getJson(`/api/admin/staff/shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, isStaffShifts);
+
+export const saveStaffDay = (date: string, shifts: Array<{ userId: string; startHour: number; endHour: number }>) =>
+  fetch("/api/admin/staff/shifts/day", {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify({ date, shifts }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const parsed: unknown = await res.json().catch(() => ({}));
+      const message =
+        typeof parsed === "object" && parsed !== null && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : "Ошибка";
+      return { kind: "error" as const, message };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const fillStaffWeekTemplate = (weekStart: string) =>
+  postJson("/api/admin/staff/shifts/fill-template", { weekStart }, (value): value is { ok: boolean } => {
+    return typeof value === "object" && value !== null && (value as { ok: boolean }).ok === true;
   });
 
 export const uploadMenuGallery = async (file: File): Promise<ApiResult<{ id: string; imageUrl: string | null }>> => {

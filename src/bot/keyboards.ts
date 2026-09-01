@@ -33,6 +33,7 @@ export const BTN_PROMOS = "🎁 Акции";
 export const BTN_DIRECTIONS = "📍 Как доехать";
 export const BTN_CONTACTS = "☎️ Контакты";
 export const BTN_BOOK = "📅 Забронировать";
+export const BTN_SCHEDULE = "🧑‍💼 График";
 export const BTN_REFERRAL = "👥 Пригласить друга";
 export const BTN_MORE = "⚙️ Ещё…";
 export const BTN_FIND_GUEST = "🔍 Найти гостя";
@@ -72,6 +73,8 @@ const guestKeyboard = () => {
     .text(BTN_CONTACTS)
     .row()
     .text(BTN_BOOK)
+    .text(BTN_SCHEDULE)
+    .row()
     .text(BTN_REFERRAL)
     .row()
     .text(BTN_MORE)

@@ -614,6 +614,29 @@ const isActiveVisits = (value: unknown): value is ActiveVisits => {
   return typeof value.count === "number" && value.guests.every(isActiveVisitGuest);
 };
 
+export type GuestSchedule = {
+  readonly timezone: string;
+  readonly onDutyNow: ReadonlyArray<string>;
+  readonly days: ReadonlyArray<{
+    readonly date: string;
+    readonly label: string;
+    readonly staff: ReadonlyArray<{ readonly name: string; readonly hours: string }>;
+  }>;
+};
+
+const isGuestSchedule = (value: unknown): value is GuestSchedule => {
+  return (
+    isRecord(value) &&
+    typeof value.timezone === "string" &&
+    Array.isArray(value.onDutyNow) &&
+    Array.isArray(value.days)
+  );
+};
+
+export const fetchGuestSchedule = (days = 7) => {
+  return getJson(`/api/schedule?days=${days}`, isGuestSchedule);
+};
+
 export const fetchActiveVisits = () => {
   return postJson("/api/staff/active-visits", {}, isActiveVisits);
 };

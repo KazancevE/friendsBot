@@ -1,4 +1,5 @@
 import { showGameOver } from "./game-over.ts";
+import { bindFinishGameButton, gameFinishButtonHtml } from "./game-finish.ts";
 import { fetchGameSkin, tileImageUrl } from "./theme-client.ts";
 import "./flappy.css";
 
@@ -57,6 +58,7 @@ export const renderFlappy = ({ root, onBack }: RenderFlappyParameters) => {
         </div>
         <canvas class="flappy-canvas" width="320" height="480" data-canvas></canvas>
         <p class="muted" data-status>Тап — старт</p>
+        ${gameFinishButtonHtml()}
       </div>
     `;
 
@@ -72,6 +74,11 @@ export const renderFlappy = ({ root, onBack }: RenderFlappyParameters) => {
     const scoreElement = root.querySelector("[data-score]");
     const statusElement = root.querySelector("[data-status]");
     root.querySelector("[data-back]")?.addEventListener("click", onBack);
+    bindFinishGameButton({
+      root,
+      onFinish: finishGame,
+      canFinish: () => !finished,
+    });
 
     let running = false;
     let finished = false;

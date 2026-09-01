@@ -11,7 +11,7 @@ import {
   parseReferralStartPayload,
   referralLink,
 } from "../domain/referral.ts";
-import { newQrToken } from "../domain/qr-token.ts";
+import { listGuestStaffSchedule } from "../domain/staff-shifts.ts";
 import type { MenuItemRecord, PromoRecord } from "../domain/types.ts";
 import { formatDisplayPhone } from "../domain/phone.ts";
 import { updateGuestProfile } from "../domain/users.ts";
@@ -39,6 +39,7 @@ import {
   BTN_PROMOS,
   BTN_QR,
   BTN_REFERRAL,
+  BTN_SCHEDULE,
   inlineMiniAppKeyboard,
   MINI_APP_GUEST_LABEL,
 } from "./keyboards.ts";
@@ -386,6 +387,24 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
     }
 
     await sendMenuPhotos(ctx, menu);
+  });
+
+  bot.hears([BTN_SCHEDULE, "График"], async (ctx) => {
+    const schedule = await listGuestStaffSchedule(ctx.store, { now: new Date(), days: 7 });
+    const lines = ["🧑‍💼 График на неделю"];
+    if (schedule.onDutyNow.length > 0) {
+      lines.push(`Сейчас в зале: ${schedule.onDutyNow.join(", ")}`);
+    }
+    for (const day of schedule.days) {
+      if (day.staff.length === 0) {
+        lines.push(`${day.label}: —`);
+        continue;
+      }
+      const staffLine = day.staff.map((row) => `${row.name} (${row.hours})`).join(", ");
+      lines.push(`${day.label}: ${staffLine}`);
+    }
+    lines.push("", "Время по часовому поясу заведения");
+    await ctx.reply(lines.join("\n"));
   });
 
   bot.hears([BTN_CONTACTS, "Контакты"], async (ctx) => {

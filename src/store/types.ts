@@ -37,6 +37,7 @@ import type {
   StaffActionLogRecord,
   StaffMemberRecord,
   StaffWeeklyScheduleRecord,
+  StaffShiftRecord,
   UserRecord,
   VenueCodeRecord,
   VenueTableRecord,
@@ -198,6 +199,20 @@ export interface Store {
     userId: string,
     slots: ReadonlyArray<{ weekday: number; startHour: number; endHour: number }>,
   ): Promise<StaffWeeklyScheduleRecord[]>;
+
+  listStaffShiftsBetween(from: Date, to: Date): Promise<StaffShiftRecord[]>;
+  listStaffShiftsForDate(date: Date): Promise<StaffShiftRecord[]>;
+  upsertStaffShift(input: {
+    userId: string;
+    date: Date;
+    startHour: number;
+    endHour: number;
+  }): Promise<StaffShiftRecord>;
+  deleteStaffShift(id: string): Promise<void>;
+  replaceStaffShiftsForDate(
+    date: Date,
+    shifts: ReadonlyArray<{ userId: string; startHour: number; endHour: number }>,
+  ): Promise<StaffShiftRecord[]>;
 
   addLedger(input: {
     userId: string;

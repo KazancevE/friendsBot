@@ -8,6 +8,7 @@ import {
 import { createBlockBlastBoard } from "./block-blast-board.ts";
 import { bindBlockBlastGestures } from "./block-blast-gestures.ts";
 import { showGameOver } from "./game-over.ts";
+import { bindFinishGameButton, gameFinishButtonHtml } from "./game-finish.ts";
 import { fetchGameSkin } from "./theme-client.ts";
 import { hapticImpact } from "./telegram.ts";
 import "./block-blast.css";
@@ -161,6 +162,9 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
   };
 
   const finishGame = async () => {
+    if (finished) {
+      return;
+    }
     finished = true;
     boardApi.setBusy(true);
     await showGameOver({
@@ -260,6 +264,7 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
       <div class="bb-combo" data-combo hidden></div>
       <div class="bb-board-host" data-board-host></div>
       <p data-status class="status"></p>
+      ${gameFinishButtonHtml()}
     `;
 
     scoreElement = root.querySelector("[data-score]") ?? undefined;
@@ -273,6 +278,11 @@ export const renderBlockBlast = ({ root, onBack }: RenderBlockBlastParameters) =
     }
 
     bindBackButtons(onBack);
+    bindFinishGameButton({
+      root,
+      onFinish: finishGame,
+      canFinish: () => !finished && !busy,
+    });
     boardApi = createBlockBlastBoard(boardHost, { skin });
     boardApi.sync(state);
     updateHud();

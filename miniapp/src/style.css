@@ -93,6 +93,18 @@ button {
   font-size: 1rem;
 }
 
+button.secondary,
+button.game-finish {
+  background: transparent;
+  border: 1px solid var(--coal);
+  color: var(--smoke);
+}
+
+button.game-finish {
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
 video {
   width: 100%;
   border-radius: 0.5rem;
@@ -328,6 +340,39 @@ html.theme-active body {
   font-size: 0.95rem;
   color: var(--ash);
   font-weight: 600;
+}
+
+.hub-schedule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.hub-schedule-day {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.hub-schedule-day-label {
+  font-size: 0.82rem;
+  color: var(--ash);
+}
+
+.hub-schedule-staff {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.hub-schedule-now {
+  margin: 0 0 0.65rem;
+  font-size: 0.9rem;
+}
+
+.hub-schedule-note {
+  margin: 0.65rem 0 0;
+  font-size: 0.78rem;
 }
 
 .game-grid {
