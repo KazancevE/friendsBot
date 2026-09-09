@@ -8,9 +8,13 @@ type BuildInitDataUser = {
   id: number;
 };
 
-export const buildInitData = (user: BuildInitDataUser, botToken: string) => {
+export const buildInitData = (
+  user: BuildInitDataUser,
+  botToken: string,
+  authDate = Math.floor(Date.now() / 1000),
+) => {
   const params: Record<string, string> = {
-    auth_date: String(Math.floor(Date.now() / 1000)),
+    auth_date: String(authDate),
     user: JSON.stringify({ id: user.id }),
   };
   const dataCheckString = Object.keys(params)
@@ -32,4 +36,10 @@ test("verifyInitData rejects a tampered hash", () => {
   const raw = buildInitData({ id: 42 }, BOT_TOKEN);
   const tampered = raw.replace(/hash=[0-9a-f]+/, "hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   expect(() => verifyInitData(tampered, BOT_TOKEN)).toThrow();
+});
+
+test("verifyInitData rejects initData older than 24 hours", () => {
+  const stale = Math.floor(Date.now() / 1000) - 25 * 60 * 60;
+  const raw = buildInitData({ id: 42 }, BOT_TOKEN, stale);
+  expect(() => verifyInitData(raw, BOT_TOKEN)).toThrow(/истекла/);
 });

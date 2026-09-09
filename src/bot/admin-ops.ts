@@ -2,7 +2,6 @@ import { DateTime } from "luxon";
 import type { Conversation } from "@grammyjs/conversations";
 import { InlineKeyboard, InputFile } from "grammy";
 import type { Bot } from "grammy";
-import { createExportToken } from "../domain/export-token.ts";
 import { exportCsv, exportRowCount, EXPORT_ROW_LIMIT, type ExportType } from "../domain/export.ts";
 import {
   formatStatsDetails,
@@ -123,17 +122,15 @@ export async function adminExportConversation(conversation: BotConversation, ctx
     const period = periodLastDays(now, 7);
     const count = await exportRowCount(outer.store, { type: typeRaw, from: period.from, to: now });
     if (count > EXPORT_ROW_LIMIT) {
-      const token = createExportToken({ type: typeRaw, from: period.from, to: now, now });
-      return { kind: "link" as const, count, token };
+      return { kind: "link" as const, count };
     }
     const csv = await exportCsv(outer.store, { type: typeRaw, from: period.from, to: now });
     return { kind: "file" as const, csv };
   });
 
   if (exportResult.kind === "link") {
-    const origin = ctx.config.publicUrl.replace(/\/$/, "");
     await ctx.reply(
-      `Слишком много строк (${exportResult.count}). Скачайте по ссылке (15 мин):\n${origin}/api/admin/export.csv?token=${exportResult.token}`,
+      `Слишком много строк (${exportResult.count}). Откройте веб-админ → Экспорт — ссылка без входа больше не работает.`,
     );
     return;
   }

@@ -36,7 +36,9 @@ const safeEqualHex = (left: string, right: string) => {
   return timingSafeEqual(leftBuf, rightBuf);
 };
 
-export const verifyInitData = (raw: string, botToken: string) => {
+export const INIT_DATA_MAX_AGE_SECONDS = 24 * 60 * 60;
+
+export const verifyInitData = (raw: string, botToken: string, now = new Date()) => {
   const params = new URLSearchParams(raw);
   const hash = params.get("hash");
   if (hash === null) {
@@ -51,6 +53,15 @@ export const verifyInitData = (raw: string, botToken: string) => {
   const expected = createHmac("sha256", secret).update(dataCheckString).digest("hex");
   if (!safeEqualHex(hash, expected)) {
     throw new DomainError("bad_init_data", "Неверная подпись");
+  }
+  const authDateRaw = params.get("auth_date");
+  const authDate = Number(authDateRaw);
+  if (!Number.isFinite(authDate) || authDate <= 0) {
+    throw new DomainError("bad_init_data", "Нет даты подписи");
+  }
+  const ageSeconds = Math.floor(now.getTime() / 1000) - authDate;
+  if (ageSeconds > INIT_DATA_MAX_AGE_SECONDS || ageSeconds < -60) {
+    throw new DomainError("stale_init_data", "Сессия Mini App истекла");
   }
   const userRaw = params.get("user");
   if (userRaw === null) {

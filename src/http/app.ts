@@ -12,11 +12,15 @@ import { createPublicGameSkinRoutes } from "./game-skin.ts";
 import { createScheduleRoutes } from "./schedule.ts";
 import { createThemeRoutes } from "./theme.ts";
 import { applyWebAppCacheHeaders } from "./web-app-cache.ts";
+import { DomainError } from "../domain/errors.ts";
+import { assertWebhookSecret, WEBHOOK_SECRET_HEADER } from "./webhook-secret.ts";
 
 type CreateHttpAppParameters = {
   readonly store: Store;
   readonly botToken: string;
   readonly bot?: Bot;
+  readonly webhookSecret?: string;
+  readonly checkReady?: () => Promise<unknown>;
 };
 
 const MINIAPP_INDEX = "miniapp/dist/index.html";
@@ -34,9 +38,20 @@ const rewriteAdminPath = (path: string) => {
   return `admin/dist/${file}`;
 };
 
-export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters) => {
+export const createHttpApp = ({ store, botToken, bot, webhookSecret, checkReady }: CreateHttpAppParameters) => {
   const app = new Hono();
   app.get("/health", (c) => c.json({ ok: true }));
+  app.get("/health/ready", async (c) => {
+    if (checkReady === undefined) {
+      return c.json({ ok: true });
+    }
+    try {
+      await checkReady();
+      return c.json({ ok: true });
+    } catch {
+      return c.json({ ok: false }, 503);
+    }
+  });
   app.use("/uploads/*", serveStatic({ root: "." }));
   app.route("/", createCashierRoutes({ store, botToken }));
   app.route("/", createCheckInRoutes({ store, botToken, botApi: bot?.api }));
@@ -47,12 +62,16 @@ export const createHttpApp = ({ store, botToken, bot }: CreateHttpAppParameters)
   app.route("/", createScheduleRoutes({ store, botToken }));
   app.route("/", createAdminRoutes({ store, botToken, botApi: bot?.api }));
 
-  if (bot !== undefined) {
+  if (bot !== undefined && webhookSecret !== undefined) {
     const handleUpdate = webhookCallback(bot, "hono");
-    app.post("/tg/:token", async (c) => {
-      const token = c.req.param("token");
-      if (token !== botToken) {
-        return c.json({ code: "forbidden", message: "Неверный токен" }, 403);
+    app.post("/tg/webhook", async (c) => {
+      try {
+        assertWebhookSecret(c.req.header(WEBHOOK_SECRET_HEADER), webhookSecret);
+      } catch (err) {
+        if (err instanceof DomainError) {
+          return c.json({ code: err.code, message: err.message }, 403);
+        }
+        throw err;
       }
       return handleUpdate(c);
     });

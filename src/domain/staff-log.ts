@@ -8,6 +8,7 @@ export async function logStaffAction(
     guestId: string | null;
     action: StaffActionKind;
     payload?: Record<string, unknown>;
+    createdAt?: Date;
   },
 ): Promise<StaffActionLogRecord> {
   return store.createStaffActionLog({
@@ -15,5 +16,6 @@ export async function logStaffAction(
     guestId: input.guestId,
     action: input.action,
     payload: input.payload ?? {},
+    createdAt: input.createdAt,
   });
 }

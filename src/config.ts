@@ -1,9 +1,12 @@
+import { deriveWebhookSecret } from "./http/webhook-secret.ts";
+
 export type AppConfig = {
   botToken: string;
   adminTelegramId: bigint;
   databaseUrl: string;
   publicUrl: string;
   port: number;
+  webhookSecret: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -14,11 +17,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (!botToken || !admin || !databaseUrl || !publicUrl) {
     throw new Error("Missing BOT_TOKEN, TELEGRAM_ADMIN_ID, DATABASE_URL, or PUBLIC_URL");
   }
+  const webhookSecret =
+    env.WEBHOOK_SECRET !== undefined && env.WEBHOOK_SECRET.length > 0
+      ? env.WEBHOOK_SECRET
+      : deriveWebhookSecret(botToken);
   return {
     botToken,
     adminTelegramId: BigInt(admin),
     databaseUrl,
     publicUrl,
     port: Number(env.PORT ?? 3000),
+    webhookSecret,
   };
 }

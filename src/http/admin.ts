@@ -297,6 +297,11 @@ export const createAdminRoutes = ({ store, botToken, botApi }: CreateAdminRoutes
   });
 
   app.get("/api/admin/export.csv", async (c) => {
+    const initData = c.req.header("X-Telegram-Init-Data");
+    if (initData === undefined || initData.length === 0) {
+      throw new DomainError("forbidden", "Нужна сессия админа");
+    }
+    await requireAdmin(store, initData, botToken);
     const token = c.req.query("token") ?? "";
     const payload = consumeExportToken(token, new Date());
     if (payload === null) {

@@ -375,11 +375,15 @@ export class MemoryStore implements Store {
     guestId: string | null;
     action: StaffActionKind;
     payload: Record<string, unknown>;
+    createdAt?: Date;
   }) {
     const row: StaffActionLogRecord = {
       id: crypto.randomUUID(),
-      createdAt: new Date(),
-      ...input,
+      createdAt: input.createdAt ?? new Date(),
+      actorId: input.actorId,
+      guestId: input.guestId,
+      action: input.action,
+      payload: input.payload,
     };
     this.staffActionLogs.push(row);
     return { ...row };
@@ -760,8 +764,18 @@ export class MemoryStore implements Store {
     actorId: string | null;
     comment: string | null;
     checkAmount: number | null;
+    createdAt?: Date;
   }) {
-    const row: LedgerRecord = { id: crypto.randomUUID(), createdAt: new Date(), ...input };
+    const row: LedgerRecord = {
+      id: crypto.randomUUID(),
+      createdAt: input.createdAt ?? new Date(),
+      userId: input.userId,
+      type: input.type,
+      amount: input.amount,
+      actorId: input.actorId,
+      comment: input.comment,
+      checkAmount: input.checkAmount,
+    };
     this.ledger.push(row);
     return row;
   }
@@ -1133,11 +1147,19 @@ export class MemoryStore implements Store {
     endedAt: Date;
     accepted: boolean;
     rejectReason: string | null;
+    createdAt?: Date;
   }) {
     const row: GameSessionLogRecord = {
       id: crypto.randomUUID(),
-      createdAt: new Date(),
-      ...input,
+      createdAt: input.createdAt ?? new Date(),
+      userId: input.userId,
+      gameId: input.gameId,
+      slug: input.slug,
+      points: input.points,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      accepted: input.accepted,
+      rejectReason: input.rejectReason,
     };
     this.gameSessionLogs.push(row);
     return { ...row };

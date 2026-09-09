@@ -128,6 +128,28 @@ test("staff can lookup active guest by visit id", async () => {
   expect(typeof card.balance).toBe("number");
 });
 
+test("pin check-in is rate limited after five attempts", async () => {
+  const { guest, app } = await seed();
+  const initData = buildInitData({ id: Number(guest.telegramId) }, BOT_TOKEN);
+  const attempt = () =>
+    app.request("/api/check-in", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Init-Data": initData,
+      },
+      body: JSON.stringify({ method: "pin", pin: "0000" }),
+    });
+  for (let index = 0; index < 5; index += 1) {
+    const res = await attempt();
+    expect(res.status).toBe(400);
+  }
+  const limited = await attempt();
+  expect(limited.status).toBe(429);
+  const body = (await limited.json()) as { code: string };
+  expect(body.code).toBe("rate_limited");
+});
+
 test("guest cannot fetch venue code", async () => {
   const { guest, app } = await seed();
   const initData = buildInitData({ id: Number(guest.telegramId) }, BOT_TOKEN);

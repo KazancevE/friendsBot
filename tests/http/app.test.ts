@@ -15,6 +15,30 @@ test("health check is public", async () => {
   expect(await res.json()).toEqual({ ok: true });
 });
 
+test("readiness probe reports database failure", async () => {
+  const app = createHttpApp({
+    store: new MemoryStore(),
+    botToken: "test-token",
+    checkReady: async () => {
+      throw new Error("db down");
+    },
+  });
+  const res = await app.request("/health/ready");
+  expect(res.status).toBe(503);
+  expect(await res.json()).toEqual({ ok: false });
+});
+
+test("readiness probe succeeds when checkReady passes", async () => {
+  const app = createHttpApp({
+    store: new MemoryStore(),
+    botToken: "test-token",
+    checkReady: async () => undefined,
+  });
+  const res = await app.request("/health/ready");
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+});
+
 test("serves mini app index at /app and /app/", async () => {
   await mkdir(dirname(INDEX), { recursive: true });
   await writeFile(INDEX, "<!doctype html><title>касса</title>", "utf8");

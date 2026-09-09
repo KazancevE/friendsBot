@@ -117,6 +117,7 @@ export async function logGameSession(
     endedAt: timing.endedAt,
     accepted: input.verdict.accepted,
     rejectReason: input.verdict.accepted ? null : input.verdict.reason,
+    createdAt: input.now,
   });
 }
 

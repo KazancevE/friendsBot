@@ -89,6 +89,7 @@ export interface Store {
     guestId: string | null;
     action: StaffActionKind;
     payload: Record<string, unknown>;
+    createdAt?: Date;
   }): Promise<StaffActionLogRecord>;
   listStaffActionLog(input: {
     from: Date;
@@ -221,6 +222,7 @@ export interface Store {
     actorId: string | null;
     comment: string | null;
     checkAmount: number | null;
+    createdAt?: Date;
   }): Promise<LedgerRecord>;
   listLedger(userId: string): Promise<LedgerRecord[]>;
   hasBirthdayLedgerInYear(userId: string, year: number): Promise<boolean>;
@@ -341,6 +343,7 @@ export interface Store {
     endedAt: Date;
     accepted: boolean;
     rejectReason: string | null;
+    createdAt?: Date;
   }): Promise<GameSessionLogRecord>;
   listRecentGameSessionLogs(userId: string, gameId: string, limit: number): Promise<GameSessionLogRecord[]>;
   countGameSessionsSince(userId: string, since: Date): Promise<number>;

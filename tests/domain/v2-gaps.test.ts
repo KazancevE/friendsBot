@@ -40,6 +40,7 @@ test("stats summary includes game session metrics", async () => {
     points: 100,
     startedAt: new Date("2026-08-30T10:00:00+03:00"),
     endedAt: new Date("2026-08-30T10:05:00+03:00"),
+    createdAt: new Date("2026-08-30T10:05:00+03:00"),
     accepted: true,
     rejectReason: null,
   });

@@ -9,6 +9,7 @@ Telegram-бот кальянной «Друзья»: бонусы, касса, M
 | Переменная | Назначение |
 |---|---|
 | `BOT_TOKEN` | токен бота от BotFather |
+| `WEBHOOK_SECRET` | секрет заголовка Telegram webhook; если пусто — считается из `BOT_TOKEN` |
 | `TELEGRAM_ADMIN_ID` | Telegram ID первого админа (роль `admin` всегда) |
 | `PUBLIC_URL` | публичный HTTPS URL сервиса, без webhook-пути (`https://` + `CADDY_DOMAIN`) |
 | `CADDY_DOMAIN` | домен для Caddy и Let's Encrypt, без `https://` |
@@ -47,6 +48,16 @@ docker compose up -d --build
 
 `POSTGRES_PASSWORD` в `.env` должен совпадать с паролем в `DATABASE_URL`. Если volume `pgdata` уже существует, пароль должен быть **тот же**, что при первом запуске Postgres (иначе P1000).
 
+Postgres в продакшене **не публикуется** на хост (только сеть compose). Один контейнер `app`: не масштабируйте replicas — джобы и webhook живут в том же процессе.
+
+Локальный `npm run start` с БД в Docker:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+```
+
+`docker-compose.dev.yml` открывает Postgres только на `127.0.0.1:5432`. В `DATABASE_URL` для npm замените хост на `localhost`.
+
 `CADDY_DOMAIN` — домен без схемы, например `bot.example.com`. `PUBLIC_URL` — тот же хост с `https://`.
 
 Сид один раз на пустую базу:
@@ -58,7 +69,8 @@ docker compose run --rm app npx prisma db seed
 Проверка:
 
 ```sh
-curl -s https://ваш-домен/health   # → {"ok":true}
+curl -s https://ваш-домен/health         # → {"ok":true}
+curl -s https://ваш-домен/health/ready   # → {"ok":true}, 503 если Postgres недоступен
 docker compose logs -f app
 docker compose restart app         # перерегистрирует webhook после смены PUBLIC_URL
 ```
@@ -90,7 +102,7 @@ npx prisma db seed
 
 ## Mini App
 
-В BotFather укажите URL Mini App: `PUBLIC_URL/app/` (со слэшем). Тот же URL открывают кнопки «Игры» (гость) и «Приложение» (персонал) через inline-кнопку в чате. Webhook бота: `PUBLIC_URL/tg/<BOT_TOKEN>` — ставится при старте процесса.
+В BotFather укажите URL Mini App: `PUBLIC_URL/app/` (со слэшем). Тот же URL открывают кнопки «Игры» (гость) и «Приложение» (персонал) через inline-кнопку в чате. Webhook бота: `PUBLIC_URL/tg/webhook` — ставится при старте процесса, секрет уходит заголовком `X-Telegram-Bot-Api-Secret-Token`, не в URL.
 
 ## Как добавить мастера
 
@@ -113,7 +125,24 @@ npm run start
 
 Локально без webhook: `npx tsx src/dev-polling.ts`.
 
-Планировщик в том же процессе: день рождения каждую ночь 02:00 МСК, закрытие недели в понедельник 00:00 МСК, ротация кода зала каждые 2 часа МСK.
+Планировщик в том же процессе: день рождения каждую ночь 02:00 МСК, закрытие недели в понедельник 00:00 МСК, ротация кода зала каждые 2 часа МСК. Ошибка джоба пишется в лог и уходит админу в Telegram.
+
+### Бэкап Postgres
+
+Ежедневно (cron на хосте или вручную):
+
+```sh
+chmod +x scripts/backup-postgres.sh
+./scripts/backup-postgres.sh
+```
+
+Файл: `backups/friends-YYYYMMDD-HHMMSS.sql.gz`. Восстановление (приложение лучше остановить):
+
+```sh
+gunzip -c backups/friends-YYYYMMDD-HHMMSS.sql.gz | docker compose exec -T postgres psql -U friends friends
+```
+
+Запуск в зале и скрипт мастера: [docs/ops/venue-launch.md](docs/ops/venue-launch.md). Продажа после пилота: [docs/ops/product-after-pilot.md](docs/ops/product-after-pilot.md).
 
 ## Timeweb Cloud Apps
 
@@ -143,7 +172,7 @@ npm run start
 9. BotFather → Mini App URL: `https://ваш-домен.twc1.net/app/`
 10. Напишите боту с аккаунта `TELEGRAM_ADMIN_ID`, добавьте мастеров через «Роли».
 
-Проверка: `https://ваш-домен.twc1.net/health` → `{"ok":true}`.
+Проверка: `https://ваш-домен.twc1.net/health` → `{"ok":true}`; `/health/ready` — то же, либо 503 если нет БД.
 
 ## Docker (образ без compose)
 
