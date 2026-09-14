@@ -380,7 +380,19 @@ export const downloadExport = async (type: string, days: number): Promise<ApiRes
       "downloadUrl" in parsed &&
       typeof parsed.downloadUrl === "string"
     ) {
-      window.open(parsed.downloadUrl, "_blank");
+      const tokenRes = await fetch(parsed.downloadUrl, {
+        headers: { "X-Telegram-Init-Data": initData() },
+      });
+      if (!tokenRes.ok) {
+        return { kind: "error", message: "Не удалось скачать большой экспорт" };
+      }
+      const blob = await tokenRes.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${type}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
       return { kind: "ok", data: null };
     }
     return { kind: "error", message: "Неожиданный ответ экспорта" };

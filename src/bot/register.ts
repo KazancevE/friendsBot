@@ -43,7 +43,7 @@ export async function registerGuestConversation(
   const birthday = await askBirthday(conversation, ctx);
 
   await ctx.reply(
-    "Шаг 4/4 — телефон\n\n📱 Нужен для начисления бонусов и быстрого поиска на кассе.",
+    "Шаг 4/4 — телефон\n\n📱 Нужен для начисления бонусов и поиска на кассе.\nНажимая кнопку, вы соглашаетесь на обработку телефона и имени для программы лояльности «Друзья». Рассылку можно отключить в профиле.",
     { reply_markup: contactKeyboard() },
   );
   const contact = await conversation.form.contact({

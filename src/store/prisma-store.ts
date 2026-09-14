@@ -555,6 +555,7 @@ export class PrismaStore implements Store {
     guestId: string | null;
     action: StaffActionKind;
     payload: Record<string, unknown>;
+    createdAt?: Date;
   }): Promise<StaffActionLogRecord> {
     const row = await this.prisma.staffActionLog.create({
       data: {
@@ -562,6 +563,7 @@ export class PrismaStore implements Store {
         guestId: input.guestId,
         action: input.action,
         payload: input.payload as Prisma.InputJsonValue,
+        createdAt: input.createdAt,
       },
     });
     return toStaffActionLog(row, null);
@@ -975,6 +977,7 @@ export class PrismaStore implements Store {
     actorId: string | null;
     comment: string | null;
     checkAmount: number | null;
+    createdAt?: Date;
   }): Promise<LedgerRecord> {
     const row = await this.prisma.ledger.create({
       data: {
@@ -984,6 +987,7 @@ export class PrismaStore implements Store {
         actorId: input.actorId,
         comment: input.comment,
         checkAmount: input.checkAmount,
+        createdAt: input.createdAt,
       },
     });
     return toLedger(row);
@@ -1481,8 +1485,21 @@ export class PrismaStore implements Store {
     endedAt: Date;
     accepted: boolean;
     rejectReason: string | null;
+    createdAt?: Date;
   }): Promise<GameSessionLogRecord> {
-    const row = await this.prisma.gameSessionLog.create({ data: input });
+    const row = await this.prisma.gameSessionLog.create({
+      data: {
+        userId: input.userId,
+        gameId: input.gameId,
+        slug: input.slug,
+        points: input.points,
+        startedAt: input.startedAt,
+        endedAt: input.endedAt,
+        accepted: input.accepted,
+        rejectReason: input.rejectReason,
+        createdAt: input.createdAt,
+      },
+    });
     return toGameSessionLog(row);
   }
 

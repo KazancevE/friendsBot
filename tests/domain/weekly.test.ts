@@ -33,6 +33,7 @@ test("awards top N prizes, coupon, and is idempotent", async () => {
   const store = new MemoryStore();
   await store.updateSettings({
     winnersCount: 2,
+    couponClaimDays: 400,
     prizeTable: [
       { place: 1, bonuses: 1000, couponTitle: "Кальян" },
       { place: 2, bonuses: 500, couponTitle: null },

@@ -24,13 +24,19 @@ const app = createHttpApp({
   bot,
   store,
   botToken: config.botToken,
+  webhookSecret: config.webhookSecret,
+  checkReady: async () => {
+    await prisma.$queryRaw`SELECT 1`;
+  },
 });
-startScheduler(store, bot.api);
+startScheduler(store, bot.api, { adminTelegramId: config.adminTelegramId });
 
 const publicUrl = config.publicUrl.replace(/\/$/, "");
 
 serve({ fetch: app.fetch, port: config.port }, async () => {
-  await bot.api.setWebhook(`${publicUrl}/tg/${config.botToken}`);
+  await bot.api.setWebhook(`${publicUrl}/tg/webhook`, {
+    secret_token: config.webhookSecret,
+  });
   await bot.api.setChatMenuButton({
     menu_button: {
       type: "web_app",

@@ -121,21 +121,22 @@ test("admin export returns csv attachment", async () => {
   expect(body.length).toBeGreaterThan(0);
 });
 
-test("export token endpoint serves csv once", async () => {
+test("export csv token requires admin initData", async () => {
   const { admin, app } = await seedAdmin();
   const initData = buildInitData({ id: Number(admin.telegramId) }, BOT_TOKEN);
-  const headers = { "X-Telegram-Init-Data": initData };
-  const oversized = await app.request("/api/admin/export?type=ledger", { headers });
-  if (oversized.headers.get("Content-Type")?.includes("application/json")) {
-    const payload = (await oversized.json()) as { downloadUrl?: string };
-    if (payload.downloadUrl !== undefined) {
-      const tokenRes = await app.request(payload.downloadUrl);
-      expect(tokenRes.status).toBe(200);
-      expect(tokenRes.headers.get("Content-Type")).toContain("text/csv");
-      const again = await app.request(payload.downloadUrl);
-      expect(again.status).toBe(404);
-      return;
-    }
-  }
-  expect(oversized.status).toBe(200);
+  const { createExportToken } = await import("../../src/domain/export-token.ts");
+  const now = new Date();
+  const token = createExportToken({
+    type: "ledger",
+    from: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+    to: now,
+    now,
+  });
+  const anon = await app.request(`/api/admin/export.csv?token=${token}`);
+  expect(anon.status).toBe(403);
+  const authed = await app.request(`/api/admin/export.csv?token=${token}`, {
+    headers: { "X-Telegram-Init-Data": initData },
+  });
+  expect(authed.status).toBe(200);
+  expect(authed.headers.get("Content-Type")).toContain("text/csv");
 });

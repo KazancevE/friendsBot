@@ -44,6 +44,7 @@ export async function applyCheck(
       actorId: input.actorId,
       comment: `Чек ${input.checkRubles} ₽`,
       checkAmount: input.checkRubles,
+      createdAt: input.now,
     });
     await createLotForCredit(tx, {
       userId: guest.id,
@@ -73,6 +74,7 @@ export async function applyCheck(
       guestId: guest.id,
       action: "check",
       payload: { checkRubles: input.checkRubles, bonus: totalBonus, promoRuleId: promo.ruleId },
+      createdAt: input.now,
     });
     return { user, bonus: totalBonus, visit, visitId: visit.id };
   });
@@ -103,12 +105,14 @@ export async function redeemBonuses(
       actorId: input.actorId,
       comment: "Списание на кассе",
       checkAmount: null,
+      createdAt: now,
     });
     await logStaffAction(tx, {
       actorId: input.actorId,
       guestId: guest.id,
       action: "redeem",
       payload: { amount: input.amount },
+      createdAt: now,
     });
     return user;
   });
@@ -139,6 +143,7 @@ export async function manualAdjust(
       actorId: input.actorId,
       comment: input.comment.trim(),
       checkAmount: null,
+      createdAt: now,
     });
     if (input.delta > 0) {
       await createLotForCredit(tx, {
@@ -155,6 +160,7 @@ export async function manualAdjust(
       guestId: guest.id,
       action: "manual_adjust",
       payload: { delta: input.delta, comment: input.comment.trim() },
+      createdAt: now,
     });
     return user;
   });
