@@ -1,5 +1,6 @@
 import {
   createBoard,
+  hasAnyMove,
   resolveMatchStep,
   swapAdjacent,
   wouldMatch,
@@ -13,7 +14,6 @@ import { bindMatch3Gestures, cellsEqual } from "./match3-gestures.ts";
 import { hapticImpact } from "./telegram.ts";
 import "./match3.css";
 
-const MOVES_PER_GAME = 15;
 const MATCH3_SLUG = "match3";
 const POP_TO_FALL_PAUSE_MS = 60;
 
@@ -40,14 +40,11 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
   const sessionStartedAt = new Date();
   let board: Board = createBoard();
   let score = 0;
-  let moves = MOVES_PER_GAME;
   let selected: Cell | undefined;
   let finished = false;
   let busy = false;
 
   let scoreElement: HTMLElement | undefined;
-  let movesElement: HTMLElement | undefined;
-  let movesFillElement: HTMLElement | undefined;
   let comboElement: HTMLElement | undefined;
   let statusElement: HTMLElement | undefined;
   let gridElement: HTMLElement | undefined;
@@ -85,13 +82,6 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
         scoreElement.classList.add("match3-score-bump");
       }
     }
-    if (movesElement !== undefined) {
-      movesElement.textContent = String(moves);
-    }
-    if (movesFillElement !== undefined) {
-      const ratio = Math.max(0, moves / MOVES_PER_GAME);
-      movesFillElement.style.width = `${ratio * 100}%`;
-    }
   };
 
   const bindBackButtons = (handler: () => void) => {
@@ -123,11 +113,21 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
     });
   };
 
-  const runCascade = async (startBoard: Board) => {
+  const runCascade = async (
+    startBoard: Board,
+    spawnAnchor?: Cell,
+    swap?: { from: Cell; to: Cell },
+  ) => {
     let current = startBoard;
     let cascadeIndex = 1;
     for (;;) {
-      const step = resolveMatchStep(current, cascadeIndex);
+      const step = resolveMatchStep(
+        current,
+        cascadeIndex,
+        Math.random,
+        cascadeIndex === 1 ? spawnAnchor : undefined,
+        cascadeIndex === 1 ? swap : undefined,
+      );
       if (step.scoreDelta === 0) {
         board = current;
         boardApi.sync(board);
@@ -140,6 +140,9 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
         window.setTimeout(resolve, POP_TO_FALL_PAUSE_MS);
       });
       await boardApi.animateGravity(current, step.next, step.matchedCells);
+      if (step.spawnedSpecials.length > 0) {
+        boardApi.pulseSpecials(step.spawnedSpecials);
+      }
       score += step.scoreDelta;
       updateHud(true);
       current = step.next;
@@ -180,11 +183,10 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
 
       board = swapped;
       boardApi.sync(board);
-      await runCascade(swapped);
+      await runCascade(swapped, from, { from, to });
 
-      moves -= 1;
       updateHud();
-      if (moves <= 0) {
+      if (!hasAnyMove(board)) {
         void finishGame();
       }
     } finally {
@@ -228,12 +230,7 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
           <span class="match3-stat-label">Очки</span>
           <span class="match3-stat-value" data-score aria-live="polite">0</span>
         </div>
-        <div class="match3-moves-wrap">
-          <div class="match3-moves-bar" aria-hidden="true">
-            <div class="match3-moves-fill" data-moves-fill></div>
-          </div>
-          <span class="match3-stat-label">Ходы <span data-moves>${MOVES_PER_GAME}</span></span>
-        </div>
+        <p class="muted match3-hint">Без лимита ходов · спецфишки из длинных комбинаций</p>
       </div>
       <div class="match3-board-wrap">
         <div class="match3-combo" data-combo hidden></div>
@@ -244,8 +241,6 @@ export const renderMatch3 = ({ root, onBack }: RenderMatch3Parameters) => {
     `;
 
     scoreElement = root.querySelector("[data-score]") ?? undefined;
-    movesElement = root.querySelector("[data-moves]") ?? undefined;
-    movesFillElement = root.querySelector("[data-moves-fill]") ?? undefined;
     comboElement = root.querySelector("[data-combo]") ?? undefined;
     statusElement = root.querySelector("[data-status]") ?? undefined;
     gridElement = root.querySelector("[data-grid]") ?? undefined;

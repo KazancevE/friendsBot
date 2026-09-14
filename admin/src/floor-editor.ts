@@ -51,6 +51,7 @@ const computeScale = (floorPlan: FloorPlanView, zoom: number) => {
 
 export type FloorEditorCallbacks = {
   onStructureChange?: () => void;
+  onTableClick?: (tableId: string) => void;
 };
 
 export const mountFloorEditor = (
@@ -270,8 +271,14 @@ export const mountFloorEditor = (
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       const point = toPlanCoords(event.clientX, event.clientY);
-      const posX = Math.max(0, Math.min(floorPlan.width - 5, current.originX + (point.x - current.startX)));
-      const posY = Math.max(0, Math.min(floorPlan.height - 5, current.originY + (point.y - current.startY)));
+      const dx = point.x - current.startX;
+      const dy = point.y - current.startY;
+      if (Math.hypot(dx, dy) < 2 && current.target.kind === "table") {
+        callbacks.onTableClick?.(current.target.id);
+        return;
+      }
+      const posX = Math.max(0, Math.min(floorPlan.width - 5, current.originX + dx));
+      const posY = Math.max(0, Math.min(floorPlan.height - 5, current.originY + dy));
       if (current.target.kind === "table") {
         const table = floorPlan.tables.find((row) => row.id === current.target.id);
         if (table !== undefined) {

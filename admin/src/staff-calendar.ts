@@ -41,6 +41,7 @@ export const renderStaffCalendar = (
     members: StaffMemberView[];
     shifts: StaffShiftView[];
     onDayClick: (date: string) => void;
+    onShiftClick?: (shiftId: string) => void;
     onPrevWeek: () => void;
     onNextWeek: () => void;
     onFillTemplate: () => void;
@@ -63,13 +64,13 @@ export const renderStaffCalendar = (
               .map((shift) => {
                 const name = formatName(shift.firstName, shift.lastName);
                 const color = memberColor(shift.userId, memberIds);
-                return `<span class="staff-chip ${color}">${escapeHtml(name)}<br /><span class="muted">${escapeHtml(formatShiftRange(shift.startHour, shift.endHour))}</span></span>`;
+                return `<button type="button" class="staff-chip ${color}" data-staff-shift="${escapeHtml(shift.id)}">${escapeHtml(name)}<br /><span class="muted">${escapeHtml(formatShiftRange(shift.startHour, shift.endHour))}</span></button>`;
               })
               .join("");
-      return `<button type="button" class="staff-day-cell" data-staff-day="${date}">
-        <span class="staff-day-label">${escapeHtml(dayLabel(date))}</span>
+      return `<div class="staff-day-cell">
+        <button type="button" class="staff-day-label" data-staff-day="${date}">${escapeHtml(dayLabel(date))}</button>
         <span class="staff-day-chips">${chips}</span>
-      </button>`;
+      </div>`;
     })
     .join("");
 
@@ -83,7 +84,7 @@ export const renderStaffCalendar = (
       <button type="button" class="action" data-staff-fill-template>Из шаблона</button>
     </div>
     <div class="staff-calendar-grid">${cells}</div>
-    <p class="muted">Нажмите на день, чтобы назначить мастеров</p>
+    <p class="muted">Нажмите на день, чтобы назначить мастеров. Клик по смене открывает её настройки.</p>
   `;
 
   host.querySelector("[data-staff-week-prev]")?.addEventListener("click", input.onPrevWeek);
@@ -95,6 +96,15 @@ export const renderStaffCalendar = (
       const date = button.getAttribute("data-staff-day");
       if (date !== null) {
         input.onDayClick(date);
+      }
+    });
+  }
+  for (const button of host.querySelectorAll("[data-staff-shift]")) {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const shiftId = button.getAttribute("data-staff-shift");
+      if (shiftId !== null) {
+        input.onShiftClick?.(shiftId);
       }
     });
   }

@@ -7,6 +7,7 @@ import {
   deleteMenuGalleryItem,
   deleteMenuItem,
   deleteQuizQuestion,
+  deleteVenueTable,
   downloadExport,
   fetchBookings,
   fetchBroadcastHistory,
@@ -39,6 +40,7 @@ import {
   patchContacts,
   patchContentPage,
   patchSettings,
+  patchVenueTable,
   previewBroadcast,
   saveFloorPlan,
   saveStaffDay,
@@ -50,12 +52,16 @@ import {
   updateQuizQuestion,
   updateStaffSchedule,
   uploadMenuGallery,
-  type ContactEntry,
-  type BookingRow,
-  type FloorPlanView,
-  type StatsGranularity,
-  type StatsMetric,
-  type StatsSummary,
+} from "./api.ts";
+import type {
+  BookingRow,
+  ContactEntry,
+  FloorPlanView,
+  StaffMemberView,
+  StatsGranularity,
+  StatsMetric,
+  StatsSummary,
+  VenueTableView,
 } from "./api.ts";
 import { type AdminTab, renderAdminShell, setActiveAdminTab } from "./admin-nav.ts";
 import { renderBrandPanel } from "./brand-panel.ts";
@@ -78,7 +84,10 @@ import {
   renderVenueQr,
   settingLabel,
   SETTING_HINTS,
+  SECTION_HINTS,
+  sectionIntro,
 } from "./ui-helpers.ts";
+import { closeAdminSheet, openAdminSheet } from "./sheet.ts";
 import "./style.css";
 
 type Tab = AdminTab;
@@ -106,6 +115,13 @@ const GRANULARITY_OPTIONS: { id: StatsGranularity; label: string }[] = [
 ];
 
 const WEEKDAY_LABELS = ["", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+const todayIsoDate = () => {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+};
 
 const renderShell = (root: HTMLElement, active: Tab) => {
   renderAdminShell(root, active, {
@@ -358,6 +374,7 @@ const renderDashboard = async (host: HTMLElement, view: DashboardView) => {
           ${PERIOD_OPTIONS.map((days) => `<button type="button" data-days="${days}" class="${days === period ? "active" : ""}">${days} д</button>`).join("")}
         </div>
       </div>
+      ${sectionIntro(SECTION_HINTS.dashboard ?? "")}
       <div class="grid dashboard-kpi-grid">
         ${renderStat("Регистрации", s.registrations, delta("registrations"))}
         ${renderStat("Визиты", s.visits, delta("visits"))}
@@ -485,7 +502,7 @@ const renderGuests = (host: HTMLElement) => {
       button.addEventListener("click", () => {
         const id = button.getAttribute("data-guest");
         if (id !== null) {
-          void showGuest(host.querySelector("[data-detail]"), id);
+          void showGuest(id);
         }
       });
     }
@@ -502,6 +519,7 @@ const renderGuests = (host: HTMLElement) => {
   host.innerHTML = `
     <section class="panel">
       <h2>Гости</h2>
+      ${sectionIntro(SECTION_HINTS.guests)}
       <div class="pill-group" data-guest-mode style="margin-bottom:0.75rem">
         <button type="button" data-mode="list" class="active">Список</button>
         <button type="button" data-mode="search">Поиск</button>
@@ -526,12 +544,11 @@ const renderGuests = (host: HTMLElement) => {
         <button type="button" class="action" data-search>Найти</button>
       </div>
       <div data-results class="list"></div>
-      <div data-detail class="panel hidden" style="margin-top:1rem"></div>
     </section>
   `;
+  bindInfoIcons(host);
 
   const results = host.querySelector("[data-results]");
-  const detail = host.querySelector("[data-detail]");
   const listTools = host.querySelector("[data-list-tools]");
   const searchTools = host.querySelector("[data-search-tools]");
   if (!(results instanceof HTMLElement)) {
@@ -607,7 +624,7 @@ const renderGuests = (host: HTMLElement) => {
       button.addEventListener("click", () => {
         const id = button.getAttribute("data-guest");
         if (id !== null) {
-          void showGuest(detail, id);
+          void showGuest(id);
         }
       });
     }
@@ -626,19 +643,27 @@ const renderGuests = (host: HTMLElement) => {
   void loadDirectory(results);
 };
 
-const showGuest = async (detail: Element | null, guestId: string) => {
-  if (!(detail instanceof HTMLElement)) {
+const roleOptionsHtml = (current: string) => {
+  return ["guest", "master", "admin"]
+    .map((role) => `<option value="${role}" ${role === current ? "selected" : ""}>${role}</option>`)
+    .join("");
+};
+
+const showGuest = async (guestId: string) => {
+  const body = openAdminSheet({
+    title: "Гость",
+    body: `<p class="muted">Загрузка карточки…</p>`,
+  });
+  if (!(body instanceof HTMLElement)) {
     return;
   }
-  detail.classList.remove("hidden");
-  detail.innerHTML = `<p class="muted">Загрузка карточки…</p>`;
   const [card, ledger, pattern] = await Promise.all([
     fetchGuest(guestId),
     fetchGuestLedger(guestId),
     fetchGuestVisitPattern(guestId),
   ]);
   if (card.kind === "error") {
-    detail.innerHTML = `<p class="error">${escapeHtml(card.message)}</p>`;
+    body.innerHTML = `<p class="error">${escapeHtml(card.message)}</p>`;
     return;
   }
   const ledgerRows =
@@ -660,7 +685,9 @@ const showGuest = async (detail: Element | null, guestId: string) => {
           <p class="muted">В среднем: ${pattern.data.visitsPerMonth ?? "—"} визита/мес · последний: ${pattern.data.daysSinceLastVisit === null ? "никогда" : `${pattern.data.daysSinceLastVisit} дн. назад`}</p>
         </section>`
       : "";
-  detail.innerHTML = `
+  const role = card.data.role ?? "guest";
+  const telegramId = card.data.telegramId ?? "";
+  body.innerHTML = `
     <h3>${escapeHtml(formatName(card.data.firstName, card.data.lastName))}</h3>
     <div class="grid guest-meta">
       <div class="stat"><div class="stat-label">Телефон</div><div class="stat-value stat-value-sm">${escapeHtml(card.data.phone ?? "—")}</div></div>
@@ -682,6 +709,9 @@ const showGuest = async (detail: Element | null, guestId: string) => {
         ? `<p>Купоны: ${card.data.coupons.map((coupon) => escapeHtml(coupon.title)).join(", ")}</p>`
         : ""
     }
+    ${settingLabel("staffRole", "Роль", `<select data-guest-role ${telegramId.length === 0 ? "disabled" : ""}>${roleOptionsHtml(role)}</select>`)}
+    <button type="button" class="action" data-save-guest-role style="margin-top:0.5rem" ${telegramId.length === 0 ? "disabled" : ""}>Сохранить роль</button>
+    <p class="muted" data-guest-role-status></p>
     <h4>Личное сообщение</h4>
     <textarea data-guest-message rows="3" style="width:100%"></textarea>
     <button type="button" class="action" data-send-guest-message style="margin-top:0.5rem">Отправить в Telegram</button>
@@ -691,27 +721,240 @@ const showGuest = async (detail: Element | null, guestId: string) => {
       <table><thead><tr><th>Дата</th><th>Тип</th><th>Сумма</th><th>Комментарий</th></tr></thead><tbody>${ledgerRows}</tbody></table>
     </div>
   `;
-  detail.querySelector("[data-send-guest-message]")?.addEventListener("click", () => {
-    const input = detail.querySelector("[data-guest-message]");
-    const status = detail.querySelector("[data-guest-message-status]");
+  body.querySelector("[data-save-guest-role]")?.addEventListener("click", () => {
+    const select = body.querySelector("[data-guest-role]");
+    const status = body.querySelector("[data-guest-role-status]");
+    if (!(select instanceof HTMLSelectElement) || !(status instanceof HTMLElement) || telegramId.length === 0) {
+      return;
+    }
+    const nextRole = select.value;
+    if (nextRole !== "guest" && nextRole !== "master" && nextRole !== "admin") {
+      return;
+    }
+    status.textContent = "Сохранение…";
+    void assignStaffRole(telegramId, nextRole).then((result) => {
+      status.textContent = result.kind === "ok" ? "Роль обновлена" : result.message;
+      status.className = result.kind === "ok" ? "muted" : "error";
+    });
+  });
+  body.querySelector("[data-send-guest-message]")?.addEventListener("click", () => {
+    const input = body.querySelector("[data-guest-message]");
+    const status = body.querySelector("[data-guest-message-status]");
     if (!(input instanceof HTMLTextAreaElement) || !(status instanceof HTMLElement)) {
       return;
     }
-    const body = input.value.trim();
-    if (body.length === 0) {
+    const message = input.value.trim();
+    if (message.length === 0) {
       status.textContent = "Введите текст";
       status.className = "error";
       return;
     }
     status.textContent = "Отправка…";
     status.className = "muted";
-    void sendGuestMessage(guestId, body).then((result) => {
+    void sendGuestMessage(guestId, message).then((result) => {
       status.textContent = result.kind === "ok" ? "Сообщение отправлено" : result.message;
       status.className = result.kind === "ok" ? "muted" : "error";
       if (result.kind === "ok") {
         input.value = "";
       }
     });
+  });
+  bindInfoIcons(body);
+};
+
+const openStaffDaySheet = (input: {
+  date: string;
+  members: ReadonlyArray<StaffMemberView>;
+  onSaved: () => void;
+}) => {
+  openAdminSheet({
+    title: "Смены дня",
+    body: `<p class="muted">Загрузка…</p>`,
+    onBind: (body) => {
+      void fetchStaffShifts(input.date, input.date).then((shiftsResult) => {
+        const shifts = shiftsResult.kind === "ok" ? shiftsResult.data.shifts : [];
+        body.innerHTML = `<div data-day-editor></div>`;
+        const editor = body.querySelector("[data-day-editor]");
+        if (!(editor instanceof HTMLElement)) {
+          return;
+        }
+        renderStaffDayEditor(editor, {
+          date: input.date,
+          members: [...input.members],
+          shifts: shifts.filter((shift) => shift.date === input.date),
+          onClose: () => {
+            closeAdminSheet();
+          },
+          onSave: (dayShifts) => {
+            void saveStaffDay(input.date, dayShifts).then((result) => {
+              if (result.kind === "ok") {
+                closeAdminSheet();
+                input.onSaved();
+              }
+            });
+          },
+        });
+      });
+    },
+  });
+};
+
+const openStaffScheduleSheet = (input: { member: StaffMemberView; onSaved: () => void }) => {
+  const slots = [...input.member.schedule];
+  const renderEditor = (body: HTMLElement) => {
+    body.innerHTML = `
+      <p class="muted">${escapeHtml(SETTING_HINTS.staffSchedule ?? "")}</p>
+      <div data-slot-list>${slots
+        .map(
+          (slot, index) =>
+            `<div class="form-grid" style="margin-bottom:0.5rem">
+              <label>День<select data-weekday="${index}">${[1, 2, 3, 4, 5, 6, 7]
+                .map(
+                  (day) =>
+                    `<option value="${day}" ${day === slot.weekday ? "selected" : ""}>${WEEKDAY_LABELS[day]}</option>`,
+                )
+                .join("")}</select></label>
+              <label>С<input type="time" data-start="${index}" value="${encodedToTimeValue(slot.startHour)}" step="3600" /></label>
+              <label>До<input type="time" data-end="${index}" value="${encodedToTimeValue(slot.endHour)}" step="3600" /></label>
+              <button type="button" class="action" data-remove-slot="${index}">×</button>
+            </div>`,
+        )
+        .join("")}</div>
+      <button type="button" class="action" data-add-slot>Добавить день</button>
+      <button type="button" class="action" data-save-schedule style="margin-left:0.5rem">Сохранить</button>
+      <p class="muted" data-schedule-status style="margin-top:0.5rem"></p>
+    `;
+    body.querySelector("[data-add-slot]")?.addEventListener("click", () => {
+      slots.push({ weekday: 1, startHour: 18, endHour: 26 });
+      renderEditor(body);
+    });
+    for (const removeButton of body.querySelectorAll("[data-remove-slot]")) {
+      removeButton.addEventListener("click", () => {
+        const index = Number(removeButton.getAttribute("data-remove-slot"));
+        slots.splice(index, 1);
+        renderEditor(body);
+      });
+    }
+    body.querySelector("[data-save-schedule]")?.addEventListener("click", () => {
+      const status = body.querySelector("[data-schedule-status]");
+      const parsed: Array<{ weekday: number; startHour: number; endHour: number }> = [];
+      for (let index = 0; index < slots.length; index += 1) {
+        const weekdaySelect = body.querySelector(`[data-weekday="${index}"]`);
+        const startInput = body.querySelector(`[data-start="${index}"]`);
+        const endInput = body.querySelector(`[data-end="${index}"]`);
+        if (
+          weekdaySelect instanceof HTMLSelectElement &&
+          startInput instanceof HTMLInputElement &&
+          endInput instanceof HTMLInputElement
+        ) {
+          const startHour = timeValueToStartHour(startInput.value);
+          const endHour = timeValueToEndHour(endInput.value, startHour);
+          const error = validateShiftHours(startHour, endHour);
+          if (error !== null) {
+            if (status instanceof HTMLElement) {
+              status.textContent = error;
+              status.className = "error";
+            }
+            return;
+          }
+          parsed.push({
+            weekday: Number(weekdaySelect.value),
+            startHour,
+            endHour,
+          });
+        }
+      }
+      slots.splice(0, slots.length, ...parsed);
+      if (status instanceof HTMLElement) {
+        status.textContent = "Сохранение…";
+        status.className = "muted";
+      }
+      void updateStaffSchedule(input.member.id, slots).then((result) => {
+        if (status instanceof HTMLElement) {
+          status.textContent = result.kind === "ok" ? "Сохранено" : result.message;
+          status.className = result.kind === "ok" ? "muted" : "error";
+        }
+        if (result.kind === "ok") {
+          input.member.schedule = [...slots];
+          closeAdminSheet();
+          input.onSaved();
+        }
+      });
+    });
+  };
+  openAdminSheet({
+    title: `Шаблон: ${formatName(input.member.firstName, input.member.lastName)}`,
+    body: `<div data-schedule-body></div>`,
+    onBind: (body) => {
+      renderEditor(body);
+    },
+  });
+};
+
+const openStaffRoleSheet = (input: {
+  telegramId: string;
+  name: string;
+  role?: string;
+  member?: StaffMemberView;
+  onSaved: () => void;
+  onAssignDay?: (date: string) => void;
+}) => {
+  const currentRole = input.role ?? input.member?.role ?? "master";
+  openAdminSheet({
+    title: input.name,
+    body: `
+      <p class="muted">Telegram ID: <code>${escapeHtml(input.telegramId)}</code></p>
+      ${settingLabel("staffRole", "Роль", `<select data-staff-role>${roleOptionsHtml(currentRole)}</select>`)}
+      <button type="button" class="action" data-assign-role style="margin-top:0.75rem">Сохранить роль</button>
+      ${input.member !== undefined ? `<button type="button" class="action" data-open-schedule style="margin-top:0.5rem">Шаблон смен</button>` : ""}
+      ${settingLabel("staffAssignDay", "Назначить на день", `<input type="date" data-assign-date value="${todayIsoDate()}" />`)}
+      <button type="button" class="action" data-assign-day style="margin-top:0.5rem">Открыть смены дня</button>
+      <p class="muted" data-staff-status style="margin-top:0.5rem"></p>
+    `,
+    onBind: (body) => {
+      body.querySelector("[data-assign-role]")?.addEventListener("click", () => {
+        const roleSelect = body.querySelector("[data-staff-role]");
+        const status = body.querySelector("[data-staff-status]");
+        if (!(roleSelect instanceof HTMLSelectElement) || !(status instanceof HTMLElement)) {
+          return;
+        }
+        const role = roleSelect.value;
+        if (role !== "guest" && role !== "master" && role !== "admin") {
+          return;
+        }
+        status.textContent = "Сохранение…";
+        void assignStaffRole(input.telegramId, role).then((result) => {
+          status.textContent = result.kind === "ok" ? "Роль сохранена" : result.message;
+          status.className = result.kind === "ok" ? "muted" : "error";
+          if (result.kind === "ok") {
+            closeAdminSheet();
+            input.onSaved();
+          }
+        });
+      });
+      body.querySelector("[data-open-schedule]")?.addEventListener("click", () => {
+        if (input.member === undefined) {
+          return;
+        }
+        openStaffScheduleSheet({ member: input.member, onSaved: input.onSaved });
+      });
+      body.querySelector("[data-assign-day]")?.addEventListener("click", () => {
+        const dateInput = body.querySelector("[data-assign-date]");
+        if (!(dateInput instanceof HTMLInputElement) || dateInput.value.length === 0) {
+          return;
+        }
+        if (input.onAssignDay !== undefined) {
+          input.onAssignDay(dateInput.value);
+          return;
+        }
+        openStaffDaySheet({
+          date: dateInput.value,
+          members: input.member === undefined ? [] : [input.member],
+          onSaved: input.onSaved,
+        });
+      });
+      bindInfoIcons(body);
+    },
   });
 };
 
@@ -761,7 +1004,7 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
                     .map((slot) => `${WEEKDAY_LABELS[slot.weekday] ?? slot.weekday} ${formatShiftRange(slot.startHour, slot.endHour)}`)
                     .join(", ");
             return `<tr>
-              <td>${escapeHtml(formatName(member.firstName, member.lastName))}</td>
+              <td><button type="button" class="linkish" data-staff-member="${member.id}">${escapeHtml(formatName(member.firstName, member.lastName))}</button></td>
               <td><code>${escapeHtml(member.telegramId)}</code></td>
               <td>${escapeHtml(member.role)}</td>
               <td class="muted">${escapeHtml(schedule)}</td>
@@ -781,38 +1024,24 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
       : "";
   host.innerHTML = `
     ${venueBlock}
-    <div data-staff-guest-detail class="panel hidden" style="margin-bottom:1rem"></div>
     <section class="panel">
       <h2>Добавить мастера</h2>
+      ${sectionIntro(SECTION_HINTS.staff)}
       <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
         <input type="search" placeholder="Имя, @ник или Telegram ID" data-staff-search style="flex:1" />
         <button type="button" class="action" data-staff-search-btn>Найти</button>
       </div>
       <div data-staff-search-results class="list" style="margin-bottom:0.75rem"></div>
-      <div class="form-grid">
-        <label>Telegram ID<input type="text" data-staff-tg-id /></label>
-        <label>Роль
-          <select data-staff-role>
-            <option value="master">master</option>
-            <option value="admin">admin</option>
-            <option value="guest">guest</option>
-          </select>
-        </label>
-      </div>
-      <button type="button" class="action" data-assign-role style="margin-top:0.75rem">Назначить</button>
-      <p class="muted" data-staff-status style="margin-top:0.5rem"></p>
     </section>
     <section class="panel">
       <h2>График смен</h2>
       <div data-staff-calendar style="margin-bottom:1rem"></div>
-      <div data-staff-day-editor class="hidden" style="margin-top:1rem"></div>
     </section>
     <section class="panel">
       <h2>Сотрудники</h2>
       <div class="table-wrap">
         <table><thead><tr><th>Имя</th><th>Telegram</th><th>Роль</th><th>Шаблон</th><th></th></tr></thead><tbody>${memberRows || '<tr><td colspan="5" class="muted">Пусто</td></tr>'}</tbody></table>
       </div>
-      <div data-schedule-editor class="hidden" style="margin-top:1rem"></div>
     </section>
     <section class="panel">
       <div class="toolbar">
@@ -824,6 +1053,7 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
       </div>
     </section>
   `;
+  bindInfoIcons(host);
   bindPeriodToolbar(host, (next) => {
     void preserveScroll(() => renderStaff(host, next));
   });
@@ -833,20 +1063,43 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
       void renderVenueQr(canvas, venueCode.data.qrPayload);
     }
   }
-  const staffGuestDetail = host.querySelector("[data-staff-guest-detail]");
   for (const button of host.querySelectorAll("[data-guest-log]")) {
     button.addEventListener("click", () => {
       const id = button.getAttribute("data-guest-log");
-      if (id !== null && staffGuestDetail instanceof HTMLElement) {
-        void showGuest(staffGuestDetail, id);
+      if (id !== null) {
+        void showGuest(id);
       }
+    });
+  }
+  const reloadStaff = () => preserveScroll(() => renderStaff(host, days));
+  const staffMembers = members.kind === "ok" ? members.data.members : [];
+  const openDay = (date: string) => {
+    openStaffDaySheet({
+      date,
+      members: staffMembers,
+      onSaved: () => void reloadStaff(),
+    });
+  };
+  for (const button of host.querySelectorAll("[data-staff-member]")) {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-staff-member");
+      const member = staffMembers.find((row) => row.id === id);
+      if (member === undefined) {
+        return;
+      }
+      openStaffRoleSheet({
+        telegramId: member.telegramId,
+        name: formatName(member.firstName, member.lastName),
+        member,
+        onSaved: () => void reloadStaff(),
+        onAssignDay: openDay,
+      });
     });
   }
   const runStaffSearch = async () => {
     const input = host.querySelector("[data-staff-search]");
     const results = host.querySelector("[data-staff-search-results]");
-    const tgInput = host.querySelector("[data-staff-tg-id]");
-    if (!(input instanceof HTMLInputElement) || !(results instanceof HTMLElement) || !(tgInput instanceof HTMLInputElement)) {
+    if (!(input instanceof HTMLInputElement) || !(results instanceof HTMLElement)) {
       return;
     }
     const q = input.value.trim();
@@ -855,8 +1108,12 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
       return;
     }
     if (/^\d+$/.test(q)) {
-      tgInput.value = q;
-      results.innerHTML = `<p class="muted">Telegram ID подставлен</p>`;
+      openStaffRoleSheet({
+        telegramId: q,
+        name: `ID ${q}`,
+        onSaved: () => void reloadStaff(),
+        onAssignDay: openDay,
+      });
       return;
     }
     results.innerHTML = `<p class="muted">Поиск…</p>`;
@@ -874,44 +1131,26 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
     for (const pick of results.querySelectorAll("[data-pick-tg]")) {
       pick.addEventListener("click", () => {
         const telegramId = pick.getAttribute("data-pick-tg");
-        if (telegramId !== null && telegramId.length > 0) {
-          tgInput.value = telegramId;
-          results.innerHTML = `<p class="muted">Telegram ID подставлен</p>`;
+        if (telegramId === null || telegramId.length === 0) {
+          return;
         }
+        openStaffRoleSheet({
+          telegramId,
+          name: pick.textContent ?? telegramId,
+          onSaved: () => void reloadStaff(),
+          onAssignDay: openDay,
+        });
       });
     }
   };
   host.querySelector("[data-staff-search-btn]")?.addEventListener("click", () => {
     void runStaffSearch();
   });
-  const staffStatus = host.querySelector("[data-staff-status]");
-  host.querySelector("[data-assign-role]")?.addEventListener("click", () => {
-    const tgInput = host.querySelector("[data-staff-tg-id]");
-    const roleSelect = host.querySelector("[data-staff-role]");
-    if (!(tgInput instanceof HTMLInputElement) || !(roleSelect instanceof HTMLSelectElement) || !(staffStatus instanceof HTMLElement)) {
-      return;
-    }
-    const telegramId = tgInput.value.trim();
-    if (telegramId.length === 0) {
-      staffStatus.textContent = "Введите Telegram ID";
-      staffStatus.className = "error";
-      return;
-    }
-    staffStatus.textContent = "Сохранение…";
-    void assignStaffRole(telegramId, roleSelect.value as "guest" | "master" | "admin").then((result) => {
-      staffStatus.textContent = result.kind === "ok" ? "Роль назначена" : result.message;
-      staffStatus.className = result.kind === "ok" ? "muted" : "error";
-      if (result.kind === "ok") {
-        void preserveScroll(() => renderStaff(host, days));
-      }
-    });
-  });
   if (members.kind === "ok") {
     const weekOffset = Number(host.dataset.staffWeekOffset ?? "0");
     const weekStart = staffWeekStart(weekOffset);
     const weekEnd = addDaysIso(weekStart, 6);
     const calendarHost = host.querySelector("[data-staff-calendar]");
-    const dayEditorHost = host.querySelector("[data-staff-day-editor]");
 
     const mountCalendar = async () => {
       if (!(calendarHost instanceof HTMLElement)) {
@@ -924,27 +1163,13 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
         weekOffset,
         members: members.data.members,
         shifts,
-        onDayClick: (date) => {
-          if (!(dayEditorHost instanceof HTMLElement)) {
+        onDayClick: openDay,
+        onShiftClick: (shiftId) => {
+          const shift = shifts.find((row) => row.id === shiftId);
+          if (shift === undefined) {
             return;
           }
-          dayEditorHost.classList.remove("hidden");
-          renderStaffDayEditor(dayEditorHost, {
-            date,
-            members: members.data.members,
-            shifts: shifts.filter((shift) => shift.date === date),
-            onClose: () => {
-              dayEditorHost.classList.add("hidden");
-            },
-            onSave: (dayShifts) => {
-              void saveStaffDay(date, dayShifts).then((result) => {
-                if (result.kind === "ok") {
-                  void mountCalendar();
-                  dayEditorHost.classList.add("hidden");
-                }
-              });
-            },
-          });
+          openDay(shift.date);
         },
         onPrevWeek: () => {
           host.dataset.staffWeekOffset = String(weekOffset - 1);
@@ -969,106 +1194,17 @@ const renderStaff = async (host: HTMLElement, days = 7) => {
     for (const button of host.querySelectorAll("[data-edit-schedule]")) {
       button.addEventListener("click", () => {
         const userId = button.getAttribute("data-edit-schedule");
-        const editor = host.querySelector("[data-schedule-editor]");
-        if (userId === null || !(editor instanceof HTMLElement)) {
+        if (userId === null) {
           return;
         }
         const member = members.data.members.find((row) => row.id === userId);
         if (member === undefined) {
           return;
         }
-        editor.classList.remove("hidden");
-        const slots = [...member.schedule];
-        const renderEditor = () => {
-          editor.innerHTML = `
-            <h3>Смены: ${escapeHtml(formatName(member.firstName, member.lastName))}</h3>
-            <div data-slot-list>${slots
-              .map(
-                (slot, index) =>
-                  `<div class="form-grid" style="margin-bottom:0.5rem">
-                    <label>День<select data-weekday="${index}">${[1, 2, 3, 4, 5, 6, 7]
-                      .map(
-                        (day) =>
-                          `<option value="${day}" ${day === slot.weekday ? "selected" : ""}>${WEEKDAY_LABELS[day]}</option>`,
-                      )
-                      .join("")}</select></label>
-                    <label>С<input type="time" data-start="${index}" value="${encodedToTimeValue(slot.startHour)}" step="3600" /></label>
-                    <label>До<input type="time" data-end="${index}" value="${encodedToTimeValue(slot.endHour)}" step="3600" /></label>
-                    <button type="button" class="action" data-remove-slot="${index}">×</button>
-                  </div>`,
-              )
-              .join("")}</div>
-            <button type="button" class="action" data-add-slot>Добавить день</button>
-            <button type="button" class="action" data-save-schedule style="margin-left:0.5rem">Сохранить</button>
-            <p class="muted" data-schedule-status style="margin-top:0.5rem"></p>
-          `;
-          editor.querySelector("[data-add-slot]")?.addEventListener("click", () => {
-            slots.push({ weekday: 1, startHour: 18, endHour: 26 });
-            renderEditor();
-          });
-          for (const removeButton of editor.querySelectorAll("[data-remove-slot]")) {
-            removeButton.addEventListener("click", () => {
-              const index = Number(removeButton.getAttribute("data-remove-slot"));
-              slots.splice(index, 1);
-              renderEditor();
-            });
-          }
-          editor.querySelector("[data-save-schedule]")?.addEventListener("click", () => {
-            const status = editor.querySelector("[data-schedule-status]");
-            const parsed: Array<{ weekday: number; startHour: number; endHour: number }> = [];
-            for (let index = 0; index < slots.length; index += 1) {
-              const weekdaySelect = editor.querySelector(`[data-weekday="${index}"]`);
-              const startInput = editor.querySelector(`[data-start="${index}"]`);
-              const endInput = editor.querySelector(`[data-end="${index}"]`);
-              if (
-                weekdaySelect instanceof HTMLSelectElement &&
-                startInput instanceof HTMLInputElement &&
-                endInput instanceof HTMLInputElement
-              ) {
-                const startHour = timeValueToStartHour(startInput.value);
-                const endHour = timeValueToEndHour(endInput.value, startHour);
-                const error = validateShiftHours(startHour, endHour);
-                if (error !== null) {
-                  if (status instanceof HTMLElement) {
-                    status.textContent = error;
-                    status.className = "error";
-                  }
-                  return;
-                }
-                parsed.push({
-                  weekday: Number(weekdaySelect.value),
-                  startHour,
-                  endHour,
-                });
-              }
-            }
-            slots.splice(0, slots.length, ...parsed);
-            if (status instanceof HTMLElement) {
-              status.textContent = "Сохранение…";
-              status.className = "muted";
-            }
-            void updateStaffSchedule(userId, slots).then((result) => {
-              if (status instanceof HTMLElement) {
-                status.textContent = result.kind === "ok" ? "Сохранено" : result.message;
-                status.className = result.kind === "ok" ? "muted" : "error";
-              }
-              if (result.kind === "ok") {
-                member.schedule = [...slots];
-                const row = host.querySelector(`[data-edit-schedule="${userId}"]`)?.closest("tr");
-                const scheduleCell = row?.querySelector("td:nth-child(4)");
-                if (scheduleCell instanceof HTMLElement) {
-                  scheduleCell.textContent =
-                    slots.length === 0
-                      ? "—"
-                      : slots
-                          .map((slot) => `${WEEKDAY_LABELS[slot.weekday] ?? slot.weekday} ${formatShiftRange(slot.startHour, slot.endHour)}`)
-                          .join(", ");
-                }
-              }
-            });
-          });
-        };
-        renderEditor();
+        openStaffScheduleSheet({
+          member,
+          onSaved: () => void reloadStaff(),
+        });
       });
     }
   }
@@ -1083,22 +1219,25 @@ const renderExport = (host: HTMLElement) => {
           <h2>Экспорт CSV</h2>
           ${renderPeriodToolbar(days)}
         </div>
-        <p class="muted">Скачивание через текущую Telegram-сессию</p>
-        <label>Тип
-          <select data-type>
+        ${sectionIntro(SECTION_HINTS.export ?? "")}
+        ${settingLabel(
+          "exportType",
+          "Тип",
+          `<select data-type>
             <option value="ledger">ledger</option>
             <option value="visits">visits</option>
             <option value="checkins">checkins</option>
             <option value="coupons">coupons</option>
             <option value="staff_log">staff_log</option>
-          </select>
-        </label>
+          </select>`,
+        )}
         <div style="margin-top:0.75rem">
           <button type="button" class="action" data-download>Скачать</button>
         </div>
         <p class="muted" data-status style="margin-top:0.5rem"></p>
       </section>
     `;
+    bindInfoIcons(host);
     bindPeriodToolbar(host, (next) => {
       days = next;
       render();
@@ -1151,7 +1290,8 @@ const renderBroadcasts = async (host: HTMLElement) => {
   host.innerHTML = `
     <section class="panel">
       <h2>Новая рассылка</h2>
-      <label>Сегмент<select data-segment>${options}</select></label>
+      ${sectionIntro(SECTION_HINTS.broadcasts ?? "")}
+      ${settingLabel("broadcastSegment", "Сегмент", `<select data-segment>${options}</select>`)}
       <label style="display:block;margin-top:0.5rem">Мин. баланс (для balance_gt)
         <input type="number" data-balance-min value="500" min="0" />
       </label>
@@ -1186,6 +1326,7 @@ const renderBroadcasts = async (host: HTMLElement) => {
       </div>
     </section>
   `;
+  bindInfoIcons(host);
   const readForm = () => {
     const segment = host.querySelector("[data-segment]");
     const body = host.querySelector("[data-body]");
@@ -1263,6 +1404,7 @@ const renderSettings = async (host: HTMLElement) => {
   host.innerHTML = `
     <section class="panel">
       <h2>Настройки</h2>
+      ${sectionIntro(SECTION_HINTS.settings ?? "")}
       <form data-settings class="form-grid">
         ${settingLabel("percent", "% с чека", `<input type="number" name="percent" value="${s.percent}" min="0" max="100" />`)}
         ${settingLabel("registrationBonus", "Регистрация", `<input type="number" name="registrationBonus" value="${s.registrationBonus}" min="0" />`)}
@@ -1384,6 +1526,7 @@ const renderMenu = async (host: HTMLElement) => {
   host.innerHTML = `
     <section class="panel">
       <h2>Галерея меню</h2>
+      ${sectionIntro(SECTION_HINTS.menu ?? "")}
       <p class="muted">Загрузите фото прайса или картинок меню</p>
       <input type="file" accept="image/jpeg,image/png,image/webp" multiple data-gallery-upload />
       <div class="gallery-grid" style="margin-top:0.75rem">${gallery || '<p class="muted">Пока нет фото</p>'}</div>
@@ -1407,6 +1550,7 @@ const renderMenu = async (host: HTMLElement) => {
       <div data-menu-editor class="hidden panel" style="margin-top:1rem"></div>
     </section>
   `;
+  bindInfoIcons(host);
   const galleryStatus = host.querySelector("[data-gallery-status]");
   const uploadInput = host.querySelector("[data-gallery-upload]");
   if (uploadInput instanceof HTMLInputElement && galleryStatus instanceof HTMLElement) {
@@ -1618,9 +1762,85 @@ const renderVenueTablesList = (floorPlan: FloorPlanView) =>
   floorPlan.tables
     .map(
       (table) =>
-        `<tr><td>${escapeHtml(table.label)}</td><td>${table.seatsMin}-${table.seatsMax}</td><td>${escapeHtml(table.description)}</td><td>${escapeHtml(table.highlights.join(", "))}</td></tr>`,
+        `<tr data-edit-table="${table.id}"><td><button type="button" class="linkish">${escapeHtml(table.label)}</button></td><td>${table.seatsMin}-${table.seatsMax}</td><td>${escapeHtml(table.description)}</td><td>${escapeHtml(table.highlights.join(", "))}</td></tr>`,
     )
     .join("") || '<tr><td colspan="4" class="muted">Столов пока нет</td></tr>';
+
+const openTableSheet = (input: {
+  floorPlan: FloorPlanView;
+  table?: VenueTableView;
+  onSaved: () => void;
+}) => {
+  const table = input.table;
+  openAdminSheet({
+    title: table === undefined ? "Новый стол" : `Стол ${table.label}`,
+    body: `
+      <form data-table-form class="form-grid">
+        ${settingLabel("tableLabel", "Название", `<input name="label" required value="${escapeHtml(table?.label ?? "")}" />`)}
+        ${settingLabel("tableSeats", "Мест мин", `<input type="number" name="seatsMin" value="${table?.seatsMin ?? 1}" min="1" />`)}
+        ${settingLabel("tableSeats", "Мест макс", `<input type="number" name="seatsMax" value="${table?.seatsMax ?? 4}" min="1" />`)}
+        ${settingLabel("tableDescription", "Описание", `<input name="description" value="${escapeHtml(table?.description ?? "")}" />`)}
+        ${settingLabel("tableHighlights", "Преимущества (через запятую)", `<input name="highlights" value="${escapeHtml(table?.highlights.join(", ") ?? "")}" />`)}
+      </form>
+      <button type="button" class="action" data-save-table style="margin-top:0.75rem">Сохранить</button>
+      ${table !== undefined ? `<button type="button" class="danger" data-delete-table style="margin-top:0.5rem">Удалить</button>` : ""}
+      <p class="muted" data-table-status></p>
+    `,
+    onBind: (body) => {
+      const readForm = () => {
+        const form = body.querySelector("[data-table-form]");
+        if (!(form instanceof HTMLFormElement)) {
+          return null;
+        }
+        const formData = new FormData(form);
+        const highlightsRaw = String(formData.get("highlights") ?? "").trim();
+        return {
+          label: String(formData.get("label") ?? ""),
+          description: String(formData.get("description") ?? ""),
+          highlights:
+            highlightsRaw.length === 0
+              ? []
+              : highlightsRaw.split(",").map((part) => part.trim()).filter((part) => part.length > 0),
+          seatsMin: Number(formData.get("seatsMin")),
+          seatsMax: Number(formData.get("seatsMax")),
+        };
+      };
+      body.querySelector("[data-save-table]")?.addEventListener("click", () => {
+        const parsed = readForm();
+        const status = body.querySelector("[data-table-status]");
+        if (parsed === null || !(status instanceof HTMLElement)) {
+          return;
+        }
+        status.textContent = "Сохранение…";
+        const request =
+          table === undefined
+            ? createVenueTable({ floorPlanId: input.floorPlan.id, ...parsed })
+            : patchVenueTable(table.id, parsed);
+        void request.then((result) => {
+          if (result.kind !== "ok") {
+            status.textContent = result.message;
+            status.className = "error";
+            return;
+          }
+          closeAdminSheet();
+          input.onSaved();
+        });
+      });
+      body.querySelector("[data-delete-table]")?.addEventListener("click", () => {
+        if (table === undefined || !window.confirm("Удалить стол?")) {
+          return;
+        }
+        void deleteVenueTable(table.id).then((result) => {
+          if (result.kind === "ok") {
+            closeAdminSheet();
+            input.onSaved();
+          }
+        });
+      });
+      bindInfoIcons(body);
+    },
+  });
+};
 
 const refreshBookingsList = async (host: HTMLElement) => {
   const statusFilter = host.dataset.bookingsStatus ?? "";
@@ -1673,26 +1893,42 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
   floorHost.innerHTML = `
     <section class="panel" style="margin-top:1rem">
       <h2>План зала · ${escapeHtml(floorPlan.name)}</h2>
+      ${sectionIntro(SECTION_HINTS.bookings)}
       <div class="floor-plan-size-row">
-        <label>Ширина зала<input type="number" data-floor-width value="${floorPlan.width}" min="10" max="1000" step="1" /></label>
-        <label>Высота зала<input type="number" data-floor-height value="${floorPlan.height}" min="10" max="1000" step="1" /></label>
+        ${settingLabel("floorWidth", "Ширина зала", `<input type="number" data-floor-width value="${floorPlan.width}" min="10" max="1000" step="1" />`)}
+        ${settingLabel("floorHeight", "Высота зала", `<input type="number" data-floor-height value="${floorPlan.height}" min="10" max="1000" step="1" />`)}
         <button type="button" class="action" data-apply-floor-size>Применить размер</button>
       </div>
       <div data-floor-editor></div>
-      <form data-new-table class="form-grid" style="margin:1rem 0">
-        <label>Название<input name="label" required /></label>
-        <label>Мест мин<input type="number" name="seatsMin" value="1" min="1" /></label>
-        <label>Мест макс<input type="number" name="seatsMax" value="4" min="1" /></label>
-        <label style="grid-column:1/-1">Описание<input name="description" /></label>
-        <label style="grid-column:1/-1">Преимущества (через запятую)<input name="highlights" /></label>
-      </form>
-      <button type="button" class="action" data-add-table>Добавить стол</button>
+      <button type="button" class="action" data-add-table style="margin-top:1rem">Добавить стол</button>
       <div class="table-wrap" style="margin-top:1rem">
         <table><thead><tr><th>Стол</th><th>Места</th><th>Описание</th><th>Преимущества</th></tr></thead>
         <tbody data-tables-list>${renderVenueTablesList(floorPlan)}</tbody></table>
       </div>
     </section>`;
   const editorHost = floorHost.querySelector("[data-floor-editor]");
+  const refreshFloor = async () => {
+    const refreshed = await fetchFloorPlan();
+    if (refreshed.kind === "ok" && refreshed.data.floorPlan !== null) {
+      bookingsFloorPlanCache = refreshed.data.floorPlan;
+      const list = floorHost.querySelector("[data-tables-list]");
+      if (list instanceof HTMLElement) {
+        list.innerHTML = renderVenueTablesList(refreshed.data.floorPlan);
+        bindTableRows(refreshed.data.floorPlan);
+      }
+      remountFloorEditor(refreshed.data.floorPlan);
+      void refreshBookingsList(host);
+    }
+  };
+  const bindTableRows = (plan: FloorPlanView) => {
+    for (const row of floorHost.querySelectorAll("[data-edit-table]")) {
+      row.addEventListener("click", () => {
+        const id = row.getAttribute("data-edit-table");
+        const table = plan.tables.find((item) => item.id === id);
+        openTableSheet({ floorPlan: plan, table, onSaved: () => void refreshFloor() });
+      });
+    }
+  };
   const remountFloorEditor = (plan: FloorPlanView) => {
     if (!(editorHost instanceof HTMLElement)) {
       return;
@@ -1702,11 +1938,18 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
         const list = floorHost.querySelector("[data-tables-list]");
         if (list instanceof HTMLElement && bookingsFloorPlanCache !== null) {
           list.innerHTML = renderVenueTablesList(bookingsFloorPlanCache);
+          bindTableRows(bookingsFloorPlanCache);
         }
+      },
+      onTableClick: (tableId) => {
+        const table = plan.tables.find((item) => item.id === tableId);
+        openTableSheet({ floorPlan: plan, table, onSaved: () => void refreshFloor() });
       },
     });
   };
   remountFloorEditor(floorPlan);
+  bindTableRows(floorPlan);
+  bindInfoIcons(floorHost);
   floorHost.querySelector("[data-apply-floor-size]")?.addEventListener("click", () => {
     const widthInput = floorHost.querySelector("[data-floor-width]");
     const heightInput = floorHost.querySelector("[data-floor-height]");
@@ -1726,37 +1969,9 @@ const mountBookingsFloorSection = (host: HTMLElement, floorPlan: FloorPlanView |
     });
   });
   floorHost.querySelector("[data-add-table]")?.addEventListener("click", () => {
-    const form = floorHost.querySelector("[data-new-table]");
-    if (!(form instanceof HTMLFormElement)) {
-      return;
-    }
-    const formData = new FormData(form);
-    const highlightsRaw = String(formData.get("highlights") ?? "").trim();
-    void createVenueTable({
-      floorPlanId: floorPlan.id,
-      label: String(formData.get("label") ?? ""),
-      description: String(formData.get("description") ?? ""),
-      highlights:
-        highlightsRaw.length === 0
-          ? []
-          : highlightsRaw.split(",").map((part) => part.trim()).filter((part) => part.length > 0),
-      seatsMin: Number(formData.get("seatsMin")),
-      seatsMax: Number(formData.get("seatsMax")),
-    }).then(async (result) => {
-      if (result.kind !== "ok") {
-        return;
-      }
-      const refreshed = await fetchFloorPlan();
-      if (refreshed.kind === "ok" && refreshed.data.floorPlan !== null) {
-        bookingsFloorPlanCache = refreshed.data.floorPlan;
-        const list = floorHost.querySelector("[data-tables-list]");
-        if (list instanceof HTMLElement) {
-          list.innerHTML = renderVenueTablesList(refreshed.data.floorPlan);
-        }
-        remountFloorEditor(refreshed.data.floorPlan);
-        form.reset();
-        void refreshBookingsList(host);
-      }
+    openTableSheet({
+      floorPlan,
+      onSaved: () => void refreshFloor(),
     });
   });
 };
@@ -1778,6 +1993,7 @@ const renderBookings = async (host: HTMLElement) => {
   host.innerHTML = `
     <section class="panel">
       <h2>Брони (14 дней) <span class="pill-badge ${pendingCount === 0 ? "hidden" : ""}" data-pending-count>${pendingCount > 0 ? pendingCount : ""}</span></h2>
+      ${sectionIntro(SECTION_HINTS.bookings ?? "")}
       <div class="booking-filters">
         ${BOOKING_STATUS_FILTERS.map(
           (filter) =>
@@ -1834,6 +2050,7 @@ const renderContent = async (host: HTMLElement) => {
   host.innerHTML = `
     <section class="panel">
       <h2>Контакты</h2>
+      ${sectionIntro(SECTION_HINTS.content ?? "")}
       <div data-contacts-list>${contactEntries.map((entry, index) => renderContactEntryRow(entry, index)).join("")}</div>
       <button type="button" class="action" data-add-contact style="margin-top:0.5rem">Добавить контакт</button>
       <button type="button" class="action" data-save-contacts style="margin-top:0.75rem">Сохранить</button>
@@ -1849,6 +2066,7 @@ const renderContent = async (host: HTMLElement) => {
       <p class="muted" data-content-status style="margin-top:0.5rem"></p>
     </section>
   `;
+  bindInfoIcons(host);
   const status = host.querySelector("[data-content-status]");
   const contactsStatus = host.querySelector("[data-contacts-status]");
   const contactsList = host.querySelector("[data-contacts-list]");
@@ -1952,8 +2170,10 @@ const renderGames = async (host: HTMLElement) => {
   host.innerHTML = `
     <section class="panel">
       <h2>Викторина</h2>
+      ${sectionIntro(SECTION_HINTS.games ?? "")}
       ${quizBlock}
       <button type="button" class="action" data-start-quiz>Запустить на 30 мин</button>
+      ${infoIcon(SETTING_HINTS.quizStart ?? "")}
       <p class="muted" data-quiz-status style="margin-top:0.5rem"></p>
       <h3 style="margin-top:1rem">Вопросы</h3>
       <form data-quiz-create class="form-grid" style="margin-top:0.5rem">
@@ -1976,6 +2196,7 @@ const renderGames = async (host: HTMLElement) => {
       <table><thead><tr><th>Игра</th><th>Очки</th><th>Причина</th><th>Дата</th></tr></thead><tbody>${body || '<tr><td colspan="4" class="muted">Пусто</td></tr>'}</tbody></table>
     </section>
   `;
+  bindInfoIcons(host);
   host.querySelector("[data-start-quiz]")?.addEventListener("click", () => {
     const status = host.querySelector("[data-quiz-status]");
     if (!(status instanceof HTMLElement)) {

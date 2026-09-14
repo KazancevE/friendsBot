@@ -7,9 +7,16 @@ import {
   fetchThemePacks,
   updateThemePack,
   uploadThemeAsset,
-  type ThemePack,
 } from "./api.ts";
-import { escapeHtml } from "./ui-helpers.ts";
+import type { ThemePack } from "./api.ts";
+import { applyThemePreview, themePreviewMarkup } from "./theme-preview.ts";
+import {
+  bindInfoIcons,
+  escapeHtml,
+  SECTION_HINTS,
+  sectionIntro,
+  settingLabel,
+} from "./ui-helpers.ts";
 
 const assetPreview = (url: string | null, label: string) => {
   if (url === null) {
@@ -33,9 +40,12 @@ const renderPackEditor = (pack: ThemePack, activeId: string | null) => {
       </div>
       <form data-pack-form class="stack">
         <label>Название<input name="name" value="${escapeHtml(pack.name)}" required /></label>
-        <div class="grid">
-          <label>Акцент<input name="accent" type="color" value="${escapeHtml(pack.colors.accent ?? "#d4784a")}" /></label>
-          <label>Фон<input name="bg" type="color" value="${escapeHtml(pack.colors.bg ?? "#141018")}" /></label>
+        <div class="theme-preview-row">
+          <div class="grid">
+            ${settingLabel("themeAccent", "Акцент", `<input name="accent" type="color" value="${escapeHtml(pack.colors.accent ?? "#d4784a")}" />`)}
+            ${settingLabel("themeBg", "Фон", `<input name="bg" type="color" value="${escapeHtml(pack.colors.bg ?? "#141018")}" />`)}
+          </div>
+          ${themePreviewMarkup()}
         </div>
         <div class="grid">
           <label>С даты<input name="activeFrom" type="date" value="${pack.activeFrom ?? ""}" /></label>
@@ -119,7 +129,7 @@ export const renderBrandPanel = async (host: HTMLElement) => {
           <h2>Бренд / Тема</h2>
           ${currentActiveId === null ? '<span class="pill">Дефолтная тема</span>' : ""}
         </div>
-        <p class="muted">Логотип, фото интерьера, сезонные цвета и фоны для mini app и бота.</p>
+        ${sectionIntro(SECTION_HINTS.brand ?? "")}
         <form data-create-pack class="stack" style="margin-top:0.75rem">
           <label>Новая тема<input name="name" placeholder="Например: Новый год" required /></label>
           <button type="submit" class="action">Создать</button>
@@ -203,6 +213,30 @@ export const renderBrandPanel = async (host: HTMLElement) => {
         status.textContent = message;
       }
     };
+
+    const preview = editor.querySelector("[data-theme-preview]");
+    const accentInput = editor.querySelector("input[name=accent]");
+    const bgInput = editor.querySelector("input[name=bg]");
+    const refreshPreview = () => {
+      if (
+        !(preview instanceof HTMLElement) ||
+        !(accentInput instanceof HTMLInputElement) ||
+        !(bgInput instanceof HTMLInputElement)
+      ) {
+        return;
+      }
+      applyThemePreview({
+        preview,
+        accent: accentInput.value,
+        bg: bgInput.value,
+        logoUrl: selected.assets.logoUrl,
+        hubBackgroundUrl: selected.assets.hubBackgroundUrl,
+      });
+    };
+    accentInput?.addEventListener("input", refreshPreview);
+    bgInput?.addEventListener("input", refreshPreview);
+    refreshPreview();
+    bindInfoIcons(editor);
 
     editor.querySelector("[data-pack-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();

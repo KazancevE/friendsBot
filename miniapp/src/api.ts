@@ -374,6 +374,7 @@ type SubmitGameScoreParameters = {
 
 export type SubmitGameScoreResult = {
   readonly points: number;
+  readonly rawPoints?: number;
   readonly counted: boolean;
 };
 

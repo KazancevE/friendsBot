@@ -10,6 +10,7 @@ import { DomainError } from "./errors.ts";
 import type { Role } from "./types.ts";
 import { rankScores } from "./score-ranking.ts";
 import { MOSCOW, weekStartMoscow } from "./week.ts";
+import { toWeeklyPoints } from "./weekly-points.ts";
 
 const LEADERBOARD_TOP = 10;
 const QUIZ_SLUG = "quiz";
@@ -82,16 +83,18 @@ export const submitScoreOrPractice = async (store: Store, input: SubmitScorePara
     if (!verdict.accepted) {
       throw anticheatErrorFromVerdict(verdict);
     }
+    const weeklyPoints = toWeeklyPoints({ slug: input.slug, rawScore: input.points });
     const weekStart = weekStartMoscow(DateTime.fromJSDate(input.now)).toJSDate();
     const score = await store.withTransaction(async (tx) => {
       const week = await tx.getOrCreateOpenWeek(game.id, weekStart);
-      return tx.addScore(week.id, user.id, input.points, input.now);
+      return tx.addScore(week.id, user.id, weeklyPoints, input.now);
     });
-    return { points: score.points, counted: true as const };
+    return { points: weeklyPoints, rawPoints: input.points, counted: true as const, total: score.points };
   }
   if (user.role === "master" || user.role === "admin") {
     await validateGameAndPoints(store, input.slug, input.points);
-    return { points: input.points, counted: false as const };
+    const weeklyPoints = toWeeklyPoints({ slug: input.slug, rawScore: input.points });
+    return { points: weeklyPoints, rawPoints: input.points, counted: false as const };
   }
   throw new DomainError("forbidden", "Недостаточно прав");
 };

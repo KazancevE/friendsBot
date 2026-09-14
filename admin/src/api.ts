@@ -200,6 +200,8 @@ export type GuestCard = {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  telegramId?: string;
+  role?: "guest" | "master" | "admin";
   balance: number;
   birthdayWeek?: boolean;
   birthdayDaysUntil?: number | null;
@@ -1012,12 +1014,35 @@ export const deleteMenuGalleryItem = (id: string) =>
 
 export const patchVenueTable = (
   id: string,
-  patch: Partial<{ posX: number; posY: number; width: number; height: number; rotation: number; label: string }>,
+  patch: Partial<{
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    label: string;
+    description: string;
+    seatsMin: number;
+    seatsMax: number;
+    highlights: string[];
+    active: boolean;
+  }>,
 ) =>
   fetch(`/api/admin/tables/${id}`, {
     method: "PATCH",
     headers: headers(),
     body: JSON.stringify(patch),
+  }).then(async (res) => {
+    if (!res.ok) {
+      return { kind: "error" as const, message: "Ошибка" };
+    }
+    return { kind: "ok" as const, data: null };
+  });
+
+export const deleteVenueTable = (id: string) =>
+  fetch(`/api/admin/tables/${id}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initData() },
   }).then(async (res) => {
     if (!res.ok) {
       return { kind: "error" as const, message: "Ошибка" };
