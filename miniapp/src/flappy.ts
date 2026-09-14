@@ -56,8 +56,10 @@ export const renderFlappy = ({ root, onBack }: RenderFlappyParameters) => {
           <span data-score>0</span>
           <span class="muted"> · препятствий</span>
         </div>
-        <canvas class="flappy-canvas" width="320" height="480" data-canvas></canvas>
-        <p class="muted" data-status>Тап — старт</p>
+        <div class="flappy-stage" data-stage>
+          <canvas class="flappy-canvas" width="320" height="480" data-canvas></canvas>
+          <button type="button" class="flappy-start" data-start>Нажмите, чтобы начать</button>
+        </div>
         ${gameFinishButtonHtml()}
       </div>
     `;
@@ -72,7 +74,7 @@ export const renderFlappy = ({ root, onBack }: RenderFlappyParameters) => {
     }
 
     const scoreElement = root.querySelector("[data-score]");
-    const statusElement = root.querySelector("[data-status]");
+    const startButton = root.querySelector("[data-start]");
     root.querySelector("[data-back]")?.addEventListener("click", onBack);
     bindFinishGameButton({
       root,
@@ -176,6 +178,7 @@ export const renderFlappy = ({ root, onBack }: RenderFlappyParameters) => {
         const hitTop = birdY - 14 < pipe.top;
         const hitBottom = birdY + 14 > pipe.top + GAP;
         if (inX && (hitTop || hitBottom)) {
+          canvas.classList.add("flappy-canvas--hit");
           void finishGame();
           return;
         }
@@ -195,21 +198,51 @@ export const renderFlappy = ({ root, onBack }: RenderFlappyParameters) => {
       requestAnimationFrame(tick);
     };
 
-    const flap = () => {
+    const hideStart = () => {
+      if (startButton instanceof HTMLElement) {
+        startButton.hidden = true;
+      }
+    };
+
+    const flap = (event?: Event) => {
+      if (event !== undefined) {
+        event.preventDefault();
+      }
       if (finished) {
         return;
       }
       if (!running) {
         running = true;
-        if (statusElement instanceof HTMLElement) {
-          statusElement.textContent = "";
-        }
+        hideStart();
         requestAnimationFrame(tick);
       }
       birdVy = FLAP;
     };
 
-    canvas.addEventListener("pointerdown", flap);
+    const idle = (timestamp: number) => {
+      if (running || finished) {
+        return;
+      }
+      birdY = canvas.height / 2 + Math.sin(timestamp / 280) * 6;
+      draw();
+      requestAnimationFrame(idle);
+    };
+
+    const wrap = root.querySelector(".flappy-wrap");
+    wrap?.addEventListener("pointerdown", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (target.closest("[data-back], [data-finish]")) {
+        return;
+      }
+      flap(event);
+    });
+    startButton?.addEventListener("click", (event) => {
+      flap(event);
+    });
+    requestAnimationFrame(idle);
     draw();
   })();
 };

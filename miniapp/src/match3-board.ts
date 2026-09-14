@@ -1,4 +1,4 @@
-import type { Board } from "../../src/domain/match3.ts";
+import type { Board, Match3Cell } from "../../src/domain/match3.ts";
 
 import type { GameSkin } from "./theme-client.ts";
 import { tileImageUrl } from "./theme-client.ts";
@@ -93,8 +93,8 @@ const computeGravityMotion = (
         continue;
       }
       const tile = before[row]?.[col];
-      if (tile !== undefined && tile >= 0) {
-        survivors.push({ row, tile });
+      if (tile !== undefined) {
+        survivors.push({ row, tile: tile.color });
       }
     }
 
@@ -128,6 +128,9 @@ export type Match3Board = {
     after: Board,
     matchedCells: ReadonlyArray<Cell>,
   ) => Promise<void>;
+  readonly pulseSpecials: (
+    cells: ReadonlyArray<{ readonly row: number; readonly col: number }>,
+  ) => void;
   readonly setSelected: (cell: Cell | undefined) => void;
   readonly setBusy: (busy: boolean) => void;
 };
@@ -176,15 +179,47 @@ export const createMatch3Board = (
     return tiles[cell.row]?.[cell.col];
   };
 
-  const applyTile = (element: HTMLButtonElement, tile: number) => {
-    const url = tileImageUrl(skin, tile);
-    element.dataset.tile = String(tile);
+  const applyTile = (element: HTMLButtonElement, tile: Match3Cell) => {
+    const url = tileImageUrl(skin, tile.color);
+    element.dataset.tile = String(tile.color);
+    element.dataset.special = tile.special;
     element.style.transform = "";
     element.style.opacity = "";
-    element.classList.remove("popping", "flashing", "falling", "match3-tile--skin");
+    element.classList.remove(
+      "popping",
+      "flashing",
+      "falling",
+      "match3-tile--skin",
+      "match3-tile--rocket-h",
+      "match3-tile--rocket-v",
+      "match3-tile--bomb",
+      "match3-tile--color-bomb",
+    );
+    if (tile.special === "rocketH") {
+      element.classList.add("match3-tile--rocket-h");
+    }
+    if (tile.special === "rocketV") {
+      element.classList.add("match3-tile--rocket-v");
+    }
+    if (tile.special === "bomb") {
+      element.classList.add("match3-tile--bomb");
+    }
+    if (tile.special === "colorBomb") {
+      element.classList.add("match3-tile--color-bomb");
+    }
     if (url === null) {
       element.style.backgroundImage = "";
-      element.textContent = tileEmoji(tile);
+      const mark =
+        tile.special === "rocketH"
+          ? "→"
+          : tile.special === "rocketV"
+            ? "↓"
+            : tile.special === "bomb"
+              ? "✸"
+              : tile.special === "colorBomb"
+                ? "✦"
+                : "";
+      element.textContent = `${tileEmoji(tile.color)}${mark}`;
     } else {
       element.textContent = "";
       element.classList.add("match3-tile--skin");
@@ -197,9 +232,9 @@ export const createMatch3Board = (
     for (let row = 0; row < board.length; row += 1) {
       const line = board[row] ?? [];
       for (let col = 0; col < line.length; col += 1) {
-        const tile = line[col] ?? 0;
+        const tile = line[col];
         const element = tiles[row]?.[col];
-        if (element !== undefined) {
+        if (element !== undefined && tile !== undefined) {
           applyTile(element, tile);
         }
       }
@@ -344,10 +379,9 @@ export const createMatch3Board = (
       if (element === undefined || target === undefined) {
         continue;
       }
-      target.textContent = element.textContent;
-      const tileType = element.dataset.tile;
-      if (tileType !== undefined) {
-        target.dataset.tile = tileType;
+      const moving = before[move.fromRow]?.[move.col];
+      if (moving !== undefined) {
+        applyTile(target, moving);
       }
       target.style.opacity = "1";
       element.style.opacity = "0";
@@ -360,9 +394,10 @@ export const createMatch3Board = (
       if (element === undefined) {
         continue;
       }
-      const tile = after[spawn.row]?.[spawn.col] ?? 0;
-      element.textContent = tileEmoji(tile);
-      element.dataset.tile = String(tile);
+      const spawned = after[spawn.row]?.[spawn.col];
+      if (spawned !== undefined) {
+        applyTile(element, spawned);
+      }
       element.style.opacity = "1";
       const fromY = -(rows - spawn.row) * size;
       animations.push(animateFall(element, fromY, spawn.col * STAGGER_MS));
@@ -372,6 +407,18 @@ export const createMatch3Board = (
     sync(after);
   };
 
+  const pulseSpecials = (cells: ReadonlyArray<{ readonly row: number; readonly col: number }>) => {
+    for (const cell of cells) {
+      const tile = tileAt(cell);
+      if (tile === undefined) {
+        continue;
+      }
+      tile.classList.remove("special-spawn");
+      void tile.offsetWidth;
+      tile.classList.add("special-spawn");
+    }
+  };
+
   return {
     sync,
     getCellSize,
@@ -379,6 +426,7 @@ export const createMatch3Board = (
     animateRevert,
     animatePop,
     animateGravity,
+    pulseSpecials,
     setSelected,
     setBusy,
   };

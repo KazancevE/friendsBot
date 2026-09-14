@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import { expect, test } from "vitest";
 import { getGameRules, getLeaderboard, getOverallLeaderboard, submitScore, submitScoreOrPractice } from "../../src/domain/games.ts";
+import { toWeeklyPoints } from "../../src/domain/weekly-points.ts";
 import { applyCheck } from "../../src/domain/ledger.ts";
 import { registerGuest } from "../../src/domain/users.ts";
 import { openOrExtendVisit } from "../../src/domain/visits.ts";
@@ -57,7 +58,11 @@ test("master practice score succeeds without persisting", async () => {
     now,
     ...sessionTiming(now, 15),
   });
-  expect(result).toEqual({ points: 100, counted: false });
+  expect(result).toEqual({
+    points: toWeeklyPoints({ slug: "match3", rawScore: 100 }),
+    rawPoints: 100,
+    counted: false,
+  });
   const game = await store.findGameBySlug("match3");
   const week = await store.getOrCreateOpenWeek(
     game!.id,
@@ -97,7 +102,7 @@ test("adds 120 points and does not change balance", async () => {
   );
   const scores = await store.listWeekScores(week.id);
   expect(scores).toEqual([
-    expect.objectContaining({ userId: user.id, points: 120 }),
+    expect.objectContaining({ userId: user.id, points: toWeeklyPoints({ slug: "match3", rawScore: 120 }) }),
   ]);
 });
 
@@ -117,7 +122,7 @@ test("staff getLeaderboard includes displayName for top entries", async () => {
     viewerRole: "master",
   });
   expect(board.top).toEqual([
-    expect.objectContaining({ place: 1, points: 120, displayName: "Г О" }),
+    expect.objectContaining({ place: 1, points: toWeeklyPoints({ slug: "match3", rawScore: 120 }), displayName: "Г О" }),
   ]);
 });
 
@@ -136,7 +141,12 @@ test("getOverallLeaderboard sums points across games", async () => {
     now,
     viewerRole: "guest",
   });
-  expect(board.me).toEqual({ place: 1, points: 200, playedToday: false });
+  expect(board.me).toEqual({
+    place: 1,
+    points:
+      toWeeklyPoints({ slug: "match3", rawScore: 120 }) + toWeeklyPoints({ slug: "blockblast", rawScore: 80 }),
+    playedToday: false,
+  });
 });
 
 test("getLeaderboard marks playedToday after accepted session", async () => {

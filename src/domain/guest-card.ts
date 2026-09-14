@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import { daysUntilBirthday, isBirthdayWeek } from "./birthday.ts";
 import { getReferralStats } from "./referral.ts";
-import type { BonusLotCategory, ReferralStats, UserRecord } from "./types.ts";
+import type { BonusLotCategory, ReferralStats, Role, UserRecord } from "./types.ts";
 import { MOSCOW } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
@@ -16,6 +16,8 @@ export type StaffGuestCard = {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  telegramId: string;
+  role: Role;
   balance: number;
   qrToken: string;
   visitActive: boolean;
@@ -74,6 +76,8 @@ export async function buildStaffGuestCard(
     firstName: guest.firstName,
     lastName: guest.lastName,
     phone: guest.phone,
+    telegramId: guest.telegramId.toString(),
+    role: guest.role,
     balance: guest.balance,
     qrToken: guest.qrToken,
     visitActive: visit !== null,

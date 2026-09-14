@@ -163,7 +163,8 @@ export const showGameOver = async ({
     } else if (!result.data.counted) {
       status.textContent = "Тренировочная партия — очки не засчитаны";
     } else {
-      status.textContent = `Очки сессии: ${score}`;
+      const weekly = result.data.points;
+      status.textContent = `В зачёт недели: ${weekly}`;
     }
   }
 

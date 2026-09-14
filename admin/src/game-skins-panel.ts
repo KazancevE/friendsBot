@@ -1,5 +1,7 @@
-import { deleteGameSkin, fetchGameSkins, uploadGameSkinAsset, type GameSkin } from "./api.ts";
-import { escapeHtml } from "./ui-helpers.ts";
+import { deleteGameSkin, fetchGameSkins, uploadGameSkinAsset } from "./api.ts";
+import type { GameSkin } from "./api.ts";
+import { openAdminSheet } from "./sheet.ts";
+import { bindInfoIcons, escapeHtml, infoIcon, SECTION_HINTS, sectionIntro, SETTING_HINTS } from "./ui-helpers.ts";
 
 const TILE_LABELS = ["🔥 / 1", "💧 / 2", "🫧 / 3", "🌿 / 4"];
 
@@ -19,12 +21,11 @@ const assetPreview = (url: string, label: string) => {
   `;
 };
 
-const renderGameSkinSection = (slug: string, title: string, hint: string, skin: GameSkin | null) => {
+const renderGameSkinSection = (slug: string, hint: string, skin: GameSkin | null) => {
   const tiles = skin?.tiles ?? [];
   return `
-    <section class="panel" data-game-skin="${escapeHtml(slug)}">
-      <h2>${escapeHtml(title)}</h2>
-      <p class="muted">${escapeHtml(hint)}</p>
+    <section data-game-skin="${escapeHtml(slug)}">
+      <p class="muted">${escapeHtml(hint)} ${infoIcon(SETTING_HINTS.skinCover ?? "")}</p>
       <div class="tile-upload-grid">
         ${TILE_LABELS.map((label, index) => {
           const tile = tiles.find((entry) => entry.index === index);
@@ -46,7 +47,7 @@ const renderGameSkinSection = (slug: string, title: string, hint: string, skin: 
       </div>
       <div class="upload-grid skin-bg-uploads">
         <div class="skin-bg-upload">
-          <span class="tile-upload-label">Фон поля / обложка</span>
+          <span class="tile-upload-label">Фон поля / обложка ${infoIcon(SETTING_HINTS.skinCover ?? "")}</span>
           <button type="button" class="action action--compact" data-pick-bg="boardBg">Выбрать файл</button>
           <span class="muted skin-file-name" data-file-name="boardBg">Файл не выбран</span>
           <input type="file" accept="image/*" hidden data-skin-kind="boardBg" />
@@ -163,6 +164,7 @@ const bindGameSkinSection = (host: HTMLElement, slug: string, reload: () => Prom
     }
     void deleteGameSkin(slug).then(() => void reload());
   });
+  bindInfoIcons(section);
 };
 
 export const renderGameSkinsPanel = async (host: HTMLElement) => {
@@ -182,24 +184,58 @@ export const renderGameSkinsPanel = async (host: HTMLElement) => {
     render(next.data);
   };
 
+  const openSkinSheet = (slug: string, skins: GameSkin[]) => {
+    const entry = GAME_SECTIONS.find((item) => item.slug === slug);
+    if (entry === undefined) {
+      return;
+    }
+    const skin = skins.find((item) => item.gameSlug === slug) ?? null;
+    openAdminSheet({
+      title: entry.title,
+      body: renderGameSkinSection(entry.slug, entry.hint, skin),
+      onBind: (body) => {
+        bindGameSkinSection(body, slug, async () => {
+          const next = await fetchGameSkins();
+          if (next.kind === "error") {
+            return;
+          }
+          render(next.data);
+          openSkinSheet(slug, next.data);
+        });
+      },
+    });
+  };
+
   const render = (skins: GameSkin[]) => {
     host.innerHTML = `
       <section class="panel">
         <h2>Скины игр</h2>
-        <p class="muted">Внешний вид блоков и фонов в mini app играх. Обложка карточки берётся из фона поля.</p>
+        ${sectionIntro(SECTION_HINTS["game-skins"] ?? "")}
+        <div class="skin-game-list">
+          ${GAME_SECTIONS.map((entry) => {
+            const skin = skins.find((item) => item.gameSlug === entry.slug);
+            const cover = skin?.boardBackgroundUrl;
+            return `<button type="button" class="skin-game-card action" data-open-skin="${escapeHtml(entry.slug)}">
+              ${
+                cover !== undefined && cover !== null && cover.length > 0
+                  ? `<img class="skin-game-cover" src="${escapeHtml(cover)}" alt="" />`
+                  : `<span class="skin-game-cover"></span>`
+              }
+              <span>${escapeHtml(entry.title)}</span>
+            </button>`;
+          }).join("")}
+        </div>
       </section>
-      ${GAME_SECTIONS.map((entry) =>
-        renderGameSkinSection(
-          entry.slug,
-          entry.title,
-          entry.hint,
-          skins.find((skin) => skin.gameSlug === entry.slug) ?? null,
-        ),
-      ).join("")}
     `;
 
-    for (const entry of GAME_SECTIONS) {
-      bindGameSkinSection(host, entry.slug, reload);
+    for (const button of host.querySelectorAll("[data-open-skin]")) {
+      button.addEventListener("click", () => {
+        const slug = button.getAttribute("data-open-skin");
+        if (slug === null) {
+          return;
+        }
+        openSkinSheet(slug, skins);
+      });
     }
   };
 

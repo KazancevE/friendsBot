@@ -1,119 +1,23 @@
+import {
+  canMove,
+  createEmptyBoard,
+  hasWinningTile,
+  moveBoard,
+  spawnTile,
+} from "../../src/domain/game2048.ts";
+import type { Board, Direction, TileShift } from "../../src/domain/game2048.ts";
 import { showGameOver } from "./game-over.ts";
 import { bindFinishGameButton, gameFinishButtonHtml } from "./game-finish.ts";
 import { fetchGameSkin, tileImageUrl, type GameSkin } from "./theme-client.ts";
 import "./game2048.css";
 
 const SLUG = "game2048";
-const SIZE = 4;
-
-type Board = number[][];
+const SIZES = [4, 5, 8] as const;
 
 type RenderGame2048Parameters = {
   readonly root: HTMLElement;
   readonly onBack: () => void;
-};
-
-const emptyBoard = (): Board => Array.from({ length: SIZE }, () => Array<number>(SIZE).fill(0));
-
-const cloneBoard = (board: Board): Board => board.map((row) => [...row]);
-
-const randomEmptyCell = (board: Board) => {
-  const cells: Array<{ row: number; col: number }> = [];
-  for (let row = 0; row < SIZE; row += 1) {
-    for (let col = 0; col < SIZE; col += 1) {
-      if (board[row]![col] === 0) {
-        cells.push({ row, col });
-      }
-    }
-  }
-  if (cells.length === 0) {
-    return null;
-  }
-  return cells[Math.floor(Math.random() * cells.length)]!;
-};
-
-const spawnTile = (board: Board) => {
-  const cell = randomEmptyCell(board);
-  if (cell === null) {
-    return;
-  }
-  board[cell.row]![cell.col] = Math.random() < 0.9 ? 2 : 4;
-};
-
-const slideLine = (line: number[]) => {
-  const filtered = line.filter((value) => value > 0);
-  const merged: number[] = [];
-  let scoreDelta = 0;
-  for (let index = 0; index < filtered.length; index += 1) {
-    const current = filtered[index]!;
-    const next = filtered[index + 1];
-    if (next !== undefined && current === next) {
-      const mergedValue = current * 2;
-      merged.push(mergedValue);
-      scoreDelta += mergedValue;
-      index += 1;
-    } else {
-      merged.push(current);
-    }
-  }
-  while (merged.length < SIZE) {
-    merged.push(0);
-  }
-  return { line: merged, scoreDelta, changed: merged.some((value, i) => value !== line[i]) };
-};
-
-const moveBoard = (board: Board, direction: "up" | "down" | "left" | "right") => {
-  const next = cloneBoard(board);
-  let scoreDelta = 0;
-  let changed = false;
-  const readLine = (index: number) => {
-    if (direction === "left") {
-      return next[index]!;
-    }
-    if (direction === "right") {
-      return [...next[index]!].reverse();
-    }
-    if (direction === "up") {
-      return next.map((row) => row[index]!);
-    }
-    return next.map((row) => row[index]!).reverse();
-  };
-  const writeLine = (index: number, line: number[]) => {
-    if (direction === "left") {
-      next[index] = line;
-      return;
-    }
-    if (direction === "right") {
-      next[index] = [...line].reverse();
-      return;
-    }
-    if (direction === "up") {
-      for (let row = 0; row < SIZE; row += 1) {
-        next[row]![index] = line[row]!;
-      }
-      return;
-    }
-    const reversed = [...line].reverse();
-    for (let row = 0; row < SIZE; row += 1) {
-      next[row]![index] = reversed[row]!;
-    }
-  };
-  for (let index = 0; index < SIZE; index += 1) {
-    const result = slideLine(readLine(index));
-    scoreDelta += result.scoreDelta;
-    changed ||= result.changed;
-    writeLine(index, result.line);
-  }
-  return { board: next, scoreDelta, changed };
-};
-
-const canMove = (board: Board) => {
-  for (const direction of ["up", "down", "left", "right"] as const) {
-    if (moveBoard(board, direction).changed) {
-      return true;
-    }
-  }
-  return false;
+  readonly size?: number;
 };
 
 const tileLabel = (value: number) => {
@@ -136,20 +40,68 @@ const tileSkinIndex = (value: number) => {
   return Math.min(3, Math.round(Math.log2(value)) - 1);
 };
 
-export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
+const cloneBoard = (board: Board): Board => {
+  return board.map((row) => [...row]);
+};
+
+export const renderGame2048 = ({ root, onBack, size }: RenderGame2048Parameters) => {
+  if (size === undefined) {
+    root.innerHTML = `
+      <header class="game2048-header">
+        <button type="button" class="game2048-back" data-back aria-label="Назад">←</button>
+        <div>
+          <h1>2048</h1>
+          <p class="muted">Выберите размер поля</p>
+        </div>
+      </header>
+      <div class="game2048-modes">
+        ${SIZES.map(
+          (value) =>
+            `<button type="button" class="action" data-size="${value}">${value}×${value}</button>`,
+        ).join("")}
+      </div>
+    `;
+    root.querySelector("[data-back]")?.addEventListener("click", onBack);
+    for (const button of root.querySelectorAll("[data-size]")) {
+      button.addEventListener("click", () => {
+        const nextSize = Number(button.getAttribute("data-size"));
+        renderGame2048({ root, onBack, size: nextSize });
+      });
+    }
+    return;
+  }
+
   const sessionStartedAt = new Date();
-  let board = emptyBoard();
+  const boardSize = size;
+  let board = createEmptyBoard(boardSize);
+  let previous = cloneBoard(board);
+  let lastShifts: ReadonlyArray<TileShift> = [];
   let score = 0;
   let finished = false;
   let skin: GameSkin | null = null;
-  spawnTile(board);
-  spawnTile(board);
+  spawnTile({ board });
+  spawnTile({ board });
 
   let scoreElement: HTMLElement | undefined;
+  let bestElement: HTMLElement | undefined;
   let boardElement: HTMLElement | undefined;
 
-  const applyCellVisual = (cell: HTMLElement, value: number) => {
+  const bestTile = () => {
+    return Math.max(0, ...board.flat());
+  };
+
+  const prefersReducedMotion = () => {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  };
+
+  const applyCellVisual = (cell: HTMLElement, value: number, kind: "idle" | "spawn" | "merged") => {
     cell.className = "game2048-cell";
+    if (kind === "spawn") {
+      cell.classList.add("game2048-cell--spawn");
+    }
+    if (kind === "merged") {
+      cell.classList.add("game2048-cell--merged");
+    }
     cell.style.backgroundImage = "";
     if (value <= 0) {
       cell.textContent = "";
@@ -166,20 +118,85 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
     }
   };
 
-  const syncBoard = () => {
+  const syncBoard = (animate: boolean) => {
     if (boardElement === undefined) {
       return;
     }
+    boardElement.style.gridTemplateColumns = `repeat(${boardSize}, 1fr)`;
+    boardElement.classList.toggle("game2048-board--wide", boardSize >= 8);
     boardElement.innerHTML = "";
-    for (const row of board) {
-      for (const value of row) {
+    const mergedDests = new Set(
+      lastShifts.filter((shift) => shift.merged).map((shift) => `${shift.toRow},${shift.toCol}`),
+    );
+    const movedDests = new Set(lastShifts.map((shift) => `${shift.toRow},${shift.toCol}`));
+    const cells: HTMLElement[] = [];
+    for (let row = 0; row < boardSize; row += 1) {
+      for (let col = 0; col < boardSize; col += 1) {
+        const value = board[row]?.[col] ?? 0;
+        const prev = previous[row]?.[col] ?? 0;
         const cell = document.createElement("div");
-        applyCellVisual(cell, value);
+        const key = `${row},${col}`;
+        const kind =
+          !animate || value === 0
+            ? "idle"
+            : mergedDests.has(key)
+              ? "merged"
+              : !movedDests.has(key) && prev === 0 && value > 0
+                ? "spawn"
+                : "idle";
+        applyCellVisual(cell, value, animate && kind === "merged" ? "idle" : kind);
         boardElement.append(cell);
+        cells.push(cell);
+      }
+    }
+    if (animate && !prefersReducedMotion()) {
+      const cellSize = cells[0]?.getBoundingClientRect().width ?? 0;
+      if (cellSize > 0) {
+        const firstShiftByDest = new Map<string, TileShift>();
+        for (const shift of lastShifts) {
+          const key = `${shift.toRow},${shift.toCol}`;
+          if (!firstShiftByDest.has(key)) {
+            firstShiftByDest.set(key, shift);
+          }
+        }
+        for (const shift of firstShiftByDest.values()) {
+          const cell = cells[shift.toRow * boardSize + shift.toCol];
+          if (!(cell instanceof HTMLElement)) {
+            continue;
+          }
+          const dx = (shift.fromCol - shift.toCol) * cellSize;
+          const dy = (shift.fromRow - shift.toRow) * cellSize;
+          if (dx === 0 && dy === 0) {
+            continue;
+          }
+          cell.style.transition = "none";
+          cell.style.transform = `translate(${dx}px, ${dy}px)`;
+        }
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            for (const cell of cells) {
+              cell.style.transition = "transform 160ms ease-out";
+              cell.style.transform = "";
+            }
+            window.setTimeout(() => {
+              for (const shift of lastShifts) {
+                if (!shift.merged) {
+                  continue;
+                }
+                const cell = cells[shift.toRow * boardSize + shift.toCol];
+                cell?.classList.add("game2048-cell--merged");
+              }
+            }, 160);
+          });
+        });
       }
     }
     if (scoreElement !== undefined) {
       scoreElement.textContent = String(score);
+    }
+    if (bestElement !== undefined) {
+      const best = bestTile();
+      bestElement.textContent = best > 0 ? tileLabel(best) : "—";
     }
   };
 
@@ -196,25 +213,27 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
       headline: won ? "2048! Отличная партия" : "Ходы закончились",
       celebrate: won,
       onRestart: () => {
-        renderGame2048({ root, onBack });
+        renderGame2048({ root, onBack, size: boardSize });
       },
       onBack,
     });
   };
 
-  const handleMove = (direction: "up" | "down" | "left" | "right") => {
+  const handleMove = (direction: Direction) => {
     if (finished) {
       return;
     }
-    const moved = moveBoard(board, direction);
+    previous = cloneBoard(board);
+    const moved = moveBoard({ board, direction });
     if (!moved.changed) {
       return;
     }
     board = moved.board;
+    lastShifts = moved.shifts;
     score += moved.scoreDelta;
-    spawnTile(board);
-    syncBoard();
-    if (board.flat().includes(2048)) {
+    spawnTile({ board });
+    syncBoard(true);
+    if (boardSize === 4 && hasWinningTile(board)) {
       void finishGame(true);
       return;
     }
@@ -229,8 +248,8 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
     <header class="game2048-header">
       <button type="button" class="game2048-back" data-back aria-label="Назад">←</button>
       <div>
-        <h1>2048</h1>
-        <p class="muted">Соберите «Уголь» — тема «Друзья»</p>
+        <h1>2048 · ${boardSize}×${boardSize}</h1>
+        <p class="muted">${boardSize === 4 ? "Соберите «Уголь»" : "Играйте, пока есть ходы"}</p>
       </div>
     </header>
     <div class="game2048-hud panel">
@@ -241,58 +260,74 @@ export const renderGame2048 = ({ root, onBack }: RenderGame2048Parameters) => {
     ${gameFinishButtonHtml()}
   `;
 
-  scoreElement = root.querySelector("[data-score]") ?? undefined;
-  boardElement = root.querySelector("[data-board]") ?? undefined;
-  if (skin?.boardBackgroundUrl !== null && skin?.boardBackgroundUrl !== undefined && boardElement instanceof HTMLElement) {
-    boardElement.style.backgroundImage = `url("${skin.boardBackgroundUrl}")`;
-    boardElement.style.backgroundSize = "cover";
-  }
-  root.querySelector("[data-back]")?.addEventListener("click", onBack);
-  bindFinishGameButton({
-    root,
-    onFinish: () => finishGame(false),
-    canFinish: () => !finished,
-  });
+    scoreElement = root.querySelector("[data-score]") ?? undefined;
+    bestElement = root.querySelector("[data-best]") ?? undefined;
+    boardElement = root.querySelector("[data-board]") ?? undefined;
+    if (
+      skin?.boardBackgroundUrl !== null &&
+      skin?.boardBackgroundUrl !== undefined &&
+      boardElement instanceof HTMLElement
+    ) {
+      boardElement.style.backgroundImage = `url("${skin.boardBackgroundUrl}")`;
+      boardElement.style.backgroundSize = "cover";
+    }
+    root.querySelector("[data-back]")?.addEventListener("click", onBack);
+    bindFinishGameButton({
+      root,
+      onFinish: () => finishGame(false),
+      canFinish: () => !finished,
+    });
 
-  syncBoard();
+    previous = cloneBoard(board);
+    lastShifts = [];
+    syncBoard(false);
 
-  let touchStartX = 0;
-  let touchStartY = 0;
-  boardElement?.addEventListener(
-    "touchstart",
-    (event) => {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    boardElement?.addEventListener(
+      "touchstart",
+      (event) => {
+        const touch = event.changedTouches[0];
+        if (touch === undefined) {
+          return;
+        }
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      },
+      { passive: true },
+    );
+    boardElement?.addEventListener("touchend", (event) => {
       const touch = event.changedTouches[0];
       if (touch === undefined) {
         return;
       }
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
-    },
-    { passive: true },
-  );
-  boardElement?.addEventListener("touchend", (event) => {
-    const touch = event.changedTouches[0];
-    if (touch === undefined) {
-      return;
-    }
-    const dx = touch.clientX - touchStartX;
-    const dy = touch.clientY - touchStartY;
-    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) {
-      return;
-    }
-    if (Math.abs(dx) > Math.abs(dy)) {
-      handleMove(dx > 0 ? "right" : "left");
-      return;
-    }
-    handleMove(dy > 0 ? "down" : "up");
-  });
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+      if (Math.abs(dx) < 24 && Math.abs(dy) < 24) {
+        return;
+      }
+      if (Math.abs(dx) > Math.abs(dy)) {
+        handleMove(dx > 0 ? "right" : "left");
+        return;
+      }
+      handleMove(dy > 0 ? "down" : "up");
+    });
 
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowUp") handleMove("up");
-    if (event.key === "ArrowDown") handleMove("down");
-    if (event.key === "ArrowLeft") handleMove("left");
-    if (event.key === "ArrowRight") handleMove("right");
-  });
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "ArrowUp") {
+        handleMove("up");
+      }
+      if (event.key === "ArrowDown") {
+        handleMove("down");
+      }
+      if (event.key === "ArrowLeft") {
+        handleMove("left");
+      }
+      if (event.key === "ArrowRight") {
+        handleMove("right");
+      }
+    };
+    window.addEventListener("keydown", onKey);
   };
 
   void mount();
