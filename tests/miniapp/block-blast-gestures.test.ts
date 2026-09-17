@@ -4,6 +4,7 @@ import {
   dragPlacementFromFinger,
   resolveDragRelease,
 } from "../../miniapp/src/block-blast-gestures.ts";
+import { DRAG_GHOST_MAX_PX } from "../../miniapp/src/block-blast-board.ts";
 import { BOARD_SIZE, type Board, type Piece } from "../../src/domain/block-blast.ts";
 
 const piece = (cells: Piece["cells"], tile = 0): Piece => {
@@ -116,6 +117,51 @@ test("drag ghost stays visible and snaps to the placement origin over the board"
   expect(placement.css.top).toBe(BOARD.top + (origin.row + 1) * CELL);
 });
 
+test("over the board the dragged copy matches board cell size and hides the second preview", () => {
+  const placement = dragPlacementFromFinger({
+    clientX: CELL * 3.5,
+    clientY: CELL * 6.5,
+    piece: SINGLE,
+    board: BOARD,
+    occupancy: EMPTY_OCCUPANCY,
+  });
+
+  expect(placement.mode).toBe("snap");
+  expect(placement.ghostCellSize).toBe(CELL);
+  expect(placement.showBoardGhost).toBe(false);
+});
+
+test("tall piece over the board still uses board cell size for the dragged copy", () => {
+  const offsetY = computeDragOffsetY(TALL);
+  const placement = dragPlacementFromFinger({
+    clientX: CELL * 1.5,
+    clientY: CELL * 6 + offsetY,
+    piece: TALL,
+    board: BOARD,
+    occupancy: EMPTY_OCCUPANCY,
+  });
+
+  expect(placement.mode).toBe("snap");
+  expect(placement.ghostCellSize).toBe(CELL);
+  expect(placement.showBoardGhost).toBe(false);
+});
+
+test("away from the board the dragged copy stays tray-sized and follows the finger", () => {
+  const placement = dragPlacementFromFinger({
+    clientX: CELL * 3.5,
+    clientY: 900,
+    piece: SINGLE,
+    board: BOARD,
+    occupancy: EMPTY_OCCUPANCY,
+  });
+
+  expect(placement.mode).toBe("follow");
+  expect(placement.origin).toBeUndefined();
+  expect(placement.ghostCellSize).toBe(DRAG_GHOST_MAX_PX);
+  expect(placement.showBoardGhost).toBe(false);
+  expect(placement.css.left).toBe(CELL * 3.5);
+});
+
 test("far below the board does not snap when the copy misses the grid", () => {
   const placement = dragPlacementFromFinger({
     clientX: CELL * 3.5,
@@ -129,11 +175,17 @@ test("far below the board does not snap when the copy misses the grid", () => {
 });
 
 test("tap without drag keeps the tray piece selected", () => {
-  expect(resolveDragRelease({ dragMoved: false, origin: undefined })).toEqual({ type: "select" });
+  expect(resolveDragRelease({ dragMoved: false, origin: undefined })).toEqual({
+    type: "select",
+    ghost: "clear",
+  });
 });
 
 test("drag release without a snap origin returns the piece to the tray", () => {
-  expect(resolveDragRelease({ dragMoved: true, origin: undefined })).toEqual({ type: "return" });
+  expect(resolveDragRelease({ dragMoved: true, origin: undefined })).toEqual({
+    type: "return",
+    ghost: "clear",
+  });
 });
 
 test("drag release places when the copy is still on the board", () => {
@@ -142,7 +194,7 @@ test("drag release places when the copy is still on the board", () => {
       dragMoved: true,
       origin: { row: 7, col: 4 },
     }),
-  ).toEqual({ type: "place", origin: { row: 7, col: 4 } });
+  ).toEqual({ type: "place", origin: { row: 7, col: 4 }, ghost: "defer" });
 });
 
 test("magnet snaps to a nearby valid cell when the rounded origin is blocked", () => {

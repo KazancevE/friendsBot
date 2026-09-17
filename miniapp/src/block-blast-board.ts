@@ -8,7 +8,7 @@ const TILE_EMOJI = ["🔥", "💧", "🫧", "🌿"] as const;
 const FLASH_MS = 80;
 const POP_MS = 220;
 const STAGGER_MS = 35;
-const PLACE_MS = 320;
+export const PLACE_MS = 160;
 const SHAKE_MS = 350;
 const GAME_OVER_MS = 700;
 
@@ -49,6 +49,11 @@ export const pieceBounds = (piece: Piece) => {
   return { rows: maxDr + 1, cols: maxDc + 1 };
 };
 
+export const piecePreviewCellSize = (piece: Piece, maxPx: number) => {
+  const { rows, cols } = pieceBounds(piece);
+  return Math.max(1, Math.floor(maxPx / Math.max(rows, cols)));
+};
+
 const applyTileVisual = (element: HTMLElement, tile: number, skin: GameSkin | null) => {
   const url = tileImageUrl(skin, tile);
   if (url === null) {
@@ -76,7 +81,7 @@ const createBlockElement = (tile: number, skin: GameSkin | null) => {
 
 export const renderPiecePreview = (piece: Piece, maxPx = TRAY_PIECE_MAX_PX, skin: GameSkin | null = null) => {
   const { rows, cols } = pieceBounds(piece);
-  const cellSize = Math.max(1, Math.floor(maxPx / Math.max(rows, cols)));
+  const cellSize = piecePreviewCellSize(piece, maxPx);
   const gridGap = TRAY_PIECE_GAP_PX;
   const wrap = document.createElement("div");
   wrap.className = "bb-tray-piece-grid";
