@@ -3,7 +3,9 @@ import { BOARD_SIZE, canPlace, pieceAnchorCells } from "../../src/domain/block-b
 import {
   createDragGhostElement,
   DRAG_GHOST_MAX_PX,
+  PLACE_MS,
   pieceBounds,
+  piecePreviewCellSize,
   TRAY_PIECE_GAP_PX,
   type BlockBlastBoard,
 } from "./block-blast-board.ts";
@@ -28,7 +30,7 @@ const MAGNET_RADIUS_CELLS = 1;
 
 export const computeDragOffsetY = (piece: Piece, maxPx = DRAG_GHOST_MAX_PX) => {
   const { rows } = pieceBounds(piece);
-  const cellSize = Math.max(1, Math.floor(maxPx / Math.max(rows, pieceBounds(piece).cols)));
+  const cellSize = piecePreviewCellSize(piece, maxPx);
   const pieceHeightPx = rows * cellSize + (rows - 1) * TRAY_PIECE_GAP_PX;
   return Math.max(MIN_FINGER_OFFSET_PX, pieceHeightPx + FINGER_MARGIN_PX);
 };
@@ -175,15 +177,22 @@ export const dragPlacementFromFinger = ({
 }: DragPlacementFromFingerParameters) => {
   const box = dragPieceBoxFromFinger({ clientX, clientY, piece, board });
   const origin = magnetSnapOrigin({ box, board, piece, occupancy });
+  const followCellSize = piecePreviewCellSize(piece, DRAG_GHOST_MAX_PX);
   if (origin === undefined || !pieceOverlapsBoard({ piece, origin })) {
     return {
+      mode: "follow" as const,
       origin: undefined,
       css: dragGhostCssPosition({ clientX, clientY, piece }),
+      ghostCellSize: followCellSize,
+      showBoardGhost: false,
     };
   }
   return {
+    mode: "snap" as const,
     origin,
     css: snappedGhostCssPosition({ origin, piece, board }),
+    ghostCellSize: board.width / BOARD_SIZE,
+    showBoardGhost: false,
   };
 };
 
@@ -198,12 +207,12 @@ type ResolveDragReleaseParameters = {
 
 export const resolveDragRelease = ({ dragMoved, origin }: ResolveDragReleaseParameters) => {
   if (!dragMoved) {
-    return { type: "select" as const };
+    return { type: "select" as const, ghost: "clear" as const };
   }
   if (origin === undefined) {
-    return { type: "return" as const };
+    return { type: "return" as const, ghost: "clear" as const };
   }
-  return { type: "place" as const, origin };
+  return { type: "place" as const, origin, ghost: "defer" as const };
 };
 
 const boardCellFromFinger = (
@@ -248,9 +257,24 @@ export const bindBlockBlastGestures = ({
     dragPiece = undefined;
     dragMoved = false;
     hapticPickup = false;
-    clearDragGhost();
     boardApi.setDraggingPiece(undefined);
     boardApi.setGhost(undefined, true);
+  };
+
+  const finishDragGhost = (action: "clear" | "defer") => {
+    const settling = dragGhost;
+    dragGhost = undefined;
+    if (settling === undefined) {
+      return;
+    }
+    if (action === "clear") {
+      settling.remove();
+      return;
+    }
+    settling.classList.add("bb-drag-ghost--settling");
+    window.setTimeout(() => {
+      settling.remove();
+    }, PLACE_MS);
   };
 
   const tryPlace = (pieceIndex: number, row: number, col: number) => {
@@ -258,17 +282,18 @@ export const bindBlockBlastGestures = ({
     const piece = state.tray[pieceIndex];
     if (piece === undefined || piece === null) {
       onInvalid();
-      return;
+      return false;
     }
     if (!canPlace({ board: state.board, piece, row, col })) {
       boardApi.shakeTrayPiece(pieceIndex);
       onInvalid();
-      return;
+      return false;
     }
     selectedIndex = undefined;
     boardApi.setSelectedPiece(undefined);
     hapticImpact("medium");
     onPlace({ pieceIndex, row, col });
+    return true;
   };
 
   const showGhost = (piece: Piece, row: number, col: number) => {
@@ -291,6 +316,26 @@ export const bindBlockBlastGestures = ({
     return dragGhost;
   };
 
+  const applyDragGhostVisual = ({
+    ghost,
+    placement,
+    piece,
+  }: {
+    readonly ghost: HTMLElement;
+    readonly placement: ReturnType<typeof dragPlacementFromFinger>;
+    readonly piece: Piece;
+  }) => {
+    const followCellSize = piecePreviewCellSize(piece, DRAG_GHOST_MAX_PX);
+    ghost.style.setProperty("--bb-drag-scale", String(placement.ghostCellSize / followCellSize));
+    ghost.classList.toggle("bb-drag-ghost--snap", placement.mode === "snap");
+    positionDragGhost(ghost, placement.css);
+    if (placement.showBoardGhost && placement.origin !== undefined) {
+      showGhost(piece, placement.origin.row, placement.origin.col);
+      return;
+    }
+    boardApi.setGhost(undefined, true);
+  };
+
   const updateDragVisuals = (clientX: number, clientY: number) => {
     if (dragPiece === undefined) {
       return;
@@ -303,13 +348,7 @@ export const bindBlockBlastGestures = ({
       board: boardRect,
       occupancy: getState().board,
     });
-    const ghost = ensureDragGhost(dragPiece);
-    positionDragGhost(ghost, placement.css);
-    if (placement.origin === undefined) {
-      boardApi.setGhost(undefined, true);
-      return;
-    }
-    showGhost(dragPiece, placement.origin.row, placement.origin.col);
+    applyDragGhostVisual({ ghost: ensureDragGhost(dragPiece), placement, piece: dragPiece });
   };
 
   const onTrayPointerDown = (event: PointerEvent) => {
@@ -343,6 +382,8 @@ export const bindBlockBlastGestures = ({
     pointerStartY = event.clientY;
     clearDragGhost();
     const ghost = ensureDragGhost(piece);
+    ghost.style.setProperty("--bb-drag-scale", "1");
+    ghost.classList.remove("bb-drag-ghost--snap");
     positionDragGhost(ghost, dragGhostCssPosition({ clientX: event.clientX, clientY: event.clientY, piece }));
     slot.setPointerCapture(event.pointerId);
   };
@@ -383,19 +424,22 @@ export const bindBlockBlastGestures = ({
     const release = resolveDragRelease({ dragMoved, origin: placement.origin });
     switch (release.type) {
       case "place": {
-        tryPlace(index, release.origin.row, release.origin.col);
+        const placed = tryPlace(index, release.origin.row, release.origin.col);
         suppressClick = true;
         window.setTimeout(() => {
           suppressClick = false;
         }, 0);
+        finishDragGhost(placed ? release.ghost : "clear");
         break;
       }
       case "return": {
         selectedIndex = undefined;
         boardApi.setSelectedPiece(undefined);
+        finishDragGhost(release.ghost);
         break;
       }
       case "select": {
+        finishDragGhost(release.ghost);
         break;
       }
       default: {
@@ -453,6 +497,7 @@ export const bindBlockBlastGestures = ({
     document.removeEventListener("pointercancel", onPointerUp);
     board.removeEventListener("click", onBoardClick);
     board.removeEventListener("pointermove", onBoardMove);
+    clearDragGhost();
     resetDrag();
   };
 };

@@ -31,6 +31,15 @@
   gap: 0.75rem;
 }
 
+.game2048-board {
+  display: grid;
+  gap: 8px;
+  background: #2a211c;
+  padding: 8px;
+  border-radius: 12px;
+  touch-action: none;
+}
+
 .game2048-cell--spawn {
   animation: game2048-pop 180ms ease-out;
 }

@@ -71,6 +71,7 @@ import type {
 } from "../domain/types.ts";
 import { moscowYearStart, MOSCOW } from "../domain/week.ts";
 import { DateTime } from "luxon";
+import { toStaffActionKind } from "./staff-action-kind.ts";
 import type { BroadcastGuestCandidate, NewUser, Store } from "./types.ts";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -1871,25 +1872,6 @@ function toQuizAnswer(row: QuizAnswer): QuizAnswerRecord {
     points: row.points,
     createdAt: row.createdAt,
   };
-}
-
-function toStaffActionKind(value: string): StaffActionKind {
-  if (
-    value === "check" ||
-    value === "redeem" ||
-    value === "manual_adjust" ||
-    value === "visit_open" ||
-    value === "visit_extend" ||
-    value === "visit_close" ||
-    value === "coupon_redeem" ||
-    value === "guest_search" ||
-    value === "booking_table_assign" ||
-    value === "booking_table_move" ||
-    value === "booking_table_swap"
-  ) {
-    return value;
-  }
-  throw new Error(`unknown staff action: ${value}`);
 }
 
 function toStaffActionLog(row: StaffActionLog, guest: User | null): StaffActionLogRecord {
