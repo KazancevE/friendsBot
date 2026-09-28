@@ -106,6 +106,7 @@ const SETTING_KEYS = [
   "venueTimezone",
   "haircutNudgeWeeks",
   "reminderLeadHours",
+  "importWelcomeBonus",
 ] as const;
 
 const parseWeekdayList = (raw: string | undefined): number[] => {
@@ -216,6 +217,7 @@ export class PrismaStore implements Store {
       reminderLeadHours: parseWeekdayList(map.get("reminderLeadHours")).length
         ? parseWeekdayList(map.get("reminderLeadHours"))
         : [...DEFAULT_SETTINGS.reminderLeadHours],
+      importWelcomeBonus: Number(map.get("importWelcomeBonus") ?? DEFAULT_SETTINGS.importWelcomeBonus),
     };
   }
 
@@ -253,6 +255,7 @@ export class PrismaStore implements Store {
       venueTimezone: next.venueTimezone,
       haircutNudgeWeeks: String(next.haircutNudgeWeeks),
       reminderLeadHours: JSON.stringify(next.reminderLeadHours),
+      importWelcomeBonus: String(next.importWelcomeBonus),
     };
     await Promise.all(
       SETTING_KEYS.map((key) =>

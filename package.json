@@ -25,7 +25,8 @@
     "luxon": "^3.7.2",
     "nanoid": "^6.0.1",
     "qrcode": "^1.5.4",
-    "tsx": "^4.23.12"
+    "tsx": "^4.23.12",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/luxon": "^3.7.5",

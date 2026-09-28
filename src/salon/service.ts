@@ -15,6 +15,8 @@ import type { Store } from "../store/types.ts";
 import { ALL_LEVELS, LEVEL_LABEL, type BarberLevelName } from "./catalog.ts";
 import { formatAppointmentWhen, formatDayLabel, formatMinutes, formatPrice } from "./format.ts";
 import { channelIdsToMove, decidePhoneLink, type SalonChannelName } from "./identity.ts";
+import { commitClientImport, type ImportReport } from "./import-commit.ts";
+import { buildImportPlan, isFirstMessengerLink, type ColumnMapping } from "./import.ts";
 import { isHaircutNudgeDue } from "./nudge.ts";
 import { dueReminders, type ReminderKind } from "./reminders.ts";
 import { freeSlotStarts } from "./slots.ts";
@@ -135,8 +137,24 @@ export class SalonService {
       await this.grantRegistration(updated.id);
       return (await this.store.findUserById(updated.id)) ?? updated;
     }
+    const before = await this.prisma.user.findUnique({
+      where: { id: decision.canonicalUserId },
+      select: { importedAt: true, importWelcomeGrantedAt: true, telegramId: true, maxUserId: true },
+    });
     const canonical = await this.mergeInto(current, decision.canonicalUserId, channel);
-    await this.grantRegistration(canonical.id);
+    if (
+      before &&
+      isFirstMessengerLink({
+        importedAt: before.importedAt,
+        welcomeGrantedAt: before.importWelcomeGrantedAt,
+        telegramId: before.telegramId,
+        maxUserId: before.maxUserId,
+      })
+    ) {
+      await this.grantImportWelcome(canonical.id);
+    } else {
+      await this.grantRegistration(canonical.id);
+    }
     return canonical;
   }
 
@@ -170,6 +188,7 @@ export class SalonService {
         });
       }
       await tx.appointment.updateMany({ where: { userId: current.id }, data: { userId: canonicalId } });
+      await tx.visit.updateMany({ where: { userId: current.id }, data: { userId: canonicalId } });
       await tx.salonDialog.updateMany({ where: { userId: current.id }, data: { userId: canonicalId } });
       if (current.referredByUserId && !canonical.referredByUserId && current.referredByUserId !== canonicalId) {
         await tx.user.update({
@@ -192,6 +211,41 @@ export class SalonService {
       });
     }
     return (await this.store.findUserById(canonicalId))!;
+  }
+
+  private async grantImportWelcome(userId: string) {
+    const settings = await this.store.getSettings();
+    const claimed = await this.prisma.user.updateMany({
+      where: { id: userId, importedAt: { not: null }, importWelcomeGrantedAt: null },
+      data: { importWelcomeGrantedAt: new Date() },
+    });
+    if (claimed.count === 0 || settings.importWelcomeBonus <= 0) {
+      return;
+    }
+    const amount = settings.importWelcomeBonus;
+    await this.store.withTransaction(async (tx) => {
+      const user = await tx.findUserById(userId);
+      if (!user) {
+        return;
+      }
+      await tx.updateUser(userId, { balance: user.balance + amount });
+      const ledger = await tx.addLedger({
+        userId,
+        type: "manual",
+        amount,
+        actorId: null,
+        comment: "Приветственный бонус за привязку карты",
+        checkAmount: null,
+      });
+      await createLotForCredit(tx, {
+        userId,
+        ledgerId: ledger.id,
+        type: "manual",
+        amount,
+        createdAt: ledger.createdAt,
+        settings,
+      });
+    });
   }
 
   private async grantRegistration(userId: string) {
@@ -836,6 +890,7 @@ export class SalonService {
           telegram: user.telegramId > 0n,
           max: user.maxUserId !== null,
         },
+        imported: user.importedAt !== null,
       }));
   }
 
@@ -1008,5 +1063,23 @@ export class SalonService {
 
   dayLabel(isoDate: string) {
     return formatDayLabel(isoDate);
+  }
+
+  async planImport(input: { table: string[][]; mapping?: Partial<ColumnMapping> | null; now?: Date }) {
+    const known = await this.prisma.user.findMany({
+      where: { phone: { not: null } },
+      select: { phone: true, birthday: true },
+    });
+    return buildImportPlan({
+      table: input.table,
+      mapping: input.mapping,
+      now: input.now,
+      zone: appTimezone(),
+      existing: known.flatMap((user) => (user.phone ? [{ phone: user.phone, birthday: user.birthday }] : [])),
+    });
+  }
+
+  async applyImport(rows: Parameters<typeof commitClientImport>[1], now?: Date): Promise<ImportReport> {
+    return commitClientImport(this.prisma, rows, now);
   }
 }

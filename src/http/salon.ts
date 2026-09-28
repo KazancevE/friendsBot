@@ -8,6 +8,7 @@ import { patchAdminSettings } from "../domain/settings.ts";
 import type { Settings } from "../domain/types.ts";
 import type { Store } from "../store/types.ts";
 import type { BarberLevelName } from "../salon/catalog.ts";
+import { IMPORT_FIELD_LABEL, IMPORT_FIELDS, parseSpreadsheet, readSampleImportCsv } from "../salon/import.ts";
 import { DEMO_GUEST_TELEGRAM_ID, SalonService } from "../salon/service.ts";
 import { issueAdminCookie, issueGuestToken, readAdminCookie, readGuestToken } from "../salon/session.ts";
 import type { Notifier } from "../salon/outbound.ts";
@@ -305,6 +306,77 @@ export const createSalonRoutes = (deps: {
 
   app.get("/api/salon/admin/notices", async (c) => c.json(await deps.salon.notices()));
 
+  const readImportBody = async (c: { req: { json: () => Promise<unknown> } }) => {
+    const body = (await c.req.json()) as {
+      filename?: string;
+      contentBase64?: string;
+      mapping?: Record<string, number | null>;
+    };
+    if (!body.filename || !body.contentBase64) {
+      return { error: "Нужен файл" as const };
+    }
+    const bytes = Buffer.from(body.contentBase64, "base64");
+    if (bytes.length === 0 || bytes.length > 5_000_000) {
+      return { error: "Файл пустой или больше 5 МБ" as const };
+    }
+    const table = parseSpreadsheet({ filename: body.filename, bytes });
+    if (table.length < 2) {
+      return { error: "В файле нет строк клиентов" as const };
+    }
+    if (table.length > 10_001) {
+      return { error: "Не больше 10 000 строк" as const };
+    }
+    return { filename: body.filename, table, mapping: body.mapping ?? null };
+  };
+
+  app.get("/api/salon/admin/import/sample", (c) => {
+    c.header("content-type", "text/csv; charset=utf-8");
+    c.header("content-disposition", "attachment; filename=\"dikidi-clients-sample.csv\"");
+    return c.body(readSampleImportCsv());
+  });
+
+  app.post("/api/salon/admin/import/preview", async (c) => {
+    const parsed = await readImportBody(c);
+    if ("error" in parsed) {
+      return c.json({ message: parsed.error }, 400);
+    }
+    const plan = await deps.salon.planImport({ table: parsed.table, mapping: parsed.mapping });
+    const warnings = plan.rows.reduce((sum, row) => sum + row.warnings.length, 0);
+    return c.json({
+      headers: plan.headers,
+      mapping: plan.mapping,
+      fields: IMPORT_FIELDS.map((id) => ({ id, label: IMPORT_FIELD_LABEL[id], column: plan.mapping[id] })),
+      counts: {
+        create: plan.rows.filter((row) => row.action === "create").length,
+        update: plan.rows.filter((row) => row.action === "update").length,
+        error: plan.rows.filter((row) => row.action === "error").length,
+        warnings,
+      },
+      rows: plan.rows.map((row) => ({
+        line: row.line,
+        action: row.action,
+        phone: row.phone,
+        name: [row.name, row.lastName].filter(Boolean).join(" "),
+        birthday: row.birthday ? row.birthday.toISOString().slice(0, 10) : null,
+        lastVisit: row.lastVisit ? row.lastVisit.toISOString() : null,
+        booking: row.booking ? row.booking.at.toISOString() : null,
+        errors: row.errors,
+        warnings: row.warnings,
+      })),
+      messagesSent: 0,
+    });
+  });
+
+  app.post("/api/salon/admin/import/commit", async (c) => {
+    const parsed = await readImportBody(c);
+    if ("error" in parsed) {
+      return c.json({ message: parsed.error }, 400);
+    }
+    const plan = await deps.salon.planImport({ table: parsed.table, mapping: parsed.mapping });
+    const report = await deps.salon.applyImport(plan.rows);
+    return c.json(report);
+  });
+
   app.get("/api/salon/admin/settings", async (c) => c.json(await deps.store.getSettings()));
 
   app.patch("/api/salon/admin/settings", async (c) => {
@@ -317,6 +389,7 @@ export const createSalonRoutes = (deps: {
       if (body.referralBonusReferrer !== undefined) patch.referralBonusReferrer = Number(body.referralBonusReferrer);
       if (body.referralBonusReferee !== undefined) patch.referralBonusReferee = Number(body.referralBonusReferee);
       if (body.venueTimezone !== undefined) patch.venueTimezone = String(body.venueTimezone);
+      if (body.importWelcomeBonus !== undefined) patch.importWelcomeBonus = Number(body.importWelcomeBonus);
       if (Array.isArray(body.reminderLeadHours)) patch.reminderLeadHours = body.reminderLeadHours.map((value) => Number(value));
       const settings = await patchAdminSettings(deps.store, patch as Partial<Settings>);
       return c.json(settings);

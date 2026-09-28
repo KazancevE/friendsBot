@@ -52,6 +52,8 @@ export type Settings = {
   haircutNudgeWeeks: number;
   /** За сколько часов до визита слать напоминания (по порядку). */
   reminderLeadHours: number[];
+  /** Бонус при первой привязке импортированного клиента к мессенджеру. 0 — выключен. */
+  importWelcomeBonus: number;
 };
 
 export type BroadcastSegmentId =

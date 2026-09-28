@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   venueTimezone: appTimezone(),
   haircutNudgeWeeks: 4,
   reminderLeadHours: [24, 2],
+  importWelcomeBonus: 0,
 };
 
 export function expiresAfterDays(from: Date, days: number): Date {
@@ -134,6 +135,9 @@ export async function patchAdminSettings(store: Store, patch: Partial<Settings>)
     if (patch.haircutNudgeWeeks < 1 || patch.haircutNudgeWeeks > 52) {
       throw new DomainError("bad_request", "Интервал «пора стричься» от 1 до 52 недель");
     }
+  }
+  if (patch.importWelcomeBonus !== undefined) {
+    assertNonNegativeInt(patch.importWelcomeBonus, "Приветственный бонус");
   }
   if (patch.reminderLeadHours !== undefined) {
     if (

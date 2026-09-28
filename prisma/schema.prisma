@@ -126,9 +126,14 @@ model User {
   quizAnswers         QuizAnswer[]
   weeklySchedules     StaffWeeklySchedule[]
   staffShifts         StaffShift[]
-  maxUserId           BigInt?   @unique
-  lastHaircutNudgeAt  DateTime?
-  appointments        Appointment[]
+  maxUserId              BigInt?   @unique
+  lastHaircutNudgeAt     DateTime?
+  importedAt             DateTime?
+  importWelcomeGrantedAt DateTime?
+  preferredBarberName    String?
+  importedVisitCount     Int?
+  importedSpentRub       Int?
+  appointments           Appointment[]
 }
 
 model StaffWeeklySchedule {
@@ -310,6 +315,7 @@ model Visit {
   endsAt    DateTime
   branchId  String?
   branch    Branch?      @relation(fields: [branchId], references: [id])
+  importKey String?      @unique
   checkIns  CheckInLog[]
 }
 
@@ -580,6 +586,7 @@ model Appointment {
   reminder2SentAt  DateTime?
   createdAt        DateTime          @default(now())
   cancelledAt      DateTime?
+  importKey        String?           @unique
 
   @@index([barberId, startsAt])
   @@index([userId, status])

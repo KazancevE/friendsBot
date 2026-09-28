@@ -54,7 +54,7 @@ const renderApp = (root: HTMLElement) => {
     <div class="shell">
       <nav>
         <div class="mark" style="font-size:36px">Daddyson</div>
-        ${["Записи", "Клиенты", "Мастера", "Услуги", "Рассылка", "Настройки", "Уведомления"]
+        ${["Записи", "Клиенты", "Импорт", "Мастера", "Услуги", "Рассылка", "Настройки", "Уведомления"]
           .map((label, index) => `<button data-tab="${index}" class="${index === 0 ? "active" : ""}">${label}</button>`)
           .join("")}
         <button id="logout" type="button">Выйти</button>
@@ -65,6 +65,7 @@ const renderApp = (root: HTMLElement) => {
   const tabs = [
     () => renderCalendar(view),
     () => renderClients(view),
+    () => renderImport(view),
     () => renderMasters(view),
     () => renderPrices(view),
     () => renderBroadcast(view),
@@ -171,10 +172,11 @@ const renderClients = async (view: HTMLElement) => {
       phone: string | null;
       balance: number;
       channels: { telegram: boolean; max: boolean };
+      imported: boolean;
     }>;
     view.querySelector("#list")!.innerHTML = `<table><tr><th>Клиент</th><th>Телефон</th><th>Баланс</th><th>Каналы</th><th></th></tr>${rows
       .map(
-        (row) => `<tr><td>${row.name}</td><td>${row.phone ?? "—"}</td><td>${row.balance} ₽</td><td>${row.channels.telegram ? "TG " : ""}${row.channels.max ? "MAX" : ""}</td><td>
+        (row) => `<tr><td>${row.name}</td><td>${row.phone ?? "—"}</td><td>${row.balance} ₽</td><td>${row.channels.telegram ? "TG " : ""}${row.channels.max ? "MAX" : ""}${row.imported && !row.channels.telegram && !row.channels.max ? "импорт" : ""}</td><td>
           <button data-check="${row.id}" type="button">Чек</button>
           <button data-redeem="${row.id}" type="button">Списать</button>
         </td></tr>`,
@@ -322,6 +324,7 @@ const renderSettings = async (view: HTMLElement) => {
     referralBonusReferrer: number;
     referralBonusReferee: number;
     venueTimezone: string;
+    importWelcomeBonus: number;
   };
   view.innerHTML = `
     <h1>Настройки</h1>
@@ -333,6 +336,7 @@ const renderSettings = async (view: HTMLElement) => {
       <div class="row">Реферал пригласившему <input name="referralBonusReferrer" type="number" value="${settings.referralBonusReferrer}" /></div>
       <div class="row">Реферал другу <input name="referralBonusReferee" type="number" value="${settings.referralBonusReferee}" /></div>
       <div class="row">Часовой пояс <input name="venueTimezone" value="${settings.venueTimezone}" /></div>
+      <div class="row">Приветственный бонус при первой привязке импорта, ₽ <input name="importWelcomeBonus" type="number" value="${settings.importWelcomeBonus}" /></div>
       <button class="primary" type="submit">Сохранить</button>
       <p id="settings-status" class="muted"></p>
     </form>`;
@@ -350,10 +354,106 @@ const renderSettings = async (view: HTMLElement) => {
         referralBonusReferrer: Number(value("referralBonusReferrer")),
         referralBonusReferee: Number(value("referralBonusReferee")),
         venueTimezone: value("venueTimezone"),
+        importWelcomeBonus: Number(value("importWelcomeBonus")),
       }),
     });
     const status = view.querySelector("#settings-status");
     if (status) status.textContent = "Сохранено";
+  });
+};
+
+type ImportPreview = {
+  headers: string[];
+  fields: Array<{ id: string; label: string; column: number | null }>;
+  counts: { create: number; update: number; error: number; warnings: number };
+  rows: Array<{
+    line: number;
+    action: "create" | "update" | "error";
+    phone: string | null;
+    name: string;
+    errors: string[];
+    warnings: string[];
+  }>;
+  messagesSent: number;
+};
+
+const renderImport = (view: HTMLElement) => {
+  view.innerHTML = `
+    <h1>Импорт из DIKIDI</h1>
+    <p class="muted">CSV или Excel. Клиенты попадают в базу без сообщения в мессенджер. Повтор того же файла не плодит дубли: сверка по телефону.</p>
+    <div class="row">
+      <input id="file" type="file" accept=".csv,.xlsx,.xls,text/csv" />
+      <button id="parse" class="primary" type="button">Разобрать</button>
+      <a href="/api/salon/admin/import/sample">Скачать образец</a>
+    </div>
+    <div id="map"></div>
+    <p id="counts" class="muted"></p>
+    <div id="preview"></div>
+    <p><button id="commit" class="primary" type="button" disabled>Импортировать</button> <span id="report" class="muted"></span></p>`;
+  let filename = "";
+  let contentBase64 = "";
+  const fileInput = view.querySelector("#file") as HTMLInputElement;
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    filename = file.name;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    contentBase64 = btoa(binary);
+  });
+  const payload = () => {
+    const mapping: Record<string, number | null> = {};
+    view.querySelectorAll<HTMLSelectElement>("[data-field]").forEach((select) => {
+      mapping[select.dataset.field ?? ""] = select.value === "" ? null : Number(select.value);
+    });
+    return { filename, contentBase64, mapping: Object.keys(mapping).length ? mapping : undefined };
+  };
+  const draw = (preview: ImportPreview) => {
+    const headers = preview.headers;
+    view.querySelector("#map")!.innerHTML = `<div class="panel"><div class="row">${preview.fields
+      .map(
+        (field) => `<label>${field.label}<br><select data-field="${field.id}">
+          <option value="">не импортировать</option>
+          ${headers.map((header, index) => `<option value="${index}" ${field.column === index ? "selected" : ""}>${header || "столбец " + (index + 1)}</option>`).join("")}
+        </select></label>`,
+      )
+      .join("")}</div></div>`;
+    view.querySelector("#counts")!.textContent = `Новых ${preview.counts.create}, обновлений ${preview.counts.update}, ошибок ${preview.counts.error}, предупреждений ${preview.counts.warnings}. Сообщений: ${preview.messagesSent}.`;
+    view.querySelector("#preview")!.innerHTML = `<table><tr><th>Строка</th><th></th><th>Клиент</th><th>Телефон</th><th>Замечания</th></tr>${preview.rows
+      .map(
+        (row) => `<tr>
+          <td>${row.line}</td>
+          <td><span class="tag ${row.action}">${row.action === "create" ? "новый" : row.action === "update" ? "слияние" : "ошибка"}</span></td>
+          <td>${row.name || "—"}</td>
+          <td>${row.phone ?? "—"}</td>
+          <td>${[...row.errors.map((item) => `<div class="error">${item}</div>`), ...row.warnings.map((item) => `<div class="warn">${item}</div>`)].join("")}</td>
+        </tr>`,
+      )
+      .join("")}</table>`;
+    (view.querySelector("#commit") as HTMLButtonElement).disabled = preview.counts.create + preview.counts.update === 0;
+    view.querySelectorAll("[data-field]").forEach((select) => {
+      select.addEventListener("change", () => void run());
+    });
+  };
+  const run = async () => {
+    if (!contentBase64) return;
+    const preview = (await api("/api/salon/admin/import/preview", {
+      method: "POST",
+      body: JSON.stringify(payload()),
+    })) as ImportPreview;
+    draw(preview);
+  };
+  view.querySelector("#parse")?.addEventListener("click", () => void run().catch((error: unknown) => {
+    view.querySelector("#report")!.textContent = error instanceof Error ? error.message : "Ошибка";
+  }));
+  view.querySelector("#commit")?.addEventListener("click", async () => {
+    const report = (await api("/api/salon/admin/import/commit", {
+      method: "POST",
+      body: JSON.stringify(payload()),
+    })) as { created: number; updated: number; unchanged: number; errors: number; messagesSent: number; bookingsCreated: number };
+    view.querySelector("#report")!.textContent = `Создано ${report.created}, обновлено ${report.updated}, без изменений ${report.unchanged}, ошибок ${report.errors}, записей ${report.bookingsCreated}. Сообщений: ${report.messagesSent}.`;
+    await run();
   });
 };
 
