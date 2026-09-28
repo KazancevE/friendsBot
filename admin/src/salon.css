@@ -1,0 +1,35 @@
+:root {
+  color-scheme: dark;
+  --bg: #141414;
+  --panel: #242424;
+  --ink: #f6f3ef;
+  --muted: #b7aea6;
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #c44650;
+  font-family: Manrope, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #141414; color: var(--ink); }
+button, input, select, textarea { font: inherit; color: inherit; background: #1b1b1b; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: transparent; font-weight: 700; }
+a { color: inherit; }
+.login { min-height: 100vh; display: grid; place-items: center; }
+.login form, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+.mark { font-family: "Great Vibes", cursive; font-size: 48px; margin: 0; }
+.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+nav { padding: 18px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+nav button { text-align: left; background: transparent; }
+nav button.active { background: rgba(196, 70, 80, 0.2); border-color: var(--accent); }
+main { padding: 18px 20px 40px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
+.muted { color: var(--muted); }
+.cal { display: grid; grid-template-columns: 64px repeat(var(--cols), minmax(120px, 1fr)); }
+.cal-head, .time { position: sticky; top: 0; background: #1c1c1c; z-index: 1; padding: 8px; font-size: 13px; }
+.col { position: relative; height: 616px; border-left: 1px solid var(--line); background-image: repeating-linear-gradient(to bottom, transparent, transparent 27px, rgba(255,255,255,0.05) 28px); }
+.appt { position: absolute; left: 4px; right: 4px; background: linear-gradient(180deg, #c44650, #8e2430); border-radius: 8px; padding: 4px 6px; font-size: 12px; overflow: hidden; }
+.hours { display: grid; grid-template-rows: repeat(22, 28px); font-size: 11px; color: var(--muted); }
+.error { color: #ffb4b4; }
+@media (max-width: 800px) { .shell { grid-template-columns: 1fr; } nav { flex-direction: row; overflow: auto; } }

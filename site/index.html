@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Daddyson Barbershop — Бийск</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Manrope:wght@400;600;700&family=Oswald:wght@500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/site/styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <div class="mark"><b>Daddyson</b><span>BARBERSHOP</span></div>
+        <nav class="nav">
+          <a href="#branches">Филиалы</a>
+          <a href="#masters">Мастера</a>
+          <a href="#prices">Цены</a>
+          <a href="/admin/">Админ</a>
+        </nav>
+      </header>
+      <section class="hero">
+        <div>
+          <h1>Барбершоп, куда возвращаются</h1>
+          <p class="lede">Более 5000 мужчин не могут ошибаться — присоединяйся, выбирай Daddyson. Два адреса в Бийске, одна бонусная карта и запись к мастеру без звонка.</p>
+          <div class="actions">
+            <a class="btn" id="book-app" href="/app/?demo=1">Записаться</a>
+            <a class="btn ghost" id="book-tg" href="/app/?demo=1">Telegram</a>
+            <a class="btn ghost" id="book-max" href="/app/?demo=1">MAX</a>
+          </div>
+          <div class="stats">
+            <div><strong>10:00–21:00</strong>ежедневно</div>
+            <div><strong id="cashback">5%</strong>кэшбэк на карту</div>
+            <div><strong>2</strong>филиала</div>
+          </div>
+        </div>
+        <div class="hero-card">
+          <div class="caps">BIYSK</div>
+          <p class="script">Daddyson</p>
+          <div class="caps">BARBERSHOP</div>
+          <p class="muted">Тёмный зал, красный акцент, стрижка и борода у своего мастера. Напоминание за сутки и за два часа — и «пора стричься», когда пора.</p>
+        </div>
+      </section>
+      <section id="branches">
+        <h2>Филиалы</h2>
+        <div class="grid" id="branch-list"></div>
+      </section>
+      <section id="masters">
+        <h2>Мастера</h2>
+        <div class="masters" id="master-list"></div>
+      </section>
+      <section id="prices">
+        <h2>Услуги и цены</h2>
+        <div class="card" style="overflow:auto">
+          <table>
+            <thead><tr><th>Услуга</th><th>Уровень</th><th>Филиал</th><th>Цена</th><th>Время</th></tr></thead>
+            <tbody id="price-rows"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="loyalty">
+        <div>
+          <h2>Карта гостя</h2>
+          <p>Кэшбэк с визита, «приведи друга», бонус на день рождения. Баланс общий для Васильева 55 и Училищного 7. На кассе гость показывает QR — баллы списываются здесь, без сторонней CRM.</p>
+        </div>
+        <div class="actions" style="align-content:center">
+          <a class="btn" href="/app/?demo=1">Открыть карту</a>
+          <a class="btn ghost" href="/admin/">Кабинет администратора</a>
+        </div>
+      </section>
+      <footer>Daddyson · Бийск · демо бота лояльности и записи. Телефоны салона в эту сборку не включены.</footer>
+    </div>
+    <script src="/site/app.js"></script>
+  </body>
+</html>

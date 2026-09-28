@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import type { StaffActionLogRecord } from "./types.ts";
 import { staffActionLabel } from "./stats.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type ExportType = "ledger" | "visits" | "checkins" | "coupons" | "staff_log";
@@ -17,7 +17,7 @@ const escapeCsv = (value: string | number | null | undefined) => {
 };
 
 const formatDate = (value: Date) => {
-  return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("yyyy-MM-dd HH:mm:ss");
+  return DateTime.fromJSDate(value, { zone: appTimezone() }).toFormat("yyyy-MM-dd HH:mm:ss");
 };
 
 export async function exportCsv(

@@ -48,6 +48,10 @@ export type Settings = {
   bookingClosedWeekdays: number[];
   bookingDurationMinutes: number;
   venueTimezone: string;
+  /** Через сколько недель после визита писать «пора стричься». */
+  haircutNudgeWeeks: number;
+  /** За сколько часов до визита слать напоминания (по порядку). */
+  reminderLeadHours: number[];
 };
 
 export type BroadcastSegmentId =

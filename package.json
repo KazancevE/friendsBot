@@ -17,6 +17,7 @@
     "@aws-sdk/client-s3": "^3.1121.0",
     "@grammyjs/conversations": "^2.1.1",
     "@hono/node-server": "^2.1.1",
+    "@maxhub/max-bot-api": "^0.2.5",
     "@prisma/client": "^6.19.3",
     "cron": "^4.4.0",
     "grammy": "^1.45.1",

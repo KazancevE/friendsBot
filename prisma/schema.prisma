@@ -126,6 +126,9 @@ model User {
   quizAnswers         QuizAnswer[]
   weeklySchedules     StaffWeeklySchedule[]
   staffShifts         StaffShift[]
+  maxUserId           BigInt?   @unique
+  lastHaircutNudgeAt  DateTime?
+  appointments        Appointment[]
 }
 
 model StaffWeeklySchedule {
@@ -305,6 +308,8 @@ model Visit {
   openedBy  String
   startedAt DateTime
   endsAt    DateTime
+  branchId  String?
+  branch    Branch?      @relation(fields: [branchId], references: [id])
   checkIns  CheckInLog[]
 }
 
@@ -470,4 +475,135 @@ model QuizAnswer {
   createdAt   DateTime     @default(now())
 
   @@unique([sessionId, questionId, userId])
+}
+
+enum BarberLevel {
+  junior
+  barber
+  senior
+  chef
+}
+
+enum AppointmentStatus {
+  confirmed
+  cancelled
+  completed
+}
+
+enum SalonChannel {
+  telegram
+  max
+}
+
+model Branch {
+  id           String         @id @default(uuid())
+  slug         String         @unique
+  name         String
+  address      String
+  city         String         @default("Бийск")
+  openMin      Int            @default(600)
+  closeMin     Int            @default(1260)
+  active       Boolean        @default(true)
+  sort         Int            @default(0)
+  barbers      Barber[]
+  prices       ServicePrice[]
+  appointments Appointment[]
+  visits       Visit[]
+}
+
+model Service {
+  id           String         @id @default(uuid())
+  slug         String         @unique
+  name         String
+  category     String         @default("")
+  active       Boolean        @default(true)
+  sort         Int            @default(0)
+  prices       ServicePrice[]
+  appointments Appointment[]
+}
+
+model ServicePrice {
+  id              String      @id @default(uuid())
+  service         Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceId       String
+  branch          Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId        String
+  level           BarberLevel
+  priceRub        Int
+  priceFrom       Boolean     @default(false)
+  durationMinutes Int
+  anyLevel        Boolean     @default(false)
+
+  @@unique([serviceId, branchId, level])
+}
+
+model Barber {
+  id           String           @id @default(uuid())
+  name         String
+  level        BarberLevel
+  branch       Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId     String
+  active       Boolean          @default(true)
+  sort         Int              @default(0)
+  rating       Float?
+  ratingCount  Int              @default(0)
+  schedules    BarberSchedule[]
+  appointments Appointment[]
+}
+
+model BarberSchedule {
+  id       String @id @default(uuid())
+  barber   Barber @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  barberId String
+  weekday  Int
+  startMin Int
+  endMin   Int
+
+  @@unique([barberId, weekday])
+}
+
+model Appointment {
+  id               String            @id @default(uuid())
+  user             User              @relation(fields: [userId], references: [id])
+  userId           String
+  branch           Branch            @relation(fields: [branchId], references: [id])
+  branchId         String
+  service          Service           @relation(fields: [serviceId], references: [id])
+  serviceId        String
+  barber           Barber            @relation(fields: [barberId], references: [id])
+  barberId         String
+  startsAt         DateTime
+  endsAt           DateTime
+  status           AppointmentStatus @default(confirmed)
+  priceRub         Int
+  reminder24SentAt DateTime?
+  reminder2SentAt  DateTime?
+  createdAt        DateTime          @default(now())
+  cancelledAt      DateTime?
+
+  @@index([barberId, startsAt])
+  @@index([userId, status])
+  @@index([branchId, startsAt])
+}
+
+model SalonDialog {
+  id         String       @id @default(uuid())
+  channel    SalonChannel
+  externalId String
+  userId     String?
+  flow       String       @default("menu")
+  step       String       @default("idle")
+  payload    Json         @default("{}")
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([channel, externalId])
+}
+
+model AdminNotice {
+  id        String    @id @default(uuid())
+  kind      String
+  body      String
+  branchId  String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
 }

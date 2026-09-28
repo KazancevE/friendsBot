@@ -15,7 +15,7 @@ import { listGuestStaffSchedule } from "../domain/staff-shifts.ts";
 import type { MenuItemRecord, PromoRecord } from "../domain/types.ts";
 import { formatDisplayPhone } from "../domain/phone.ts";
 import { updateGuestProfile } from "../domain/users.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { appTimezone } from "../domain/week.ts";
 import type { BotContext } from "./context.ts";
 import { formatBirthday } from "./register.ts";
 import {
@@ -46,7 +46,7 @@ import {
 import { qrPngBuffer } from "./qr.ts";
 
 const formatMoscowTime = (value: Date): string => {
-  return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("HH:mm");
+  return DateTime.fromJSDate(value, { zone: appTimezone() }).toFormat("HH:mm");
 };
 
 const guestHomeInlineKeyboard = (publicUrl: string) => {
@@ -88,7 +88,7 @@ const buildGuestHomeText = async (ctx: BotContext, user: NonNullable<BotContext[
 };
 
 const formatMoscowDate = (value: Date): string => {
-  return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("dd.MM.yyyy");
+  return DateTime.fromJSDate(value, { zone: appTimezone() }).toFormat("dd.MM.yyyy");
 };
 
 const formatMenu = (items: MenuItemRecord[]): string => {

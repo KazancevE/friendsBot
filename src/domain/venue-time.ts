@@ -1,8 +1,8 @@
 import { DateTime } from "luxon";
 import type { Settings } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { DEFAULT_VENUE_TIMEZONE as APP_DEFAULT_ZONE } from "./week.ts";
 
-export const DEFAULT_VENUE_TIMEZONE = MOSCOW;
+export const DEFAULT_VENUE_TIMEZONE = APP_DEFAULT_ZONE;
 
 export const venueTimezone = (settings: Pick<Settings, "venueTimezone">) => {
   const zone = settings.venueTimezone.trim();

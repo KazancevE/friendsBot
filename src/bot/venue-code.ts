@@ -5,7 +5,7 @@ import {
   regenerateVenueCode,
   venueQrPayload,
 } from "../domain/venue-code.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { appTimezone } from "../domain/week.ts";
 import type { Role } from "../domain/types.ts";
 import type { BotContext } from "./context.ts";
 import { BTN_VENUE_CODE } from "./keyboards.ts";
@@ -16,7 +16,7 @@ const isStaffRole = (role: Role | undefined): boolean => {
 };
 
 const formatUntil = (at: Date) => {
-  return at.toLocaleString("ru-RU", { timeZone: MOSCOW, hour: "2-digit", minute: "2-digit" });
+  return at.toLocaleString("ru-RU", { timeZone: appTimezone(), hour: "2-digit", minute: "2-digit" });
 };
 
 const venueCaption = (pin: string, validUntil: Date, activeCount: number) => {

@@ -1,8 +1,8 @@
 import { DateTime } from "luxon";
-import { MOSCOW, weekStartMoscow } from "../../src/domain/week.ts";
+import { appTimezone, weekStartMoscow } from "../../src/domain/week.ts";
 
 export const formatWeekCountdown = (now: Date): string => {
-  const at = DateTime.fromJSDate(now).setZone(MOSCOW);
+  const at = DateTime.fromJSDate(now).setZone(appTimezone());
   const nextWeekStart = weekStartMoscow(at).plus({ weeks: 1 });
   const remainingMs = nextWeekStart.toMillis() - at.toMillis();
   if (remainingMs <= 0) {

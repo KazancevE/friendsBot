@@ -1,7 +1,7 @@
 import type { Api } from "grammy";
 import { CronJob } from "cron";
 import type { Store } from "../store/types.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { appTimezone } from "../domain/week.ts";
 import { runBirthdayJob } from "./birthday-job.ts";
 import { runBookingReminders } from "../domain/booking.ts";
 import { closeExpiredQuizSessions } from "../domain/quiz.ts";
@@ -41,7 +41,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: EXPIRY_CRON,
@@ -53,7 +53,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: WEEKLY_CRON,
@@ -65,7 +65,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: VENUE_CODE_CRON,
@@ -77,7 +77,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: BOOKING_REMINDER_CRON,
@@ -92,7 +92,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   void runLoggedJob({
     name: "venue-code-startup",

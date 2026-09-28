@@ -2,14 +2,14 @@ import { listOnDutyStaffTelegramIds } from "../domain/staff-schedule.ts";
 import { DateTime } from "luxon";
 import type { Api } from "grammy";
 import type { UserRecord, VisitRecord } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 const lastNotifyAt = new Map<string, number>();
 const DEBOUNCE_MS = 5 * 60 * 1000;
 
 const formatMoscowTime = (at: Date) => {
-  return DateTime.fromJSDate(at, { zone: MOSCOW }).toFormat("HH:mm");
+  return DateTime.fromJSDate(at, { zone: appTimezone() }).toFormat("HH:mm");
 };
 
 const guestDisplayName = (guest: UserRecord) => {

@@ -1,186 +1,97 @@
-# Друзья — бот лояльности
+# Daddyson — демо бота барбершопа
 
-Telegram-бот кальянной «Друзья»: бонусы, касса, Mini App с игрой «три в ряд».
+Отдельный продукт на базе friendsBot: запись к мастеру, бонусная карта и админка для сети **Daddyson** (Бийск, два филиала). Это **не** правка кальянной «Друзья» и ветку не нужно вливать в `main`.
 
-Процесс стартует через `tsx` (`npm run start` → `tsx src/index.ts`). `tsc` не используется: импорты с расширением `.ts` не собираются (`TS5097`, нужен `allowImportingTsExtensions`). Mini App собирает Vite (`npm run build`).
+Один процесс, одна база Postgres. Два мессенджера — Telegram (grammY) и MAX (официальный `@maxhub/max-bot-api`, запросы на `platform-api2.max.ru`). Клиент склеивается по телефону: карта, баланс и записи общие.
 
-## Переменные окружения
+Игры, квиз, схема зала и бронь столов в гостевом интерфейсе этого форка выключены. Доменный код кальянной остаётся в репозитории, чтобы старые тесты не разъехались.
 
-| Переменная | Назначение |
-|---|---|
-| `BOT_TOKEN` | токен бота от BotFather |
-| `WEBHOOK_SECRET` | секрет заголовка Telegram webhook; если пусто — считается из `BOT_TOKEN` |
-| `TELEGRAM_ADMIN_ID` | Telegram ID первого админа (роль `admin` всегда) |
-| `PUBLIC_URL` | публичный HTTPS URL сервиса, без webhook-пути (`https://` + `CADDY_DOMAIN`) |
-| `CADDY_DOMAIN` | домен для Caddy и Let's Encrypt, без `https://` |
-| `PORT` | порт HTTP приложения внутри compose, по умолчанию `3000` |
-| `POSTGRES_USER` | пользователь Postgres (docker compose) |
-| `POSTGRES_PASSWORD` | пароль Postgres — только в `.env`, не в git |
-| `POSTGRES_DB` | имя базы Postgres |
-| `DATABASE_URL` | строка подключения; в compose: `@postgres:5432`, локально: `@localhost:5432` |
-| `S3_BUCKET` | bucket Yandex Object Storage для фото меню; если пусто — локальная папка `uploads/menu/` |
-| `S3_ENDPOINT` | `https://storage.yandexcloud.net` |
-| `S3_REGION` | `ru-central1` |
-| `S3_ACCESS_KEY_ID` | ключ сервисного аккаунта |
-| `S3_SECRET_ACCESS_KEY` | секрет ключа |
-| `S3_PUBLIC_BASE_URL` | публичный URL bucket (по умолчанию `{S3_ENDPOINT}/{S3_BUCKET}`) |
-| `S3_KEY_PREFIX` | префикс ключей, по умолчанию `menu` |
+## Что умеет демо
 
-Пример: `.env.example`. Файл `.env` в git не попадает — все секреты только там.
+- Запись: филиал → услуга → мастер или «любой» → день → свободное окно → подтверждение. Окна считаются из длительности услуги и уже занятого времени.
+- То же в чате и в Mini App.
+- Напоминания за 24 часа и за 2 часа, кнопка отмены.
+- «Пора стричься» через N недель после визита (по умолчанию 4).
+- Кэшбэк (сид ставит 5%), реферал, бонус на день рождения, QR на кассе.
+- Баланс общий. Визит в админке помечается филиалом.
+- Сайт с ценами и адресами, админка на `/admin`.
 
-### Yandex Object Storage (галерея меню)
+Часовой пояс по умолчанию **Asia/Barnaul** (UTC+7), не Москва. Меняется `VENUE_TIMEZONE` и полем в настройках админки.
 
-1. Создайте bucket в Object Storage, включите **публичный доступ на чтение** объектов.
-2. Сервисный аккаунт → статический ключ → роль `storage.editor` на bucket.
-3. Заполните `S3_*` в `.env` или в Timeweb App Platform.
-4. После деплоя загрузите фото в админке — в БД сохранится URL вида `https://storage.yandexcloud.net/<bucket>/menu/<uuid>.jpg`.
-5. Telegram и админка открывают фото по этому URL напрямую; локальный `/uploads/*` нужен только для старых записей и dev без S3.
+Телефоны салона в сид и рассылки **не** попадают. Никому ничего не отправляется, пока вы сами не впишете токены.
 
-## Docker Compose (рекомендуется)
+## Локальный запуск
 
-Postgres, приложение и Caddy (HTTPS) одной командой:
+Нужны Docker и свободный порт 3000.
 
 ```sh
-cp .env.example .env   # заполните все поля
-chmod 600 .env
+cp .env.example .env
 docker compose up -d --build
 ```
 
-`POSTGRES_PASSWORD` в `.env` должен совпадать с паролем в `DATABASE_URL`. Если volume `pgdata` уже существует, пароль должен быть **тот же**, что при первом запуске Postgres (иначе P1000).
+Откроется:
 
-Postgres в продакшене **не публикуется** на хост (только сеть compose). Один контейнер `app`: не масштабируйте replicas — джобы и webhook живут в том же процессе.
+| Адрес | Что это |
+|---|---|
+| http://localhost:3000/ | лендинг, прайс, мастера, кнопки «Записаться» |
+| http://localhost:3000/admin/ | админка. Логин `admin`, пароль `daddyson-demo` |
+| http://localhost:3000/app/?demo=1 | карта гостя и запись без мессенджера |
 
-Локальный `npm run start` с БД в Docker:
+При старте контейнер сам накатывает миграции и сид: филиалы, мастера с публичных страниц DIKIDI, прайс из `prisma/data/prices_dikidi.csv`, демо-гость «Демо Гость» и две будущие записи. Повторный сид не затирает уже сохранённые цены и процент кэшбэка.
+
+Без токенов боты не поднимаются, сайт работает. Логи: `docker compose logs -f app`.
+
+Остановка: `docker compose down`. База остаётся в томе `pgdata`.
+
+Только Postgres на localhost (для `npm run start`):
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 ```
 
-`docker-compose.dev.yml` открывает Postgres только на `127.0.0.1:5432`. В `DATABASE_URL` для npm замените хост на `localhost`.
+В `DATABASE_URL` для npm замените хост `postgres` на `localhost`.
 
-`CADDY_DOMAIN` — домен без схемы, например `bot.example.com`. `PUBLIC_URL` — тот же хост с `https://`.
-
-Сид один раз на пустую базу:
+Проверки:
 
 ```sh
-docker compose run --rm app npx prisma db seed
-```
-
-Проверка:
-
-```sh
-curl -s https://ваш-домен/health         # → {"ok":true}
-curl -s https://ваш-домен/health/ready   # → {"ok":true}, 503 если Postgres недоступен
-docker compose logs -f app
-docker compose restart app         # перерегистрирует webhook после смены PUBLIC_URL
-```
-
-Логи: `docker compose logs -f app caddy`. Остановка: `docker compose down` (данные БД в volume `pgdata`, сертификаты Caddy в `caddy_data`).
-
-Caddy проксирует `443` → `app:3000`. Telegram webhook и Mini App ходят на `PUBLIC_URL`.
-
-При старте контейнер `app` выполняет `prisma migrate deploy`, затем запускает бот. Mini App собирается на этапе `docker compose build`.
-
-## Postgres (только БД, без compose)
-
-Если приложение запускаете отдельно (`npm run start`), поднимите Postgres:
-
-```sh
-docker compose up -d postgres
-```
-
-Или свой инстанс; строка подключения — в `DATABASE_URL` (для локального npm: `@localhost:5432`).
-
-## Миграции и сид
-
-```sh
-npx prisma migrate deploy
-npx prisma db seed
-```
-
-Сид записывает настройки по умолчанию, страницы контактов/маршрута и игру `match3` (потолок партии 50 000).
-
-## Mini App
-
-В BotFather укажите URL Mini App: `PUBLIC_URL/app/` (со слэшем). Тот же URL открывают кнопки «Игры» (гость) и «Приложение» (персонал) через inline-кнопку в чате. Webhook бота: `PUBLIC_URL/tg/webhook` — ставится при старте процесса, секрет уходит заголовком `X-Telegram-Bot-Api-Secret-Token`, не в URL.
-
-## Как добавить мастера
-
-1. Админ пишет боту и нажимает «Роли».
-2. Вводит Telegram ID сотрудника.
-3. Указывает роль `master` (снять роль — снова `guest`).
-
-Первый админ — `TELEGRAM_ADMIN_ID`, отдельная запись не нужна.
-
-## Запуск
-
-```sh
-npm ci
-npx prisma generate
-npx prisma migrate deploy
-npx prisma db seed
+npm test
 npm run build
-npm run start
+curl -s http://localhost:3000/health
 ```
 
-Локально без webhook: `npx tsx src/dev-polling.ts`.
+## Токены
 
-Планировщик в том же процессе: день рождения каждую ночь 02:00 МСК, закрытие недели в понедельник 00:00 МСК, ротация кода зала каждые 2 часа МСК. Ошибка джоба пишется в лог и уходит админу в Telegram.
+### Telegram
 
-### Бэкап Postgres
+1. @BotFather → `/newbot` → скопируйте токен в `TELEGRAM_BOT_TOKEN`.
+2. Username бота без `@` — в `TELEGRAM_BOT_USERNAME` (кнопка на сайте и реферальная ссылка).
+3. Узнайте свой id (например @userinfobot) и впишите в `TELEGRAM_ADMIN_ID` — туда придут новые и отменённые записи.
+4. Mini App: в BotFather укажите `https://ваш-домен/app/`. Локально без HTTPS бот ходит long polling, webhook не ставится.
+5. На HTTPS (`PUBLIC_URL` начинается с `https://`) процесс сам вызывает `setWebhook` на `/tg/webhook`.
 
-Ежедневно (cron на хосте или вручную):
+### MAX
 
-```sh
-chmod +x scripts/backup-postgres.sh
-./scripts/backup-postgres.sh
-```
+Официальная схема: [dev.max.ru](https://dev.max.ru/docs-api), библиотека `@maxhub/max-bot-api`.
 
-Файл: `backups/friends-YYYYMMDD-HHMMSS.sql.gz`. Восстановление (приложение лучше остановить):
+1. Создайте бота в MAX для бизнеса или через @MasterBot и скопируйте токен в `MAX_BOT_TOKEN`.
+2. Ссылка на бота — `MAX_BOT_URL` (например `https://max.ru/имя`).
+3. Свой числовой id в MAX — `MAX_ADMIN_USER_ID`, если нужны уведомления в MAX.
+4. Демо использует long polling (`bot.start()`), хост API `platform-api2.max.ru`. С июня 2026 сертификат Минцифры: в обычном Node его нет в доверенных. Если polling падает с ошибкой TLS, добавьте корневой сертификат НУЦ Минцифры в систему или в `NODE_EXTRA_CA_CERTS`.
+5. Webhook MAX (`POST /subscriptions`) в этом демо не включён: один контейнер и polling проще. Для нескольких реплик переведите MAX на webhook, иначе обновления заберёт только один процесс.
 
-```sh
-gunzip -c backups/friends-YYYYMMDD-HHMMSS.sql.gz | docker compose exec -T postgres psql -U friends friends
-```
+## Новый салон за вечер
 
-Запуск в зале и скрипт мастера: [docs/ops/venue-launch.md](docs/ops/venue-launch.md). Продажа после пилота: [docs/ops/product-after-pilot.md](docs/ops/product-after-pilot.md).
+Ориентир — около полутора часов, если токены уже есть.
 
-## Timeweb Cloud Apps
+1. **Конфиг.** Скопируйте `.env.example`. Токены, `PUBLIC_URL`, `VENUE_TIMEZONE`, логин админки. Пароль `daddyson-demo` смените.
+2. **Бренд.** Тексты лендинга — `site/index.html`. Цвета `#c44650` / `#ad2323` на тёмном `#141414` — `site/styles.css`, `admin/src/salon.css`, `miniapp/src/salon.css`. Логотип на сайте — слово «Daddyson» шрифтом Great Vibes; фото с DIKIDI в репозиторий не клались.
+3. **Сид.** Филиалы и мастера — массивы в `prisma/seed-salon.ts`. Прайс — CSV в `prisma/data/` (колонки: филиал, уровень, услуга, цена, «от», длительность). Часы по умолчанию 10:00–21:00, каждый день; график мастера потом правится в админке.
+4. **Процент и «пора стричься».** Первый сид пишет 5% и 4 недели. Дальше — экран «Настройки», ключ `salon.seeded` не даёт сиду затереть правки при рестарте.
+5. **Запуск.** `docker compose up -d --build`. Для боевого HTTPS: `docker compose --profile https up -d` и домен в `CADDY_DOMAIN` / `PUBLIC_URL`.
+6. **Проверка.** Запись с сайта (`/app/?demo=1`), та же запись в чате бота, отмена, чек в админке на клиента, QR на карте.
 
-Деплой из Git через [App Platform + Dockerfile](https://timeweb.cloud/docs/apps/deploying-with-dockerfile). База — отдельно: [облачный PostgreSQL](https://timeweb.cloud/docs/dbaas/postgresql).
+Кассу проводит пользователь «Касса» из сида (роль admin). Сторонней CRM нет: клиенты, баллы и рассылки живут в этой Postgres.
 
-1. Залейте этот репозиторий на GitHub / GitLab (`main`).
-2. В Timeweb: **Базы данных** → PostgreSQL (минимум). Скопируйте строку подключения. Если кластер требует TLS, добавьте `?sslmode=require` к `DATABASE_URL`.
-3. **App Platform** → создать приложение → тип **Dockerfile** → подключить репозиторий, ветка `main`.
-4. Регион тот же, что у базы. Приватную сеть выберите ту же, что у Postgres (потом её не сменить).
-5. Переменные:
+## Стек
 
-   | Ключ | Значение |
-   |---|---|
-   | `BOT_TOKEN` | токен BotFather |
-   | `TELEGRAM_ADMIN_ID` | ваш числовой Telegram ID |
-   | `DATABASE_URL` | строка из шага 2 (внутренний хост, если есть приватная сеть) |
-   | `PUBLIC_URL` | пока заглушка `https://placeholder.twc1.net` — после первого деплоя замените на технический домен с Дашборда |
-   | `PORT` | `3000` |
-
-   Путь проверки состояния: `/health`.
-
-6. Запустить деплой. В логе должно быть `listening 3000`.
-7. На Дашборде скопируйте технический домен (`https://….twc1.net`), пропишите его в `PUBLIC_URL` без слэша в конце и передеплойте (чтобы webhook и Mini App смотрели на правильный URL).
-8. Один раз сид: в приложении откройте консоль / разовую команду  
-   `npx prisma db seed`  
-   или локально: `DATABASE_URL=... npx prisma db seed`.
-9. BotFather → Mini App URL: `https://ваш-домен.twc1.net/app/`
-10. Напишите боту с аккаунта `TELEGRAM_ADMIN_ID`, добавьте мастеров через «Роли».
-
-Проверка: `https://ваш-домен.twc1.net/health` → `{"ok":true}`; `/health/ready` — то же, либо 503 если нет БД.
-
-## Docker (образ без compose)
-
-```sh
-docker build -t friends-bot .
-docker run --env-file .env -p 3000:3000 friends-bot
-```
-
-Образ на старте делает `prisma migrate deploy` и запускает `tsx src/index.ts`. Сид один раз: `docker run --rm --env-file .env friends-bot npx prisma db seed`.
-
-Для Postgres + app вместе используйте `docker compose up -d --build` (см. выше).
+Node 22, TypeScript через `tsx`, Hono, grammY, `@maxhub/max-bot-api`, Prisma, Postgres 16, Vite (Mini App и `/admin`).

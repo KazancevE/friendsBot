@@ -3,7 +3,7 @@ import { DateTime } from "luxon";
 import { createLotForCredit } from "./bonus-lots.ts";
 import { DomainError } from "./errors.ts";
 import type { ReferralStats, UserRecord } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 const REFERRAL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -61,10 +61,10 @@ export async function resolveReferrerByCode(store: Store, code: string): Promise
 }
 
 const withinActivationWindow = (guest: UserRecord, now: Date, activationDays: number) => {
-  const deadline = DateTime.fromJSDate(guest.createdAt, { zone: MOSCOW })
+  const deadline = DateTime.fromJSDate(guest.createdAt, { zone: appTimezone() })
     .plus({ days: activationDays })
     .endOf("day");
-  return DateTime.fromJSDate(now, { zone: MOSCOW }) <= deadline;
+  return DateTime.fromJSDate(now, { zone: appTimezone() }) <= deadline;
 };
 
 export async function tryActivateReferral(

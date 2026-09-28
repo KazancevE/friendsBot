@@ -2,6 +2,7 @@ import { DomainError } from "./errors.ts";
 import type { PrizePlace, Settings } from "./types.ts";
 import type { Store } from "../store/types.ts";
 import { assertValidVenueTimezone } from "./venue-time.ts";
+import { appTimezone, setAppTimezone } from "./week.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
   percent: 10,
@@ -34,7 +35,9 @@ export const DEFAULT_SETTINGS: Settings = {
   bookingSlotMinutes: 30,
   bookingClosedWeekdays: [],
   bookingDurationMinutes: 120,
-  venueTimezone: "Europe/Moscow",
+  venueTimezone: appTimezone(),
+  haircutNudgeWeeks: 4,
+  reminderLeadHours: [24, 2],
 };
 
 export function expiresAfterDays(from: Date, days: number): Date {
@@ -123,11 +126,29 @@ export async function patchAdminSettings(store: Store, patch: Partial<Settings>)
     try {
       assertValidVenueTimezone(patch.venueTimezone);
     } catch {
-      throw new DomainError("bad_request", "Некорректный часовой пояс (IANA, например Europe/Moscow)");
+      throw new DomainError("bad_request", "Некорректный часовой пояс (IANA, например Asia/Barnaul)");
+    }
+  }
+  if (patch.haircutNudgeWeeks !== undefined) {
+    assertNonNegativeInt(patch.haircutNudgeWeeks, "Недели «пора стричься»");
+    if (patch.haircutNudgeWeeks < 1 || patch.haircutNudgeWeeks > 52) {
+      throw new DomainError("bad_request", "Интервал «пора стричься» от 1 до 52 недель");
+    }
+  }
+  if (patch.reminderLeadHours !== undefined) {
+    if (
+      patch.reminderLeadHours.length === 0 ||
+      patch.reminderLeadHours.some((hours) => !Number.isInteger(hours) || hours < 1 || hours > 168)
+    ) {
+      throw new DomainError("bad_request", "Напоминания: целые часы от 1 до 168");
     }
   }
   if (Object.keys(patch).length === 0) {
     throw new DomainError("bad_request", "Нет полей для обновления");
   }
-  return store.updateSettings(patch);
+  const next = await store.updateSettings(patch);
+  if (patch.venueTimezone !== undefined) {
+    setAppTimezone(next.venueTimezone);
+  }
+  return next;
 }
