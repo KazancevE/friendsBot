@@ -79,6 +79,8 @@ const salonHttp = createSalonRoutes({
   adminPassword: process.env.ADMIN_PASSWORD || "daddyson-demo",
   sessionSecret,
   allowDemoGuest: process.env.ALLOW_DEMO_GUEST !== "false",
+  telegramBotToken: telegramToken,
+  maxBotToken: maxToken,
   admins: createAdminDirectory(prisma),
   links: {
     telegram: process.env.TELEGRAM_BOT_USERNAME ? `https://t.me/${process.env.TELEGRAM_BOT_USERNAME}` : null,

@@ -1,4 +1,5 @@
 import "./salon.css";
+import { readLaunchInitData, readyTelegram } from "./telegram.ts";
 
 type Card = {
   firstName: string | null;
@@ -35,7 +36,33 @@ const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return data as T;
 };
 
+const escapeText = (value: string) =>
+  value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
+
+const showGate = (root: HTMLElement, message: string) => {
+  root.innerHTML = `<p class="mark">Daddyson</p><div class="caps">BARBERSHOP · БИЙСК</div><p class="notice">${escapeText(message)}</p>`;
+};
+
+const openMessengerSession = async () => {
+  const launch = readLaunchInitData();
+  if (!launch) {
+    return { message: "Мессенджер не передал данные входа. Откройте карту кнопкой меню бота или inline-кнопкой в чате. Ссылка в браузере и кнопка обычной клавиатуры карту не открывают." };
+  }
+  const response = await fetch("/api/salon/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(launch),
+  });
+  const data = (await response.json().catch(() => ({}))) as { token?: string; message?: string };
+  if (data.token) {
+    sessionStorage.setItem("daddyson-token", data.token);
+    return null;
+  }
+  return { message: data.message ?? "Не удалось открыть карту. Вернитесь в чат бота и нажмите «Старт»." };
+};
+
 export const bootSalonApp = async () => {
+  readyTelegram();
   const root = document.querySelector("#app");
   if (!(root instanceof HTMLElement)) {
     return;
@@ -46,8 +73,16 @@ export const bootSalonApp = async () => {
     sessionStorage.setItem("daddyson-token", demo.token);
   }
   if (!sessionStorage.getItem("daddyson-token")) {
-    root.innerHTML = `<p class="mark">Daddyson</p><p>Откройте карту кнопкой в чате бота или с демо-ссылки сайта.</p>`;
-    return;
+    try {
+      const gate = await openMessengerSession();
+      if (gate) {
+        showGate(root, gate.message);
+        return;
+      }
+    } catch {
+      showGate(root, "Не удалось связаться с сервером. Закройте окно и откройте карту из бота ещё раз.");
+      return;
+    }
   }
   let screen: "card" | "book" = "card";
   const draft: { branchId?: string; serviceId?: string; barberId?: string; date?: string; slot?: Slot } = {};

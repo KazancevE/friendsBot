@@ -9,7 +9,9 @@ import type { Store } from "../store/types.ts";
 import type { BarberLevelName } from "../salon/catalog.ts";
 import { IMPORT_FIELD_LABEL, IMPORT_FIELDS, parseSpreadsheet, readSampleImportCsv } from "../salon/import.ts";
 import { DEMO_GUEST_TELEGRAM_ID, SalonService } from "../salon/service.ts";
+import { miniAppGateMessage, type MiniAppChannel } from "../salon/miniapp-session.ts";
 import { issueAdminCookie, issueGuestToken, readAdminCookie, readGuestToken, type AdminCookie } from "../salon/session.ts";
+import { verifyInitData } from "./auth.ts";
 import type { Notifier } from "../salon/outbound.ts";
 import { canDo, canDeleteAccount, scopedBranch } from "../prod/access.ts";
 import { authenticateAdmin, type StoredAdmin } from "../prod/admin-auth.ts";
@@ -40,6 +42,8 @@ export const createSalonRoutes = (deps: {
   admins: AdminDirectory;
   sessionSecret: string;
   allowDemoGuest: boolean;
+  telegramBotToken?: string;
+  maxBotToken?: string;
   links: { telegram: string | null; max: string | null; app: string };
   onNotice?: (text: string) => Promise<void>;
 }) => {
@@ -174,6 +178,38 @@ export const createSalonRoutes = (deps: {
       }
       throw error;
     }
+  });
+
+  app.post("/api/salon/session", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { initData?: string; channel?: string };
+    const channel: MiniAppChannel = body.channel === "max" ? "max" : "telegram";
+    const botToken = channel === "max" ? deps.maxBotToken : deps.telegramBotToken;
+    if (!body.initData) {
+      return c.json({ status: "missing", message: miniAppGateMessage("missing", channel) }, 400);
+    }
+    if (!botToken) {
+      return c.json({ status: "bad_signature", message: miniAppGateMessage("bad_signature", channel) }, 401);
+    }
+    let externalId = "";
+    try {
+      externalId = String(verifyInitData(body.initData, botToken).id);
+    } catch (error) {
+      const stale = error instanceof DomainError && error.code === "stale_init_data";
+      const status = stale ? "stale" : "bad_signature";
+      return c.json({ status, message: miniAppGateMessage(status, channel) }, 401);
+    }
+    const user = await deps.salon.findChannelUser(channel, externalId);
+    if (!user) {
+      return c.json({ status: "unregistered", message: miniAppGateMessage("unregistered", channel) });
+    }
+    if (!(await deps.salon.hasConsent(user.id))) {
+      return c.json({ status: "needs_consent", message: miniAppGateMessage("needs_consent", channel) });
+    }
+    if (!deps.salon.profileReady(user)) {
+      return c.json({ status: "needs_profile", message: miniAppGateMessage("needs_profile", channel) });
+    }
+    const token = issueGuestToken(deps.sessionSecret, user.id, 60 * 60 * 24 * 14);
+    return c.json({ status: "ok", token });
   });
 
   app.post("/api/salon/admin/login", async (c) => {
