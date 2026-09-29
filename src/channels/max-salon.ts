@@ -5,8 +5,8 @@ import type { Notifier, OutMessage } from "../salon/outbound.ts";
 const attachments = (message: OutMessage) => {
   const rows = (message.buttons ?? []).map((row) =>
     row.map((button) =>
-      button.url
-        ? Keyboard.button.link(button.text, button.url)
+      button.webApp || button.url
+        ? Keyboard.button.link(button.text, button.webApp ?? button.url ?? button.text)
         : Keyboard.button.callback(button.text, button.callback ?? button.text),
     ),
   );

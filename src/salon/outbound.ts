@@ -2,6 +2,7 @@ export type OutButton = {
   text: string;
   callback?: string;
   url?: string;
+  webApp?: string;
 };
 
 export type OutMessage = {

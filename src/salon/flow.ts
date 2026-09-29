@@ -1,7 +1,7 @@
 import type { UserRecord } from "../domain/types.ts";
-import { consentDecision } from "../prod/privacy.ts";
 import { formatAppointmentWhen, formatMinutes, formatPrice } from "./format.ts";
 import type { InboundMessage, OutMessage } from "./outbound.ts";
+import type { OnboardingStep } from "./onboarding.ts";
 import { SalonService, type SlotOffer } from "./service.ts";
 
 type Draft = {
@@ -33,18 +33,9 @@ export class SalonFlow {
       firstName: inbound.firstName,
       startPayload: inbound.startPayload,
     });
-    const consent = consentDecision({
-      hasConsent: await this.salon.hasConsent(user.id),
-      callback: inbound.callback ?? null,
-    });
-    if (consent === "ask" || consent === "refuse") {
-      return this.askConsent(user, inbound, consent);
-    }
-    if (consent === "accept") {
-      await this.salon.recordConsent(user.id);
-      if (!this.salon.profileReady(user)) {
-        return this.askName(user, inbound, {});
-      }
+    const gate = await this.salon.onboardingView(user.id);
+    if (gate.step !== "ready") {
+      return this.onboard(user, inbound);
     }
     const dialog = await this.salon.getDialog(inbound.channel, inbound.externalId);
     let step = dialog?.step ?? "menu";
@@ -55,9 +46,6 @@ export class SalonFlow {
       step = "menu";
     }
     if (data === "nav:book" || data === "Записаться") {
-      if (!this.salon.profileReady(user)) {
-        return this.askName(user, inbound, draft);
-      }
       return this.showBranches(user, inbound, {});
     }
     if (data === "nav:my" || data === "Мои записи") {
@@ -78,18 +66,6 @@ export class SalonFlow {
       return { userId: user.id, messages };
     }
 
-    if (step === "reg_name") {
-      return this.takeName(user, inbound, inbound.text ?? "");
-    }
-    if (step === "reg_phone") {
-      return this.takePhone(user, inbound, inbound.phone ?? inbound.text ?? "");
-    }
-    if (step === "reg_birthday") {
-      if (data === "bd:skip") {
-        return this.finishProfile(user, inbound);
-      }
-      return this.takeBirthday(user, inbound, inbound.text ?? "");
-    }
     if (data.startsWith("br:")) {
       draft = { branchId: data.slice(3), page: 0 };
       return this.showServices(user, inbound, draft);
@@ -167,13 +143,12 @@ export class SalonFlow {
     return this.menuMessage(user, lines.join("\n"));
   }
 
-  private menuMessage(user: UserRecord, text: string): OutMessage {
-    const app = user.id ? "" : "";
-    void app;
+  private menuMessage(_user: UserRecord, text: string): OutMessage {
     return {
       text,
       removeKeyboard: true,
       buttons: [
+        [{ text: "Карта", webApp: this.salon.miniAppLink() }],
         [
           { text: "Записаться", callback: "nav:book" },
           { text: "Мои записи", callback: "nav:my" },
@@ -186,103 +161,261 @@ export class SalonFlow {
     };
   }
 
-  private async askConsent(user: UserRecord, inbound: InboundMessage, decision: "ask" | "refuse") {
-    const policy = this.salon.policyPublic();
-    const text =
-      decision === "refuse"
-        ? "Без согласия на обработку персональных данных запись и бонусная карта недоступны. Если передумаете, нажмите «Согласен»."
-        : `Чтобы записать вас и вести бонусную карту, нужно согласие на обработку имени, телефона и записей. Политика ${policy.url}, версия ${policy.version}.`;
-    const messages: OutMessage[] = [
-      {
-        text,
-        buttons: [
-          [{ text: "Согласен", callback: "pd:yes" }],
-          [{ text: "Не согласен", callback: "pd:no" }],
-          [{ text: "Политика", url: policy.url }],
-        ],
-      },
-    ];
-    await this.persist(inbound, user.id, "reg_consent", {});
-    return { userId: user.id, messages };
-  }
-
-  private async askName(user: UserRecord, inbound: InboundMessage, draft: Draft) {
-    const messages: OutMessage[] = [
-      {
-        text: "Как к вам обращаться? Напишите имя и, если хотите, фамилию.",
-        removeKeyboard: true,
-      },
-    ];
-    await this.persist(inbound, user.id, "reg_name", draft);
-    return { userId: user.id, messages };
-  }
-
-  private async takeName(user: UserRecord, inbound: InboundMessage, text: string) {
-    try {
-      const named = await this.salon.saveName(user.id, text);
-      const messages: OutMessage[] = [
-        {
-          text: `${named.firstName}, пришлите телефон кнопкой ниже — так мы свяжем Telegram и MAX в одну карту.`,
-          requestContact: true,
-        },
-      ];
-      await this.persist(inbound, named.id, "reg_phone", {});
-      return { userId: named.id, messages };
-    } catch (error) {
-      const messages: OutMessage[] = [{ text: error instanceof Error ? error.message : "Не получилось сохранить имя" }];
-      await this.persist(inbound, user.id, "reg_name", {});
-      return { userId: user.id, messages };
+  private async onboard(initial: UserRecord, inbound: InboundMessage) {
+    let user = initial;
+    let note = "";
+    let intro = false;
+    let current = inbound;
+    for (let guard = 0; guard < 8; guard += 1) {
+      const view = await this.salon.onboardingView(user.id);
+      if (view.step === "ready") {
+        return this.finishProfile(user, inbound, intro, note);
+      }
+      const advanced = await this.tryAdvance(user, current, view.step);
+      if (advanced.kind === "messages") {
+        return advanced.result;
+      }
+      if (advanced.kind === "next") {
+        if (view.step === "phone" || view.step === "name" || view.step === "birthday") {
+          intro = true;
+        }
+        note = advanced.note || note;
+        user = advanced.user;
+        current = { channel: inbound.channel, externalId: inbound.externalId };
+        continue;
+      }
+      return this.prompt(user, inbound, view.step, view.renew, view.promoRenew, note);
     }
+    const view = await this.salon.onboardingView(user.id);
+    return this.prompt(user, inbound, view.step, view.renew, view.promoRenew, note);
   }
 
-  private async takePhone(user: UserRecord, inbound: InboundMessage, raw: string) {
-    try {
-      const saved = await this.salon.savePhone(user.id, raw, inbound.channel);
+  private async tryAdvance(
+    user: UserRecord,
+    inbound: InboundMessage,
+    step: OnboardingStep,
+  ): Promise<
+    | { kind: "next"; user: UserRecord; note: string }
+    | { kind: "messages"; result: { userId: string; messages: OutMessage[] } }
+    | { kind: "none" }
+  > {
+    const callback = inbound.callback ?? "";
+    if (step === "consent") {
+      if (callback === "pd:yes") {
+        await this.salon.recordConsent(user.id);
+        return { kind: "next", user, note: "" };
+      }
+      if (callback === "pd:no") {
+        return { kind: "messages", result: await this.consentMessages(user, inbound, "refuse") };
+      }
+      return { kind: "none" };
+    }
+    if (step === "promo") {
+      if (callback === "pr:yes" || callback === "pr:no") {
+        await this.salon.recordPromoConsent(user.id, callback === "pr:yes");
+        return { kind: "next", user, note: "" };
+      }
+      return { kind: "none" };
+    }
+    if (step === "phone") {
+      const raw = !callback && inbound.text !== "/start" ? inbound.phone ?? inbound.text?.trim() ?? "" : "";
+      if (!raw) {
+        return { kind: "none" };
+      }
+      try {
+        const saved = await this.salon.savePhone(user.id, raw, inbound.channel);
+        const linked = await this.salon.phoneLinksImport(saved.id);
+        return {
+          kind: "next",
+          user: saved,
+          note: linked ? "Нашли карту по этому номеру, бонусы на месте." : "",
+        };
+      } catch (error) {
+        const messages: OutMessage[] = [
+          {
+            text: error instanceof Error ? error.message : "Некорректный телефон",
+            requestContact: true,
+          },
+        ];
+        await this.persist(inbound, user.id, "reg_phone", {});
+        return { kind: "messages", result: { userId: user.id, messages } };
+      }
+    }
+    if (step === "name") {
+      if (callback === "nm:keep") {
+        try {
+          const kept = await this.salon.confirmKeptName(user.id);
+          return { kind: "next", user: kept, note: "" };
+        } catch (error) {
+          const messages: OutMessage[] = [{ text: error instanceof Error ? error.message : "Напишите имя" }];
+          await this.persist(inbound, user.id, "reg_name", {});
+          return { kind: "messages", result: { userId: user.id, messages } };
+        }
+      }
+      const text = !callback && inbound.text && inbound.text !== "/start" ? inbound.text : "";
+      if (!text) {
+        return { kind: "none" };
+      }
+      try {
+        const named = await this.salon.saveName(user.id, text);
+        return { kind: "next", user: named, note: "" };
+      } catch (error) {
+        const messages: OutMessage[] = [{ text: error instanceof Error ? error.message : "Не получилось сохранить имя" }];
+        await this.persist(inbound, user.id, "reg_name", {});
+        return { kind: "messages", result: { userId: user.id, messages } };
+      }
+    }
+    if (step === "birthday") {
+      if (callback === "bd:skip") {
+        const saved = await this.salon.skipBirthday(user.id);
+        return { kind: "next", user: saved, note: "" };
+      }
+      const text = !callback && inbound.text && inbound.text !== "/start" ? inbound.text : "";
+      if (!text) {
+        return { kind: "none" };
+      }
+      try {
+        const saved = await this.salon.saveBirthday(user.id, text);
+        return { kind: "next", user: saved, note: "" };
+      } catch (error) {
+        const messages: OutMessage[] = [
+          {
+            text: error instanceof Error ? error.message : "Некорректная дата",
+            buttons: [[{ text: "Пропустить", callback: "bd:skip" }]],
+          },
+        ];
+        await this.persist(inbound, user.id, "reg_birthday", {});
+        return { kind: "messages", result: { userId: user.id, messages } };
+      }
+    }
+    return { kind: "none" };
+  }
+
+  private async prompt(
+    user: UserRecord,
+    inbound: InboundMessage,
+    step: OnboardingStep,
+    renew: boolean,
+    promoRenew: boolean,
+    note: string,
+  ) {
+    if (step === "consent") {
+      return this.consentMessages(user, inbound, renew ? "renew" : "ask");
+    }
+    if (step === "promo") {
+      return this.promoMessages(user, inbound, promoRenew);
+    }
+    if (step === "phone") {
       const messages: OutMessage[] = [
         {
-          text: "День рождения? Начислим бонус в этот день. Формат ДД.ММ.ГГГГ или нажмите «Пропустить».",
-          removeKeyboard: true,
-          buttons: [[{ text: "Пропустить", callback: "bd:skip" }]],
-        },
-      ];
-      await this.persist(inbound, saved.id, "reg_birthday", {});
-      return { userId: saved.id, messages };
-    } catch (error) {
-      const messages: OutMessage[] = [
-        {
-          text: error instanceof Error ? error.message : "Некорректный телефон",
+          text: "Отправьте номер кнопкой «Отправить телефон». Если в базе салона уже есть карта на этот номер, привяжем её сюда.",
           requestContact: true,
         },
       ];
       await this.persist(inbound, user.id, "reg_phone", {});
       return { userId: user.id, messages };
     }
-  }
-
-  private async takeBirthday(user: UserRecord, inbound: InboundMessage, text: string) {
-    try {
-      const saved = await this.salon.saveBirthday(user.id, text);
-      return this.finishProfile(saved, inbound);
-    } catch (error) {
+    if (step === "name") {
+      return this.nameMessages(user, inbound, note);
+    }
+    if (step === "birthday") {
       const messages: OutMessage[] = [
         {
-          text: error instanceof Error ? error.message : "Некорректная дата",
+          text: [note, "День рождения указывать не обязательно. Если укажете, в этот день начислим бонус на карту. Формат ДД.ММ.ГГГГ."]
+            .filter(Boolean)
+            .join("\n\n"),
           buttons: [[{ text: "Пропустить", callback: "bd:skip" }]],
         },
       ];
       await this.persist(inbound, user.id, "reg_birthday", {});
       return { userId: user.id, messages };
     }
+    return this.finishProfile(user, inbound, false, note);
   }
 
-  private async finishProfile(user: UserRecord, inbound: InboundMessage) {
-    const fresh = (await this.salon.card(user.id)) ? user : user;
-    void fresh;
-    const messages = [await this.home(user)];
-    messages[0] = {
-      ...messages[0]!,
-      text: `Карта готова. Кэшбэк копится на обоих филиалах.\n\n${messages[0]!.text}`,
-    };
+  private async consentMessages(user: UserRecord, inbound: InboundMessage, kind: "ask" | "renew" | "refuse") {
+    const policy = this.salon.policyPublic();
+    const messages: OutMessage[] = [];
+    if (kind === "ask") {
+      messages.push({
+        text: [
+          "Здравствуйте! Это Daddyson Barbershop в Бийске.",
+          "Здесь записывают к барберу, копят бонусы и открывают карту. Сначала коротко оформим её: согласие, телефон и имя. День рождения можно пропустить.",
+        ].join("\n"),
+      });
+    }
+    const text =
+      kind === "refuse"
+        ? "Без согласия на обработку персональных данных запись и бонусная карта недоступны. Если передумаете, нажмите «Согласен»."
+        : kind === "renew"
+          ? `Политика обработки персональных данных обновилась до версии ${policy.version}. Подтвердите согласие, чтобы пользоваться записью и картой. Телефон и имя заново не спрашиваем.\nПолитика: ${policy.url}\nСогласие: ${policy.consentUrl}`
+          : `Нужно согласие на обработку персональных данных — имени, телефона, дня рождения и записей.\nПолитика: ${policy.url}\nСогласие: ${policy.consentUrl}\nВерсия ${policy.version}.`;
+    messages.push({
+      text,
+      buttons: [
+        [{ text: "Согласен", callback: "pd:yes" }],
+        [{ text: "Не согласен", callback: "pd:no" }],
+        [
+          { text: "Политика", url: policy.url },
+          { text: "Согласие", url: policy.consentUrl },
+        ],
+      ],
+    });
+    await this.persist(inbound, user.id, "reg_consent", {});
+    return { userId: user.id, messages };
+  }
+
+  private async promoMessages(user: UserRecord, inbound: InboundMessage, renew: boolean) {
+    const messages: OutMessage[] = [
+      {
+        text: [
+          renew
+            ? "Политика обновилась. Рекламные сообщения снова спрашиваем отдельно."
+            : "Отдельно — согласие на рекламные сообщения. Это не то же самое, что согласие на обработку данных.",
+          "«Согласен» — акции и напоминание, что пора стричься.",
+          "«Не согласен» — таких сообщений не будет. Запись, подтверждения и напоминания о визите приходят в любом случае, бот остаётся доступен.",
+        ].join("\n"),
+        buttons: [
+          [{ text: "Согласен", callback: "pr:yes" }],
+          [{ text: "Не согласен", callback: "pr:no" }],
+        ],
+      },
+    ];
+    await this.persist(inbound, user.id, "reg_promo", {});
+    return { userId: user.id, messages };
+  }
+
+  private async nameMessages(user: UserRecord, inbound: InboundMessage, note: string) {
+    const known = user.firstName?.trim() ?? "";
+    const canKeep = known.length >= 2;
+    const question = canKeep
+      ? `Как к вам обращаться? В профиле указано: ${known}. Напишите другое имя или оставьте это.`
+      : "Как к вам обращаться? Напишите имя и, если хотите, фамилию.";
+    const messages: OutMessage[] = [
+      {
+        text: [note, question].filter(Boolean).join("\n\n"),
+        removeKeyboard: true,
+      },
+    ];
+    if (canKeep) {
+      messages.push({
+        text: "Можно оставить имя из профиля.",
+        buttons: [[{ text: `Оставить ${known}`, callback: "nm:keep" }]],
+      });
+    }
+    await this.persist(inbound, user.id, "reg_name", {});
+    return { userId: user.id, messages };
+  }
+
+  private async finishProfile(user: UserRecord, inbound: InboundMessage, intro: boolean, note: string) {
+    const home = await this.home(user);
+    const lead = [note, intro ? "Карта готова. Кэшбэк копится на обоих филиалах." : ""].filter(Boolean).join("\n\n");
+    const messages = [
+      {
+        ...home,
+        text: lead ? `${lead}\n\n${home.text}` : home.text,
+      },
+    ];
     await this.persist(inbound, user.id, "menu", {});
     return { userId: user.id, messages };
   }

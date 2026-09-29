@@ -17,7 +17,9 @@ const markup = (message: OutMessage) => {
   const keyboard = new InlineKeyboard();
   for (const row of message.buttons) {
     for (const button of row) {
-      if (button.url) {
+      if (button.webApp) {
+        keyboard.webApp(button.text, button.webApp);
+      } else if (button.url) {
         keyboard.url(button.text, button.url);
       } else if (button.callback) {
         keyboard.text(button.text, button.callback);

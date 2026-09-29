@@ -135,6 +135,11 @@ model User {
   importedSpentRub           Int?
   personalDataConsentAt      DateTime?
   personalDataPolicyVersion  String?
+  promoConsentAt             DateTime?
+  promoConsentPolicyVersion  String?
+  promoConsentGranted        Boolean?
+  nameConfirmedAt            DateTime?
+  birthdayPromptedAt         DateTime?
   anonymizedAt               DateTime?
   appointments               Appointment[]
 }

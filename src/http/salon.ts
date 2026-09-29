@@ -140,6 +140,9 @@ export const createSalonRoutes = (deps: {
     if (!body.branchId || !body.serviceId || !body.barberId || !body.date || body.startMin === undefined) {
       return c.json({ message: "Заполните запись" }, 400);
     }
+    if (deps.salon.onboardingComplete && !(await deps.salon.onboardingComplete(id))) {
+      return c.json({ message: miniAppGateMessage("needs_profile", "telegram") }, 403);
+    }
     try {
       const booked = await deps.salon.book({
         userId: id,
@@ -205,7 +208,10 @@ export const createSalonRoutes = (deps: {
     if (!(await deps.salon.hasConsent(user.id))) {
       return c.json({ status: "needs_consent", message: miniAppGateMessage("needs_consent", channel) });
     }
-    if (!deps.salon.profileReady(user)) {
+    const onboarded = deps.salon.onboardingComplete
+      ? await deps.salon.onboardingComplete(user.id)
+      : deps.salon.profileReady(user);
+    if (!onboarded) {
       return c.json({ status: "needs_profile", message: miniAppGateMessage("needs_profile", channel) });
     }
     const token = issueGuestToken(deps.sessionSecret, user.id, 60 * 60 * 24 * 14);

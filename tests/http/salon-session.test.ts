@@ -95,4 +95,37 @@ test("a known client without consent or a phone is told what to do in the chat",
   const profileBody = (await profile.json()) as { status: string; message: string };
   expect(profileBody.status).toBe("needs_profile");
   expect(profileBody.message).toContain("MAX");
+  expect(profileBody.message).toContain("Старт");
+});
+
+test("a client who still owes onboarding is sent back to the chat", async () => {
+  const app = createSalonRoutes({
+    salon: {
+      findChannelUser: async () => ({ id: "user-1", firstName: "Иван", phone: "+79990000000" }),
+      hasConsent: async () => true,
+      profileReady: () => true,
+      onboardingComplete: async () => false,
+    } as unknown as SalonService,
+    store: {} as Store,
+    notifier: { send: async () => undefined },
+    adminLogin: "admin",
+    adminPassword: "daddyson-demo",
+    admins: {
+      list: async () => [],
+      create: async () => {
+        throw new Error("нет");
+      },
+      setPassword: async () => undefined,
+      remove: async () => undefined,
+    },
+    sessionSecret: SECRET,
+    allowDemoGuest: false,
+    telegramBotToken: TOKEN,
+    maxBotToken: "max-token",
+    links: { telegram: null, max: null, app: "/app" },
+  });
+  const response = await post(app, { channel: "telegram", initData: buildInitData(7, TOKEN) });
+  const body = (await response.json()) as { status: string; message: string };
+  expect(body.status).toBe("needs_profile");
+  expect(body.message).toContain("знакомство");
 });

@@ -160,7 +160,15 @@ test("consent is explicit and anonymized profile drops personal fields", () => {
   expect(consentDecision({ hasConsent: false, callback: null })).toBe("ask");
   expect(consentDecision({ hasConsent: false, callback: "pd:yes" })).toBe("accept");
   expect(consentDecision({ hasConsent: false, callback: "pd:no" })).toBe("refuse");
-  expect(anonymizedProfile()).toMatchObject({ firstName: "Удалён", phone: null, birthday: null, personalDataConsentAt: null });
+  expect(anonymizedProfile()).toMatchObject({
+    firstName: "Удалён",
+    phone: null,
+    birthday: null,
+    personalDataConsentAt: null,
+    promoConsentAt: null,
+    promoConsentGranted: null,
+    broadcastOptOut: true,
+  });
 });
 
 test("policy pages print the operator and escape markup", () => {

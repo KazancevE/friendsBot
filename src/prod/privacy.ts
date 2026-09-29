@@ -23,4 +23,10 @@ export const anonymizedProfile = () => ({
   preferredBarberName: null,
   personalDataConsentAt: null,
   personalDataPolicyVersion: null,
+  promoConsentAt: null,
+  promoConsentPolicyVersion: null,
+  promoConsentGranted: null,
+  nameConfirmedAt: null,
+  birthdayPromptedAt: null,
+  broadcastOptOut: true,
 });

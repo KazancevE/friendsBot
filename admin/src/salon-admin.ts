@@ -441,6 +441,7 @@ const renderBroadcast = async (view: HTMLElement) => {
   const catalog = (await api("/api/salon/public")) as Catalog;
   view.innerHTML = `
     <h1>Рассылка</h1>
+    <p class="muted">Уходит только тем, кто отдельно согласился на рекламные сообщения. Отказ не отключает подтверждения записи и напоминания о визите.</p>
     <form id="cast" class="panel">
       <div class="row">
         <select name="segment">

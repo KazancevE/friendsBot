@@ -8,6 +8,15 @@ import { applyCheck, redeemBonuses } from "../domain/ledger.ts";
 import { maskPhone, normalizePhone } from "../domain/phone.ts";
 import { newQrToken } from "../domain/qr-token.ts";
 import { ensureReferralCode, parseReferralStartPayload, referralLink } from "../domain/referral.ts";
+import {
+  consentIsRenewal,
+  isPromoAudience,
+  mergedConsentPatch,
+  nextOnboardingStep,
+  promoIsRenewal,
+  referralAttachDecision,
+} from "./onboarding.ts";
+import { miniAppUrl } from "../web-app-url.ts";
 import type { Settings, UserRecord } from "../domain/types.ts";
 import { parseVenueDay } from "../domain/venue-time.ts";
 import { appTimezone } from "../domain/week.ts";
@@ -69,7 +78,7 @@ export class SalonService {
   }): Promise<UserRecord> {
     const existing = await this.findChannelUser(input.channel, input.externalId);
     if (existing) {
-      return existing;
+      return this.attachReferral(existing, input.startPayload);
     }
     const referrerCode = parseReferralStartPayload(input.startPayload ?? undefined);
     let referredByUserId: string | null = null;
@@ -98,7 +107,17 @@ export class SalonService {
         data: { maxUserId: BigInt(input.externalId) },
       });
     }
-    return (await this.store.findUserById(created.id)) ?? created;
+    return this.attachReferral((await this.store.findUserById(created.id)) ?? created, input.startPayload);
+  }
+
+  private async attachReferral(user: UserRecord, startPayload?: string) {
+    const code = parseReferralStartPayload(startPayload);
+    const referrer = code ? await this.store.findUserByReferralCode(code) : null;
+    const referrerId = referralAttachDecision(user, startPayload, referrer?.id ?? null);
+    if (!referrerId) {
+      return user;
+    }
+    return this.store.updateUser(user.id, { referredByUserId: referrerId });
   }
 
   async saveName(userId: string, raw: string): Promise<UserRecord> {
@@ -107,10 +126,21 @@ export class SalonService {
       throw new DomainError("bad_request", "Напишите имя");
     }
     const [firstName, ...rest] = cleaned.split(" ");
-    return this.store.updateUser(userId, {
+    const updated = await this.store.updateUser(userId, {
       firstName: firstName ?? cleaned,
       lastName: rest.length > 0 ? rest.join(" ") : null,
     });
+    await this.prisma.user.update({ where: { id: userId }, data: { nameConfirmedAt: new Date() } });
+    return updated;
+  }
+
+  async confirmKeptName(userId: string): Promise<UserRecord> {
+    const user = await this.store.findUserById(userId);
+    if (!user?.firstName || user.firstName.trim().length < 2) {
+      throw new DomainError("bad_request", "Напишите имя");
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { nameConfirmedAt: new Date() } });
+    return user;
   }
 
   async saveBirthday(userId: string, raw: string | null): Promise<UserRecord> {
@@ -122,7 +152,18 @@ export class SalonService {
     if (parsed === null) {
       throw new DomainError("bad_request", "Дата как ДД.ММ.ГГГГ");
     }
-    return this.store.updateUser(userId, { birthday: parsed.toJSDate() });
+    const updated = await this.store.updateUser(userId, { birthday: parsed.toJSDate() });
+    await this.prisma.user.update({ where: { id: userId }, data: { birthdayPromptedAt: new Date() } });
+    return updated;
+  }
+
+  async skipBirthday(userId: string): Promise<UserRecord> {
+    await this.prisma.user.update({ where: { id: userId }, data: { birthdayPromptedAt: new Date() } });
+    const user = await this.store.findUserById(userId);
+    if (!user) {
+      throw new DomainError("not_found", "Клиент не найден");
+    }
+    return user;
   }
 
   async savePhone(userId: string, rawPhone: string, channel: SalonChannelName): Promise<UserRecord> {
@@ -197,6 +238,10 @@ export class SalonService {
           data: { referredByUserId: current.referredByUserId },
         });
       }
+      await tx.user.update({
+        where: { id: canonicalId },
+        data: mergedConsentPatch(canonicalRow, currentRow),
+      });
     });
     if (current.balance > 0) {
       const fresh = await this.store.findUserById(canonicalId);
@@ -290,10 +335,63 @@ export class SalonService {
   }
 
   policyPublic() {
+    const origin = this.options.publicUrl.replace(/\/$/, "");
     return {
       version: process.env.POLICY_VERSION?.trim() || "2026-09-29",
-      url: `${this.options.publicUrl}/privacy`,
+      url: `${origin}/privacy`,
+      consentUrl: `${origin}/consent`,
     };
+  }
+
+  miniAppLink() {
+    return miniAppUrl(this.options.publicUrl);
+  }
+
+  private async onboardingRow(userId: string) {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        firstName: true,
+        phone: true,
+        birthday: true,
+        personalDataConsentAt: true,
+        personalDataPolicyVersion: true,
+        anonymizedAt: true,
+        promoConsentAt: true,
+        promoConsentPolicyVersion: true,
+        promoConsentGranted: true,
+        nameConfirmedAt: true,
+        birthdayPromptedAt: true,
+      },
+    });
+    if (!row) {
+      throw new DomainError("not_found", "Клиент не найден");
+    }
+    return row;
+  }
+
+  async onboardingView(userId: string) {
+    const row = await this.onboardingRow(userId);
+    const version = this.policyPublic().version;
+    return {
+      step: nextOnboardingStep(row, version),
+      firstName: row.firstName,
+      renew: consentIsRenewal(row, version),
+      promoRenew: promoIsRenewal(row, version),
+      version,
+    };
+  }
+
+  async onboardingComplete(userId: string) {
+    return (await this.onboardingView(userId)).step === "ready";
+  }
+
+  async phoneLinksImport(userId: string) {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { importedAt: true },
+    });
+    return row?.importedAt != null;
   }
 
   async hasConsent(userId: string) {
@@ -311,6 +409,18 @@ export class SalonService {
         personalDataConsentAt: at,
         personalDataPolicyVersion: this.policyPublic().version,
         anonymizedAt: null,
+      },
+    });
+  }
+
+  async recordPromoConsent(userId: string, granted: boolean, at = new Date()) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        promoConsentAt: at,
+        promoConsentPolicyVersion: this.policyPublic().version,
+        promoConsentGranted: granted,
+        broadcastOptOut: !granted,
       },
     });
   }
@@ -345,6 +455,9 @@ export class SalonService {
       balance: user.balance,
       consentAt: user.personalDataConsentAt,
       policyVersion: user.personalDataPolicyVersion,
+      promoConsentAt: user.promoConsentAt,
+      promoConsentGranted: user.promoConsentGranted,
+      promoPolicyVersion: user.promoConsentPolicyVersion,
       anonymizedAt: user.anonymizedAt,
       appointments: user.appointments,
       visits: user.visits,
@@ -774,6 +887,7 @@ export class SalonService {
     const settings = await this.store.getSettings();
     const [lead24, lead2] = this.leadHours(settings);
     const horizon = new Date(now.getTime() + lead24 * 60 * 60 * 1000);
+    // Напоминания о визите — сервисные: согласие на рекламу не требуется.
     const rows = await this.prisma.appointment.findMany({
       where: { status: "confirmed", startsAt: { gt: now, lte: horizon } },
       include: { user: true, service: true, barber: true, branch: true },
@@ -820,12 +934,20 @@ export class SalonService {
 
   async nudgeBatch(now = new Date()) {
     const settings = await this.store.getSettings();
+    const version = this.policyPublic().version;
     const users = await this.prisma.user.findMany({
-      where: { role: "guest", broadcastOptOut: false },
+      where: {
+        role: "guest",
+        promoConsentGranted: true,
+        promoConsentPolicyVersion: version,
+        anonymizedAt: null,
+      },
       select: {
         id: true,
         telegramId: true,
         maxUserId: true,
+        promoConsentGranted: true,
+        promoConsentPolicyVersion: true,
         lastHaircutNudgeAt: true,
         visits: { orderBy: { startedAt: "desc" }, take: 1, select: { startedAt: true } },
         appointments: {
@@ -842,6 +964,18 @@ export class SalonService {
         (value): value is Date => value instanceof Date,
       );
       const lastVisitAt = stamps.sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+      if (
+        !isPromoAudience(
+          {
+            promoConsentGranted: user.promoConsentGranted,
+            promoConsentPolicyVersion: user.promoConsentPolicyVersion,
+            anonymizedAt: null,
+          },
+          version,
+        )
+      ) {
+        continue;
+      }
       if (
         !isHaircutNudgeDue({
           lastVisitAt,
@@ -1011,8 +1145,14 @@ export class SalonService {
       throw new DomainError("bad_request", "Пустой текст рассылки");
     }
     const settings = await this.store.getSettings();
+    const version = this.policyPublic().version;
     const users = await this.prisma.user.findMany({
-      where: { role: "guest", broadcastOptOut: false },
+      where: {
+        role: "guest",
+        promoConsentGranted: true,
+        promoConsentPolicyVersion: version,
+        anonymizedAt: null,
+      },
       include: {
         visits: { orderBy: { startedAt: "desc" }, take: 1 },
         appointments: { orderBy: { startsAt: "desc" }, take: 8 },
@@ -1020,6 +1160,18 @@ export class SalonService {
     });
     const now = new Date();
     const selected = users.filter((user) => {
+      if (
+        !isPromoAudience(
+          {
+            promoConsentGranted: user.promoConsentGranted,
+            promoConsentPolicyVersion: user.promoConsentPolicyVersion,
+            anonymizedAt: user.anonymizedAt,
+          },
+          version,
+        )
+      ) {
+        return false;
+      }
       if (input.segment === "balance_gt") {
         return user.balance >= (input.minBalance ?? 0);
       }
