@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import { timingSafeEqual } from "node:crypto";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -10,16 +9,19 @@ import type { Store } from "../store/types.ts";
 import type { BarberLevelName } from "../salon/catalog.ts";
 import { IMPORT_FIELD_LABEL, IMPORT_FIELDS, parseSpreadsheet, readSampleImportCsv } from "../salon/import.ts";
 import { DEMO_GUEST_TELEGRAM_ID, SalonService } from "../salon/service.ts";
-import { issueAdminCookie, issueGuestToken, readAdminCookie, readGuestToken } from "../salon/session.ts";
+import { issueAdminCookie, issueGuestToken, readAdminCookie, readGuestToken, type AdminCookie } from "../salon/session.ts";
 import type { Notifier } from "../salon/outbound.ts";
+import { canDo, canDeleteAccount, scopedBranch } from "../prod/access.ts";
+import { authenticateAdmin, type StoredAdmin } from "../prod/admin-auth.ts";
+import { consentPageHtml, operatorFromEnv, privacyPolicyHtml } from "../prod/policy-page.ts";
+import { hashPassword, passwordAccepted } from "../prod/passwords.ts";
+import { clientIp, loginAttempt } from "../prod/rate-limit.ts";
 
-const safePassword = (left: string, right: string) => {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  if (a.length === 0 || a.length !== b.length) {
-    return false;
-  }
-  return timingSafeEqual(a, b);
+export type AdminDirectory = {
+  list(): Promise<StoredAdmin[]>;
+  create(input: { login: string; passwordHash: string; role: StoredAdmin["role"]; branchId: string | null }): Promise<StoredAdmin>;
+  setPassword(login: string, passwordHash: string): Promise<void>;
+  remove(login: string): Promise<void>;
 };
 
 const asLevel = (value: unknown): BarberLevelName | null => {
@@ -35,6 +37,7 @@ export const createSalonRoutes = (deps: {
   notifier: Notifier;
   adminLogin: string;
   adminPassword: string;
+  admins: AdminDirectory;
   sessionSecret: string;
   allowDemoGuest: boolean;
   links: { telegram: string | null; max: string | null; app: string };
@@ -50,7 +53,7 @@ export const createSalonRoutes = (deps: {
     return readGuestToken(deps.sessionSecret, token);
   };
 
-  const adminLogin = (cookie: string | undefined) => readAdminCookie(deps.sessionSecret, cookie);
+  const adminActor = (cookie: string | undefined) => readAdminCookie(deps.sessionSecret, cookie);
 
   app.get("/api/salon/public", async (c) => {
     const catalog = await deps.salon.publicCatalog();
@@ -174,13 +177,21 @@ export const createSalonRoutes = (deps: {
   });
 
   app.post("/api/salon/admin/login", async (c) => {
+    const ip = clientIp(c.req.header("x-forwarded-for"), c.req.header("x-real-ip"));
+    const gate = loginAttempt(ip, false);
+    if (!gate.allowed) {
+      return c.json({ message: "Слишком много попыток. Подождите 15 минут." }, 429);
+    }
     const body = (await c.req.json()) as { login?: string; password?: string };
-    if (!body.login || !body.password || body.login !== deps.adminLogin || !safePassword(body.password, deps.adminPassword)) {
+    const accounts = await deps.admins.list();
+    const actor = body.login && body.password ? authenticateAdmin(accounts, deps.adminLogin, deps.adminPassword, body.login, body.password) : null;
+    if (!actor) {
       return c.json({ message: "Неверный логин или пароль" }, 401);
     }
-    const cookie = issueAdminCookie(deps.sessionSecret, body.login, 60 * 60 * 24 * 12);
+    loginAttempt(ip, true);
+    const cookie = issueAdminCookie(deps.sessionSecret, actor, 60 * 60 * 24 * 12);
     setCookie(c, "salon_admin", cookie, { httpOnly: true, path: "/", sameSite: "Lax", maxAge: 60 * 60 * 24 * 12 });
-    return c.json({ ok: true });
+    return c.json({ ok: true, role: actor.role });
   });
 
   app.post("/api/salon/admin/logout", (c) => {
@@ -193,31 +204,62 @@ export const createSalonRoutes = (deps: {
       await next();
       return;
     }
-    if (!adminLogin(getCookie(c, "salon_admin"))) {
+    const actor = adminActor(getCookie(c, "salon_admin"));
+    if (!actor) {
       return c.json({ message: "Нужен вход" }, 401);
     }
+    const write = c.req.method !== "GET" && c.req.method !== "HEAD";
+    const ownPassword = c.req.path.endsWith("/password") || c.req.path.endsWith("/logout");
+    if (write && !ownPassword && !canDo(actor, "write")) {
+      return c.json({ message: "Только просмотр" }, 403);
+    }
+    c.set("admin", actor);
     await next();
   });
 
-  app.get("/api/salon/admin/session", (c) => c.json({ ok: true }));
+  const actorFrom = (c: { get: (key: string) => unknown }) => c.get("admin") as AdminCookie;
+
+  const ownerOnly = (c: { get: (key: string) => unknown }) => {
+    if (!canDo(actorFrom(c), "network")) {
+      return false;
+    }
+    return true;
+  };
+
+  app.get("/api/salon/admin/session", (c) => {
+    const actor = actorFrom(c);
+    return c.json({ ok: true, login: actor.login, role: actor.role, branchId: actor.branchId });
+  });
 
   app.get("/api/salon/admin/calendar", async (c) => {
+    const scope = scopedBranch(actorFrom(c), c.req.query("branchId"));
+    if ("error" in scope) {
+      return c.json({ message: scope.error }, 403);
+    }
     const from = new Date(c.req.query("from") ?? Date.now());
     const to = new Date(c.req.query("to") ?? Date.now() + 7 * 24 * 60 * 60 * 1000);
-    return c.json(await deps.salon.calendar({ branchId: c.req.query("branchId"), from, to }));
+    return c.json(await deps.salon.calendar({ branchId: scope.branchId, from, to }));
   });
 
   app.get("/api/salon/admin/clients", async (c) => {
-    return c.json(await deps.salon.clients({ query: c.req.query("q"), branchId: c.req.query("branchId") }));
+    const scope = scopedBranch(actorFrom(c), c.req.query("branchId"));
+    if ("error" in scope) {
+      return c.json({ message: scope.error }, 403);
+    }
+    return c.json(await deps.salon.clients({ query: c.req.query("q"), branchId: scope.branchId }));
   });
 
   app.post("/api/salon/admin/clients/:id/check", async (c) => {
     const body = (await c.req.json()) as { checkRubles?: number; branchId?: string };
+    const scope = scopedBranch(actorFrom(c), body.branchId);
+    if ("error" in scope) {
+      return c.json({ message: scope.error }, 403);
+    }
     if (!body.checkRubles || body.checkRubles <= 0) {
       return c.json({ message: "Сумма чека больше нуля" }, 400);
     }
     try {
-      return c.json(await deps.salon.accrue({ guestId: c.req.param("id"), checkRubles: body.checkRubles, branchId: body.branchId }));
+      return c.json(await deps.salon.accrue({ guestId: c.req.param("id"), checkRubles: body.checkRubles, branchId: scope.branchId }));
     } catch (error) {
       if (error instanceof DomainError) {
         return c.json({ message: error.message }, 400);
@@ -227,6 +269,13 @@ export const createSalonRoutes = (deps: {
   });
 
   app.post("/api/salon/admin/clients/:id/redeem", async (c) => {
+    const actor = actorFrom(c);
+    if (actor.role === "branch_admin") {
+      const branches = await deps.salon.clientBranchIds(c.req.param("id"));
+      if (!actor.branchId || !branches.includes(actor.branchId)) {
+        return c.json({ message: "Клиент не из вашего филиала" }, 403);
+      }
+    }
     const body = (await c.req.json()) as { amount?: number };
     if (!body.amount || body.amount <= 0) {
       return c.json({ message: "Сумма больше нуля" }, 400);
@@ -244,6 +293,7 @@ export const createSalonRoutes = (deps: {
   app.get("/api/salon/admin/masters", async (c) => c.json(await deps.salon.schedules()));
 
   app.post("/api/salon/admin/masters", async (c) => {
+    if (!ownerOnly(c)) return c.json({ message: "Это действие доступно владельцу сети" }, 403);
     const body = (await c.req.json()) as { name?: string; level?: string; branchId?: string };
     const level = asLevel(body.level);
     if (!body.name || !body.branchId || !level) {
@@ -253,12 +303,14 @@ export const createSalonRoutes = (deps: {
   });
 
   app.put("/api/salon/admin/masters/:id/schedule", async (c) => {
+    if (!ownerOnly(c)) return c.json({ message: "Это действие доступно владельцу сети" }, 403);
     const body = (await c.req.json()) as { days?: Array<{ weekday: number; startMin: number; endMin: number }> };
     await deps.salon.replaceSchedule(c.req.param("id"), body.days ?? []);
     return c.json({ ok: true });
   });
 
   app.post("/api/salon/admin/prices", async (c) => {
+    if (!ownerOnly(c)) return c.json({ message: "Это действие доступно владельцу сети" }, 403);
     const body = (await c.req.json()) as {
       serviceId?: string;
       branchId?: string;
@@ -285,12 +337,16 @@ export const createSalonRoutes = (deps: {
 
   app.post("/api/salon/admin/broadcast", async (c) => {
     const body = (await c.req.json()) as { segment?: string; text?: string; minBalance?: number; branchId?: string };
+    const scope = scopedBranch(actorFrom(c), body.branchId);
+    if ("error" in scope) {
+      return c.json({ message: scope.error }, 403);
+    }
     try {
       const result = await deps.salon.broadcast({
         segment: body.segment ?? "all",
         text: body.text ?? "",
         minBalance: body.minBalance,
-        branchId: body.branchId,
+        branchId: scope.branchId,
       });
       for (const delivery of result.deliveries) {
         await deps.notifier.send(delivery.channel, delivery.externalId, { text: delivery.text });
@@ -336,6 +392,7 @@ export const createSalonRoutes = (deps: {
   });
 
   app.post("/api/salon/admin/import/preview", async (c) => {
+    if (!ownerOnly(c)) return c.json({ message: "Это действие доступно владельцу сети" }, 403);
     const parsed = await readImportBody(c);
     if ("error" in parsed) {
       return c.json({ message: parsed.error }, 400);
@@ -368,6 +425,7 @@ export const createSalonRoutes = (deps: {
   });
 
   app.post("/api/salon/admin/import/commit", async (c) => {
+    if (!ownerOnly(c)) return c.json({ message: "Это действие доступно владельцу сети" }, 403);
     const parsed = await readImportBody(c);
     if ("error" in parsed) {
       return c.json({ message: parsed.error }, 400);
@@ -380,6 +438,7 @@ export const createSalonRoutes = (deps: {
   app.get("/api/salon/admin/settings", async (c) => c.json(await deps.store.getSettings()));
 
   app.patch("/api/salon/admin/settings", async (c) => {
+    if (!ownerOnly(c)) return c.json({ message: "Это действие доступно владельцу сети" }, 403);
     const body = (await c.req.json()) as Record<string, unknown>;
     try {
       const patch: Record<string, unknown> = {};
@@ -413,6 +472,125 @@ export const createSalonRoutes = (deps: {
       throw error;
     }
   });
+
+  app.post("/api/salon/admin/password", async (c) => {
+    const actor = actorFrom(c);
+    const body = (await c.req.json()) as { current?: string; next?: string };
+    if (!body.current || !body.next || !passwordAccepted(body.next)) {
+      return c.json({ message: "Новый пароль не короче 10 символов" }, 400);
+    }
+    const accounts = await deps.admins.list();
+    const matched = authenticateAdmin(accounts, deps.adminLogin, deps.adminPassword, actor.login, body.current);
+    if (!matched) {
+      return c.json({ message: "Текущий пароль не подошёл" }, 401);
+    }
+    const passwordHash = hashPassword(body.next);
+    if (accounts.some((row) => row.login === actor.login)) {
+      await deps.admins.setPassword(actor.login, passwordHash);
+    } else {
+      await deps.admins.create({ login: actor.login, passwordHash, role: actor.role, branchId: actor.branchId });
+    }
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/salon/admin/accounts", async (c) => {
+    if (!canDo(actorFrom(c), "accounts")) {
+      return c.json({ message: "Управлять учётками может только владелец" }, 403);
+    }
+    const rows = await deps.admins.list();
+    return c.json(rows.map((row) => ({ login: row.login, role: row.role, branchId: row.branchId })));
+  });
+
+  app.post("/api/salon/admin/accounts", async (c) => {
+    const actor = actorFrom(c);
+    if (!canDo(actor, "accounts")) {
+      return c.json({ message: "Управлять учётками может только владелец" }, 403);
+    }
+    const body = (await c.req.json()) as { login?: string; password?: string; role?: StoredAdmin["role"]; branchId?: string | null };
+    if (!body.login || !body.password || !passwordAccepted(body.password)) {
+      return c.json({ message: "Нужны логин и пароль не короче 10 символов" }, 400);
+    }
+    if (body.role !== "owner" && body.role !== "branch_admin" && body.role !== "master") {
+      return c.json({ message: "Роль: owner, branch_admin или master" }, 400);
+    }
+    if (body.role !== "owner" && !body.branchId) {
+      return c.json({ message: "Для этой роли нужен филиал" }, 400);
+    }
+    const accounts = await deps.admins.list();
+    if (accounts.some((row) => row.login === body.login)) {
+      return c.json({ message: "Такой логин уже есть" }, 400);
+    }
+    await deps.admins.create({
+      login: body.login,
+      passwordHash: hashPassword(body.password),
+      role: body.role,
+      branchId: body.role === "owner" ? null : (body.branchId ?? null),
+    });
+    return c.json({ ok: true });
+  });
+
+  app.delete("/api/salon/admin/accounts/:login", async (c) => {
+    const actor = actorFrom(c);
+    const accounts = await deps.admins.list();
+    const target = accounts.find((row) => row.login === c.req.param("login"));
+    if (!target) {
+      return c.json({ message: "Учётка не найдена" }, 404);
+    }
+    const reason = canDeleteAccount(actor, target, accounts.filter((row) => row.role === "owner").length);
+    if (reason) {
+      return c.json({ message: reason }, 403);
+    }
+    await deps.admins.remove(target.login);
+    return c.json({ ok: true });
+  });
+
+  const clientAllowed = async (actor: AdminCookie, userId: string) => {
+    if (!canDo(actor, "privacy")) {
+      return "Только просмотр";
+    }
+    if (actor.role === "branch_admin") {
+      const branches = await deps.salon.clientBranchIds(userId);
+      if (!actor.branchId || !branches.includes(actor.branchId)) {
+        return "Клиент не из вашего филиала";
+      }
+    }
+    return null;
+  };
+
+  app.get("/api/salon/admin/clients/:id/export", async (c) => {
+    const reason = await clientAllowed(actorFrom(c), c.req.param("id"));
+    if (reason) {
+      return c.json({ message: reason }, 403);
+    }
+    try {
+      const data = await deps.salon.exportClient(c.req.param("id"));
+      c.header("content-disposition", `attachment; filename="client-${c.req.param("id")}.json"`);
+      return c.json(data);
+    } catch (error) {
+      if (error instanceof DomainError) {
+        return c.json({ message: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/api/salon/admin/clients/:id/anonymize", async (c) => {
+    const reason = await clientAllowed(actorFrom(c), c.req.param("id"));
+    if (reason) {
+      return c.json({ message: reason }, 403);
+    }
+    try {
+      return c.json(await deps.salon.anonymizeClient(c.req.param("id")));
+    } catch (error) {
+      if (error instanceof DomainError) {
+        return c.json({ message: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/privacy", (c) => c.html(privacyPolicyHtml(operatorFromEnv())));
+  app.get("/consent", (c) => c.html(consentPageHtml(operatorFromEnv())));
 
   app.get("/", async (c) => {
     const html = await readFile("site/index.html", "utf8");

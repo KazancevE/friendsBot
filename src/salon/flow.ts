@@ -1,4 +1,5 @@
 import type { UserRecord } from "../domain/types.ts";
+import { consentDecision } from "../prod/privacy.ts";
 import { formatAppointmentWhen, formatMinutes, formatPrice } from "./format.ts";
 import type { InboundMessage, OutMessage } from "./outbound.ts";
 import { SalonService, type SlotOffer } from "./service.ts";
@@ -32,6 +33,19 @@ export class SalonFlow {
       firstName: inbound.firstName,
       startPayload: inbound.startPayload,
     });
+    const consent = consentDecision({
+      hasConsent: await this.salon.hasConsent(user.id),
+      callback: inbound.callback ?? null,
+    });
+    if (consent === "ask" || consent === "refuse") {
+      return this.askConsent(user, inbound, consent);
+    }
+    if (consent === "accept") {
+      await this.salon.recordConsent(user.id);
+      if (!this.salon.profileReady(user)) {
+        return this.askName(user, inbound, {});
+      }
+    }
     const dialog = await this.salon.getDialog(inbound.channel, inbound.externalId);
     let step = dialog?.step ?? "menu";
     let draft = (dialog?.payload ?? {}) as Draft;
@@ -170,6 +184,26 @@ export class SalonFlow {
         ],
       ],
     };
+  }
+
+  private async askConsent(user: UserRecord, inbound: InboundMessage, decision: "ask" | "refuse") {
+    const policy = this.salon.policyPublic();
+    const text =
+      decision === "refuse"
+        ? "Без согласия на обработку персональных данных запись и бонусная карта недоступны. Если передумаете, нажмите «Согласен»."
+        : `Чтобы записать вас и вести бонусную карту, нужно согласие на обработку имени, телефона и записей. Политика ${policy.url}, версия ${policy.version}.`;
+    const messages: OutMessage[] = [
+      {
+        text,
+        buttons: [
+          [{ text: "Согласен", callback: "pd:yes" }],
+          [{ text: "Не согласен", callback: "pd:no" }],
+          [{ text: "Политика", url: policy.url }],
+        ],
+      },
+    ];
+    await this.persist(inbound, user.id, "reg_consent", {});
+    return { userId: user.id, messages };
   }
 
   private async askName(user: UserRecord, inbound: InboundMessage, draft: Draft) {

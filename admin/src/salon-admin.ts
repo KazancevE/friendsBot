@@ -49,35 +49,74 @@ export const bootSalonAdmin = (root: HTMLElement) => {
   void api("/api/salon/admin/session").then(() => renderApp(root)).catch(() => undefined);
 };
 
-const renderApp = (root: HTMLElement) => {
+type AdminSession = { role: "owner" | "branch_admin" | "master"; login: string; branchId: string | null };
+let adminSession: AdminSession = { role: "owner", login: "", branchId: null };
+
+type OpenTab = (view: HTMLElement) => Promise<void> | void;
+
+const lockBranchSelect = (view: HTMLElement, selector = "#branch") => {
+  const select = view.querySelector(selector) as HTMLSelectElement | null;
+  if (!select || adminSession.role === "owner" || !adminSession.branchId) {
+    return;
+  }
+  if (![...select.options].some((item) => item.value === adminSession.branchId)) {
+    const extra = document.createElement("option");
+    extra.value = adminSession.branchId;
+    extra.textContent = "Ваш филиал";
+    select.append(extra);
+  }
+  select.value = adminSession.branchId;
+  select.disabled = true;
+};
+
+const renderApp = async (root: HTMLElement) => {
+  adminSession = (await api("/api/salon/admin/session")) as AdminSession;
+  const tabs: Array<[string, OpenTab]> =
+    adminSession.role === "master"
+      ? [
+          ["Записи", renderCalendar],
+          ["Клиенты", renderClients],
+          ["Пароль", renderPassword],
+        ]
+      : adminSession.role === "branch_admin"
+        ? [
+            ["Записи", renderCalendar],
+            ["Клиенты", renderClients],
+            ["Рассылка", renderBroadcast],
+            ["Уведомления", renderNotices],
+            ["Пароль", renderPassword],
+          ]
+        : [
+            ["Записи", renderCalendar],
+            ["Клиенты", renderClients],
+            ["Импорт", renderImport],
+            ["Мастера", renderMasters],
+            ["Услуги", renderPrices],
+            ["Рассылка", renderBroadcast],
+            ["Настройки", renderSettings],
+            ["Уведомления", renderNotices],
+            ["Доступ", renderAccounts],
+            ["Пароль", renderPassword],
+          ];
   root.innerHTML = `
     <div class="shell">
       <nav>
         <div class="mark" style="font-size:36px">Daddyson</div>
-        ${["Записи", "Клиенты", "Импорт", "Мастера", "Услуги", "Рассылка", "Настройки", "Уведомления"]
-          .map((label, index) => `<button data-tab="${index}" class="${index === 0 ? "active" : ""}">${label}</button>`)
+        ${tabs
+          .map(([label], index) => `<button data-tab="${index}" class="${index === 0 ? "active" : ""}">${label}</button>`)
           .join("")}
         <button id="logout" type="button">Выйти</button>
       </nav>
       <main id="view"></main>
     </div>`;
   const view = root.querySelector("#view") as HTMLElement;
-  const tabs = [
-    () => renderCalendar(view),
-    () => renderClients(view),
-    () => renderImport(view),
-    () => renderMasters(view),
-    () => renderPrices(view),
-    () => renderBroadcast(view),
-    () => renderSettings(view),
-    () => renderNotices(view),
-  ];
+  const openers = tabs.map(([, opener]) => opener);
   root.querySelectorAll("nav button[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       root.querySelectorAll("nav button").forEach((node) => node.classList.remove("active"));
       button.classList.add("active");
       const index = Number((button as HTMLButtonElement).dataset.tab);
-      void tabs[index]?.();
+      void openers[index]?.(view);
     });
   });
   root.querySelector("#logout")?.addEventListener("click", async () => {
@@ -103,6 +142,7 @@ const renderCalendar = async (view: HTMLElement) => {
       <span class="muted">Неделя с ${monday.toLocaleDateString("ru-RU")} · время Барнаул, UTC+7</span>
     </div>
     <div id="grid"></div>`;
+  lockBranchSelect(view);
   const draw = async () => {
     const branchId = (view.querySelector("#branch") as HTMLSelectElement).value;
     const data = (await api(`/api/salon/admin/calendar?branchId=${branchId}&from=${monday.toISOString()}&to=${next.toISOString()}`)) as {
@@ -163,6 +203,7 @@ const renderClients = async (view: HTMLElement) => {
       <button id="find" class="primary" type="button">Найти</button>
     </div>
     <div id="list"></div>`;
+  lockBranchSelect(view);
   const load = async () => {
     const q = (view.querySelector("#q") as HTMLInputElement).value;
     const branchId = (view.querySelector("#branch") as HTMLSelectElement).value;
@@ -177,8 +218,11 @@ const renderClients = async (view: HTMLElement) => {
     view.querySelector("#list")!.innerHTML = `<table><tr><th>Клиент</th><th>Телефон</th><th>Баланс</th><th>Каналы</th><th></th></tr>${rows
       .map(
         (row) => `<tr><td>${row.name}</td><td>${row.phone ?? "—"}</td><td>${row.balance} ₽</td><td>${row.channels.telegram ? "TG " : ""}${row.channels.max ? "MAX" : ""}${row.imported && !row.channels.telegram && !row.channels.max ? "импорт" : ""}</td><td>
-          <button data-check="${row.id}" type="button">Чек</button>
-          <button data-redeem="${row.id}" type="button">Списать</button>
+          ${
+            adminSession.role === "master"
+              ? ""
+              : `<button data-check="${row.id}" type="button">Чек</button> <button data-redeem="${row.id}" type="button">Списать</button> <button data-export="${row.id}" type="button">Выгрузка</button> <button data-forget="${row.id}" type="button">Удалить данные</button>`
+          }
         </td></tr>`,
       )
       .join("")}</table>`;
@@ -205,9 +249,123 @@ const renderClients = async (view: HTMLElement) => {
         await load();
       });
     });
+    view.querySelectorAll("[data-export]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const id = (button as HTMLButtonElement).dataset.export ?? "";
+        const data = await api(`/api/salon/admin/clients/${id}/export`);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `client-${id}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+    });
+    view.querySelectorAll("[data-forget]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!confirm("Удалить имя, телефон и дату рождения? Записи и баллы останутся без этих данных.")) {
+          return;
+        }
+        await api(`/api/salon/admin/clients/${(button as HTMLButtonElement).dataset.forget}/anonymize`, {
+          method: "POST",
+          body: "{}",
+        });
+        await load();
+      });
+    });
   };
   view.querySelector("#find")?.addEventListener("click", () => void load());
   await load();
+};
+
+const renderPassword = async (view: HTMLElement) => {
+  view.innerHTML = `
+    <h1>Пароль</h1>
+    <form id="password" class="panel">
+      <div class="row"><input name="current" type="password" placeholder="Текущий пароль" required /></div>
+      <div class="row"><input name="next" type="password" placeholder="Новый пароль, от 10 символов" required /></div>
+      <button class="primary" type="submit">Сменить</button>
+      <p id="password-status" class="muted"></p>
+    </form>`;
+  view.querySelector("#password")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const status = view.querySelector("#password-status");
+    try {
+      await api("/api/salon/admin/password", {
+        method: "POST",
+        body: JSON.stringify({
+          current: (form.elements.namedItem("current") as HTMLInputElement).value,
+          next: (form.elements.namedItem("next") as HTMLInputElement).value,
+        }),
+      });
+      if (status) status.textContent = "Пароль изменён";
+      form.reset();
+    } catch (error) {
+      if (status) status.textContent = error instanceof Error ? error.message : "Ошибка";
+    }
+  });
+};
+
+const roleLabel = (role: string) => (role === "owner" ? "Владелец" : role === "branch_admin" ? "Администратор филиала" : "Мастер, только просмотр");
+
+const renderAccounts = async (view: HTMLElement) => {
+  const catalog = (await api("/api/salon/public")) as Catalog;
+  const accounts = (await api("/api/salon/admin/accounts")) as Array<{ login: string; role: string; branchId: string | null }>;
+  const branchName = (id: string | null) => catalog.branches.find((branch) => branch.id === id)?.name ?? "вся сеть";
+  view.innerHTML = `
+    <h1>Доступ</h1>
+    <form id="account" class="panel row">
+      <input name="login" placeholder="Логин" required />
+      <input name="password" type="password" placeholder="Пароль, от 10 символов" required />
+      <select name="role">
+        <option value="branch_admin">Администратор филиала</option>
+        <option value="master">Мастер, только просмотр</option>
+        <option value="owner">Владелец</option>
+      </select>
+      <select name="branchId"><option value="">Филиал</option>${catalog.branches.map((branch) => `<option value="${branch.id}">${branch.name}</option>`).join("")}</select>
+      <button class="primary" type="submit">Добавить</button>
+    </form>
+    <p id="account-status" class="error"></p>
+    <table><tr><th>Логин</th><th>Роль</th><th>Филиал</th><th></th></tr>${accounts
+      .map(
+        (row) =>
+          `<tr><td>${row.login}</td><td>${roleLabel(row.role)}</td><td>${branchName(row.branchId)}</td><td><button data-drop="${row.login}" type="button">Удалить</button></td></tr>`,
+      )
+      .join("")}</table>`;
+  view.querySelector("#account")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const status = view.querySelector("#account-status");
+    try {
+      await api("/api/salon/admin/accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          login: (form.elements.namedItem("login") as HTMLInputElement).value,
+          password: (form.elements.namedItem("password") as HTMLInputElement).value,
+          role: (form.elements.namedItem("role") as HTMLSelectElement).value,
+          branchId: (form.elements.namedItem("branchId") as HTMLSelectElement).value || null,
+        }),
+      });
+      await renderAccounts(view);
+    } catch (error) {
+      if (status) status.textContent = error instanceof Error ? error.message : "Ошибка";
+    }
+  });
+  view.querySelectorAll("[data-drop]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const login = (button as HTMLButtonElement).dataset.drop ?? "";
+      if (!confirm(`Удалить учётку ${login}?`)) return;
+      const status = view.querySelector("#account-status");
+      try {
+        await api(`/api/salon/admin/accounts/${encodeURIComponent(login)}`, { method: "DELETE" });
+        await renderAccounts(view);
+      } catch (error) {
+        if (status) status.textContent = error instanceof Error ? error.message : "Ошибка";
+      }
+    });
+  });
 };
 
 const renderMasters = async (view: HTMLElement) => {
@@ -298,6 +456,7 @@ const renderBroadcast = async (view: HTMLElement) => {
       <textarea name="text" rows="4" style="width:100%" placeholder="Текст сообщения"></textarea>
       <p><button class="primary" type="submit">Отправить</button> <span id="cast-status" class="muted"></span></p>
     </form>`;
+  lockBranchSelect(view, "select[name=branchId]");
   view.querySelector("#cast")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;

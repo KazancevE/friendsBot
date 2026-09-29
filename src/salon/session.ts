@@ -34,12 +34,18 @@ export const readGuestToken = (secret: string, token: string, now = Date.now()):
   }
 };
 
-export const issueAdminCookie = (secret: string, login: string, ttlSeconds: number, now = Date.now()) => {
-  const payload = Buffer.from(JSON.stringify({ login, exp: now + ttlSeconds * 1000 })).toString("base64url");
+export type AdminCookie = {
+  login: string;
+  role: "owner" | "branch_admin" | "master";
+  branchId: string | null;
+};
+
+export const issueAdminCookie = (secret: string, admin: AdminCookie, ttlSeconds: number, now = Date.now()) => {
+  const payload = Buffer.from(JSON.stringify({ ...admin, exp: now + ttlSeconds * 1000 })).toString("base64url");
   return `${payload}.${sign(secret, `admin:${payload}`)}`;
 };
 
-export const readAdminCookie = (secret: string, cookie: string | undefined, now = Date.now()): string | null => {
+export const readAdminCookie = (secret: string, cookie: string | undefined, now = Date.now()): AdminCookie | null => {
   if (!cookie) {
     return null;
   }
@@ -48,11 +54,17 @@ export const readAdminCookie = (secret: string, cookie: string | undefined, now 
     return null;
   }
   try {
-    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { login?: string; exp?: number };
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      login?: string;
+      role?: AdminCookie["role"];
+      branchId?: string | null;
+      exp?: number;
+    };
     if (!parsed.login || typeof parsed.exp !== "number" || parsed.exp < now) {
       return null;
     }
-    return parsed.login;
+    const role = parsed.role === "branch_admin" || parsed.role === "master" || parsed.role === "owner" ? parsed.role : "owner";
+    return { login: parsed.login, role, branchId: parsed.branchId ?? null };
   } catch {
     return null;
   }

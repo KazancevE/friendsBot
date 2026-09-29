@@ -130,10 +130,13 @@ model User {
   lastHaircutNudgeAt     DateTime?
   importedAt             DateTime?
   importWelcomeGrantedAt DateTime?
-  preferredBarberName    String?
-  importedVisitCount     Int?
-  importedSpentRub       Int?
-  appointments           Appointment[]
+  preferredBarberName        String?
+  importedVisitCount         Int?
+  importedSpentRub           Int?
+  personalDataConsentAt      DateTime?
+  personalDataPolicyVersion  String?
+  anonymizedAt               DateTime?
+  appointments               Appointment[]
 }
 
 model StaffWeeklySchedule {
@@ -515,6 +518,24 @@ model Branch {
   prices       ServicePrice[]
   appointments Appointment[]
   visits       Visit[]
+  adminAccounts AdminAccount[]
+}
+
+enum AdminRole {
+  owner
+  branch_admin
+  master
+}
+
+model AdminAccount {
+  id           String    @id @default(uuid())
+  login        String    @unique
+  passwordHash String
+  role         AdminRole @default(owner)
+  branch       Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  branchId     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model Service {

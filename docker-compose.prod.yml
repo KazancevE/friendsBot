@@ -1,0 +1,156 @@
+# Один салон: Postgres, приложение, Caddy с автоматическим HTTPS, ежедневные копии, сторож.
+# На сервере, где 80 и 443 уже заняты другим nginx, этот файл не поднимать как есть.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?задайте POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?задайте POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
+  app:
+    build: .
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:?задайте DATABASE_URL}
+      PUBLIC_URL: ${PUBLIC_URL:?задайте PUBLIC_URL}
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?задайте CADDY_DOMAIN}
+      VENUE_TIMEZONE: ${VENUE_TIMEZONE:?задайте VENUE_TIMEZONE}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?задайте TELEGRAM_BOT_TOKEN}
+      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?задайте TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_ADMIN_ID: ${TELEGRAM_ADMIN_ID:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      TELEGRAM_TRANSPORT: ${TELEGRAM_TRANSPORT:-polling}
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
+      DEV_ALERT_CHAT_ID: ${DEV_ALERT_CHAT_ID:?задайте DEV_ALERT_CHAT_ID}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+      MAX_BOT_URL: ${MAX_BOT_URL:-}
+      MAX_ADMIN_USER_ID: ${MAX_ADMIN_USER_ID:-}
+      ADMIN_LOGIN: ${ADMIN_LOGIN:?задайте ADMIN_LOGIN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?задайте ADMIN_PASSWORD}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?задайте ADMIN_SESSION_SECRET}
+      ALLOW_DEMO_GUEST: "false"
+      OPERATOR_LEGAL_NAME: ${OPERATOR_LEGAL_NAME:?задайте OPERATOR_LEGAL_NAME}
+      OPERATOR_INN: ${OPERATOR_INN:?задайте OPERATOR_INN}
+      OPERATOR_ADDRESS: ${OPERATOR_ADDRESS:-}
+      POLICY_VERSION: ${POLICY_VERSION:-2026-09-29}
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 768M
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?задайте CADDY_DOMAIN}
+      PORT: 3000
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+
+  backup:
+    build: .
+    restart: unless-stopped
+    logging: *logging
+    entrypoint: ["sh", "scripts/backup-loop.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?задайте DATABASE_URL}
+      BACKUP_DIR: /var/backups/daddyson
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      VENUE_TIMEZONE: ${VENUE_TIMEZONE:?задайте VENUE_TIMEZONE}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-ru-central1}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-daddyson}
+    volumes:
+      - backups:/var/backups/daddyson
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  watchdog:
+    build: .
+    restart: unless-stopped
+    logging: *logging
+    entrypoint: ["npx", "tsx", "scripts/watchdog.ts"]
+    depends_on:
+      - app
+    environment:
+      HEALTH_URL: http://app:3000/health/ready
+      BACKUP_DIR: /var/backups/daddyson
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?задайте TELEGRAM_BOT_TOKEN}
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
+      DEV_ALERT_CHAT_ID: ${DEV_ALERT_CHAT_ID:?задайте DEV_ALERT_CHAT_ID}
+    volumes:
+      - backups:/var/backups/daddyson
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+  uploads_data:
+  backups:

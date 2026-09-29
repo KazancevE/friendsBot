@@ -19,6 +19,7 @@ import { commitClientImport, type ImportReport } from "./import-commit.ts";
 import { buildImportPlan, isFirstMessengerLink, type ColumnMapping } from "./import.ts";
 import { isHaircutNudgeDue } from "./nudge.ts";
 import { dueReminders, type ReminderKind } from "./reminders.ts";
+import { anonymizedProfile } from "../prod/privacy.ts";
 import { freeSlotStarts } from "./slots.ts";
 
 export const DEMO_GUEST_TELEGRAM_ID = 900000001n;
@@ -286,6 +287,81 @@ export class SalonService {
 
   profileReady(user: UserRecord) {
     return Boolean(user.firstName && user.phone);
+  }
+
+  policyPublic() {
+    return {
+      version: process.env.POLICY_VERSION?.trim() || "2026-09-29",
+      url: `${this.options.publicUrl}/privacy`,
+    };
+  }
+
+  async hasConsent(userId: string) {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { personalDataConsentAt: true, personalDataPolicyVersion: true, anonymizedAt: true },
+    });
+    return Boolean(row?.personalDataConsentAt) && !row?.anonymizedAt && row?.personalDataPolicyVersion === this.policyPublic().version;
+  }
+
+  async recordConsent(userId: string, at = new Date()) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        personalDataConsentAt: at,
+        personalDataPolicyVersion: this.policyPublic().version,
+        anonymizedAt: null,
+      },
+    });
+  }
+
+  async clientBranchIds(userId: string) {
+    const [visits, appointments] = await Promise.all([
+      this.prisma.visit.findMany({ where: { userId }, select: { branchId: true } }),
+      this.prisma.appointment.findMany({ where: { userId }, select: { branchId: true } }),
+    ]);
+    return [...new Set([...visits.map((row) => row.branchId), ...appointments.map((row) => row.branchId)].filter((id): id is string => Boolean(id)))];
+  }
+
+  async exportClient(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        appointments: { select: { id: true, startsAt: true, status: true, branchId: true, serviceId: true } },
+        visits: { select: { id: true, startedAt: true, branchId: true } },
+        ledger: { select: { id: true, type: true, amount: true, createdAt: true, comment: true } },
+      },
+    });
+    if (!user) {
+      throw new DomainError("not_found", "Клиент не найден");
+    }
+    return {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      birthday: user.birthday,
+      telegramUsername: user.telegramUsername,
+      balance: user.balance,
+      consentAt: user.personalDataConsentAt,
+      policyVersion: user.personalDataPolicyVersion,
+      anonymizedAt: user.anonymizedAt,
+      appointments: user.appointments,
+      visits: user.visits,
+      ledger: user.ledger,
+    };
+  }
+
+  async anonymizeClient(userId: string, at = new Date()) {
+    const existing = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!existing) {
+      throw new DomainError("not_found", "Клиент не найден");
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { ...anonymizedProfile(), anonymizedAt: at },
+    });
+    return { id: userId, anonymizedAt: at.toISOString() };
   }
 
   async branches() {

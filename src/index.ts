@@ -15,10 +15,21 @@ import { createNotifier } from "./salon/outbound.ts";
 import { SalonService } from "./salon/service.ts";
 import { PrismaStore } from "./store/prisma-store.ts";
 import { miniAppUrl } from "./web-app-url.ts";
+import { createAdminDirectory, ensureOwnerAccount } from "./prod/admin-directory.ts";
+import { assertProductionConfig } from "./prod/config.ts";
+import { log } from "./prod/log.ts";
+import { hashPassword } from "./prod/passwords.ts";
 
 const envFile = resolve(process.cwd(), ".env");
 if (existsSync(envFile) && typeof process.loadEnvFile === "function") {
   process.loadEnvFile(envFile);
+}
+
+try {
+  assertProductionConfig();
+} catch (error) {
+  log("error", error instanceof Error ? error.message : "Продакшен не запущен");
+  process.exit(1);
 }
 
 const publicUrl = (process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\/$/, "");
@@ -68,6 +79,7 @@ const salonHttp = createSalonRoutes({
   adminPassword: process.env.ADMIN_PASSWORD || "daddyson-demo",
   sessionSecret,
   allowDemoGuest: process.env.ALLOW_DEMO_GUEST !== "false",
+  admins: createAdminDirectory(prisma),
   links: {
     telegram: process.env.TELEGRAM_BOT_USERNAME ? `https://t.me/${process.env.TELEGRAM_BOT_USERNAME}` : null,
     max: process.env.MAX_BOT_URL || null,
@@ -88,6 +100,10 @@ const app = createHttpApp({
 });
 
 const boot = async () => {
+  if (process.env.APP_ENV === "production") {
+    const created = await ensureOwnerAccount(prisma, process.env.ADMIN_LOGIN ?? "admin", hashPassword(process.env.ADMIN_PASSWORD ?? ""));
+    log("info", created ? "создана учётка владельца" : "учётка владельца уже есть");
+  }
   const settings = await store.getSettings();
   setAppTimezone(process.env.VENUE_TIMEZONE?.trim() || settings.venueTimezone);
   startSalonJobs(salon, notifier);
@@ -113,22 +129,22 @@ const boot = async () => {
     if (telegramBot && https && !poll) {
       await telegramBot.api.setWebhook(`${publicUrl}/tg/webhook`, { secret_token: webhookSecret });
     } else if (telegramBot) {
-      console.log(poll ? "telegram polling: TELEGRAM_TRANSPORT=polling" : "telegram polling: PUBLIC_URL не https, webhook не ставится");
+      log("info", poll ? "telegram polling" : "telegram polling, PUBLIC_URL не https");
       void telegramBot.start();
     } else {
-      console.log("TELEGRAM_BOT_TOKEN пуст — бот Telegram не запущен, сайт работает");
+      log("info", "TELEGRAM_BOT_TOKEN пуст, бот не запущен");
     }
     if (maxBot) {
-      console.log("MAX: long polling через @maxhub/max-bot-api, host platform-api2.max.ru");
+      log("info", "MAX long polling");
       void maxBot.start();
     } else {
-      console.log("MAX_BOT_TOKEN пуст — бот MAX не запущен");
+      log("info", "MAX_BOT_TOKEN пуст, бот MAX не запущен");
     }
-    console.log("listening", port);
+    log("info", "listening", { port });
   });
 };
 
 boot().catch((error: unknown) => {
-  console.error(error);
+  log("error", error instanceof Error ? error.message : "boot failed");
   process.exit(1);
 });
