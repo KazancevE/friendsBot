@@ -1,11 +1,12 @@
 import type { NextFunction } from "grammy";
 import { newQrToken } from "../domain/qr-token.ts";
+import { isTelegramAdmin } from "../prod/telegram-admins.ts";
 import type { Store } from "../store/types.ts";
 import type { BotContext } from "./context.ts";
 
 type HydrateBotContextParameters = {
   readonly store: Store;
-  readonly config: { adminTelegramId: bigint; publicUrl: string };
+  readonly config: { adminTelegramId: bigint; adminTelegramIds?: readonly bigint[]; publicUrl: string };
 };
 
 export const hydrateBotContext = ({ store, config }: HydrateBotContextParameters) => {
@@ -14,7 +15,8 @@ export const hydrateBotContext = ({ store, config }: HydrateBotContextParameters
     ctx.config = config;
     const id = ctx.from?.id;
     ctx.dbUser = id ? await store.findUserByTelegramId(BigInt(id)) : null;
-    if (id && BigInt(id) === config.adminTelegramId && ctx.dbUser?.role !== "admin") {
+    const admins = config.adminTelegramIds?.length ? config.adminTelegramIds : [config.adminTelegramId];
+    if (id && isTelegramAdmin(BigInt(id), admins) && ctx.dbUser?.role !== "admin") {
       ctx.dbUser = ctx.dbUser
         ? await store.updateUser(ctx.dbUser.id, { role: "admin" })
         : await store.createUser({

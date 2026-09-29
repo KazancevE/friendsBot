@@ -273,7 +273,8 @@ export function wireGuestHandlers(bot: Bot<BotContext>) {
       return;
     }
 
-    const isEnvAdmin = BigInt(from.id) === ctx.config.adminTelegramId;
+    const adminIds = ctx.config.adminTelegramIds?.length ? ctx.config.adminTelegramIds : [ctx.config.adminTelegramId];
+    const isEnvAdmin = adminIds.includes(BigInt(from.id));
     const startPayload = typeof ctx.match === "string" ? ctx.match : "";
     const referralCode = parseReferralStartPayload(startPayload);
     if (referralCode !== null) {

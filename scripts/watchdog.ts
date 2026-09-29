@@ -5,6 +5,7 @@ import { SocksProxyAgent } from "socks-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { collectProblems, shouldSendAlert, type BackupStatus } from "../src/prod/alerts.ts";
 import { log } from "../src/prod/log.ts";
+import { devAlertChatId } from "../src/prod/telegram-admins.ts";
 
 const backupDir = process.env.BACKUP_DIR ?? "/var/backups/daddyson";
 const startedAt = Date.now();
@@ -40,7 +41,7 @@ const sendTelegram = (text: string) =>
   new Promise<void>((resolve, reject) => {
     const token = process.env.TELEGRAM_BOT_TOKEN ?? "";
     const proxy = process.env.TELEGRAM_PROXY?.trim();
-    const body = JSON.stringify({ chat_id: process.env.DEV_ALERT_CHAT_ID, text });
+    const body = JSON.stringify({ chat_id: devAlertChatId(process.env.DEV_ALERT_CHAT_ID), text });
     const agent = proxy ? (proxy.startsWith("socks") ? new SocksProxyAgent(proxy) : new HttpsProxyAgent(proxy)) : undefined;
     const request = https.request(
       {

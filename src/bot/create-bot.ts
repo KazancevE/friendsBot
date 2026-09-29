@@ -49,7 +49,7 @@ import { wireVenueCodeHandlers } from "./venue-code.ts";
 export function createBot(
   token: string,
   store: Store,
-  config: { adminTelegramId: bigint; publicUrl: string },
+  config: { adminTelegramId: bigint; adminTelegramIds?: readonly bigint[]; publicUrl: string },
   botConfig?: BotConfig<BotContext>,
 ) {
   const bot = new Bot<BotContext>(token, botConfig);

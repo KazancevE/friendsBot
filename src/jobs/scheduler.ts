@@ -18,19 +18,21 @@ const BOOKING_REMINDER_CRON = "*/5 * * * *";
 
 type StartSchedulerParameters = {
   readonly adminTelegramId: bigint;
+  readonly adminTelegramIds?: readonly bigint[];
 };
 
-const alertAdmin = (api: Api, adminTelegramId: bigint) => {
+const alertAdmin = (api: Api, adminTelegramIds: readonly bigint[]) => {
   return async (error: Error) => {
-    await api.sendMessage(
-      adminTelegramId.toString(),
-      `⚠️ Джоб упал: ${error.message.slice(0, 200)}`,
-    );
+    const text = `⚠️ Джоб упал: ${error.message.slice(0, 200)}`;
+    for (const adminTelegramId of adminTelegramIds) {
+      await api.sendMessage(adminTelegramId.toString(), text);
+    }
   };
 };
 
-export const startScheduler = (store: Store, api: Api, { adminTelegramId }: StartSchedulerParameters) => {
-  const onError = alertAdmin(api, adminTelegramId);
+export const startScheduler = (store: Store, api: Api, parameters: StartSchedulerParameters) => {
+  const ids = parameters.adminTelegramIds?.length ? parameters.adminTelegramIds : [parameters.adminTelegramId];
+  const onError = alertAdmin(api, ids);
   CronJob.from({
     cronTime: BIRTHDAY_CRON,
     onTick: () => {

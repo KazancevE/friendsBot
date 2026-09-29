@@ -19,6 +19,7 @@ import { createAdminDirectory, ensureOwnerAccount } from "./prod/admin-directory
 import { assertProductionConfig } from "./prod/config.ts";
 import { log } from "./prod/log.ts";
 import { hashPassword } from "./prod/passwords.ts";
+import { telegramAdminIdsFromEnv } from "./prod/telegram-admins.ts";
 
 const envFile = resolve(process.cwd(), ".env");
 if (existsSync(envFile) && typeof process.loadEnvFile === "function") {
@@ -36,7 +37,7 @@ const publicUrl = (process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\
 const port = Number(process.env.PORT ?? 3000);
 const telegramToken = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
 const maxToken = process.env.MAX_BOT_TOKEN || "";
-const adminTelegramId = process.env.TELEGRAM_ADMIN_ID || "";
+const adminTelegramIds = telegramAdminIdsFromEnv(process.env.TELEGRAM_ADMIN_ID);
 const sessionSecret =
   process.env.ADMIN_SESSION_SECRET ||
   process.env.WEBHOOK_SECRET ||
@@ -57,8 +58,10 @@ const flow = new SalonFlow(salon);
 const notifier = createNotifier();
 
 const notifyAdmins = async (text: string) => {
-  if (adminTelegramId && telegramToken) {
-    await notifier.send("telegram", adminTelegramId, { text });
+  if (telegramToken) {
+    for (const adminTelegramId of adminTelegramIds) {
+      await notifier.send("telegram", adminTelegramId.toString(), { text });
+    }
   }
   const maxAdmin = process.env.MAX_ADMIN_USER_ID;
   if (maxAdmin && maxToken) {
@@ -67,7 +70,11 @@ const notifyAdmins = async (text: string) => {
 };
 
 const telegramBot = telegramToken
-  ? createSalonTelegramBot(telegramToken, flow, notifier, { onNotice: notifyAdmins })
+  ? createSalonTelegramBot(telegramToken, flow, notifier, {
+      onNotice: notifyAdmins,
+      adminIds: adminTelegramIds,
+      publicUrl,
+    })
   : undefined;
 const maxBot = maxToken ? createSalonMaxBot(maxToken, flow, notifier, { onNotice: notifyAdmins }) : undefined;
 
@@ -109,8 +116,11 @@ const boot = async () => {
   const settings = await store.getSettings();
   setAppTimezone(process.env.VENUE_TIMEZONE?.trim() || settings.venueTimezone);
   startSalonJobs(salon, notifier);
-  if (telegramBot && adminTelegramId) {
-    startScheduler(store, telegramBot.api, { adminTelegramId: BigInt(adminTelegramId) });
+  if (telegramBot && adminTelegramIds.length > 0) {
+    startScheduler(store, telegramBot.api, {
+      adminTelegramId: adminTelegramIds[0]!,
+      adminTelegramIds,
+    });
   }
   serve({ fetch: app.fetch, port }, async () => {
     const https = publicUrl.startsWith("https://");

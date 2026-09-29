@@ -18,7 +18,7 @@ ufw allow 443/tcp
 ufw --force enable
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "Заполните .env (пароли, токен, домен, ИНН, DEV_ALERT_CHAT_ID) и запустите скрипт снова."
+  echo "Заполните .env (пароли, токен, домен, ИНН). TELEGRAM_ADMIN_ID и DEV_ALERT_CHAT_ID по умолчанию 500459806, смените при другом владельце."
   exit 1
 fi
 docker compose -f docker-compose.prod.yml up -d --build

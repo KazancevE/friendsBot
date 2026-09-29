@@ -8,6 +8,8 @@ import {
   type BarberLevelName,
 } from "../src/salon/catalog.ts";
 import { SALON_DEFAULT_CASHBACK_PERCENT } from "../src/salon/money.ts";
+import { newQrToken } from "../src/domain/qr-token.ts";
+import { telegramAdminIdsFromEnv } from "../src/prod/telegram-admins.ts";
 import { DEMO_GUEST_TELEGRAM_ID, SALON_STAFF_TELEGRAM_ID } from "../src/salon/service.ts";
 
 const BRANCHES = [
@@ -197,6 +199,23 @@ export async function seedSalon(prisma: PrismaClient) {
     },
     update: { role: "admin" },
   });
+  for (const telegramId of telegramAdminIdsFromEnv(process.env.TELEGRAM_ADMIN_ID)) {
+    if (telegramId === DEMO_GUEST_TELEGRAM_ID || telegramId === SALON_STAFF_TELEGRAM_ID) {
+      continue;
+    }
+    await prisma.user.upsert({
+      where: { telegramId },
+      create: {
+        telegramId,
+        role: "admin",
+        firstName: "Админ",
+        lastName: null,
+        qrToken: newQrToken(),
+        phone: null,
+      },
+      update: { role: "admin" },
+    });
+  }
 
   const demoBookings = await prisma.appointment.count({ where: { userId: guest.id } });
   if (demoBookings === 0) {

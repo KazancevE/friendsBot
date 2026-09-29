@@ -66,7 +66,7 @@ curl -s http://localhost:3000/health
 
 1. @BotFather → `/newbot` → скопируйте токен в `TELEGRAM_BOT_TOKEN`.
 2. Username бота без `@` — в `TELEGRAM_BOT_USERNAME` (кнопка на сайте и реферальная ссылка).
-3. Узнайте свой id (например @userinfobot) и впишите в `TELEGRAM_ADMIN_ID` — туда придут новые и отменённые записи.
+3. `TELEGRAM_ADMIN_ID` — Telegram id администраторов через запятую. По умолчанию `500459806`: новые и отменённые записи приходят этому чату, команда `/admin` открывает ссылку на веб-админку. Другой id или несколько id задаются в `.env`, в коде список не зашит.
 4. Mini App: в BotFather укажите `https://ваш-домен/app/`. Локально без HTTPS бот ходит long polling, webhook не ставится.
 5. На HTTPS (`PUBLIC_URL` начинается с `https://`) процесс сам вызывает `setWebhook` на `/tg/webhook`. Если Telegram не открывает входящее соединение до VPS, поставьте `TELEGRAM_TRANSPORT=polling`: бот забирает апдейты сам, кнопка «Карта» всё равно ведёт на `PUBLIC_URL`.
 6. Если с сервера не открывается `api.telegram.org`, укажите `TELEGRAM_PROXY` (`socks5h://` или `http://`). Через него идут и polling, и отправка сообщений.
@@ -124,7 +124,8 @@ curl -s http://localhost:3000/health
 ```sh
 cp .env.example .env
 # пароли, TELEGRAM_BOT_TOKEN, PUBLIC_URL=https://домен, CADDY_DOMAIN,
-# DEV_ALERT_CHAT_ID, OPERATOR_LEGAL_NAME, OPERATOR_INN, OPERATOR_ADDRESS
+# TELEGRAM_ADMIN_ID и DEV_ALERT_CHAT_ID уже 500459806, смените при другом владельце
+# OPERATOR_LEGAL_NAME, OPERATOR_INN, OPERATOR_ADDRESS
 chmod +x scripts/bootstrap-ubuntu.sh scripts/update.sh scripts/restore.sh
 ./scripts/bootstrap-ubuntu.sh
 ```
@@ -163,7 +164,7 @@ docker compose -f docker-compose.prod.yml cp backup:/var/backups/daddyson/daily/
 
 ### Тревоги
 
-Сторож раз в минуту открывает `http://app:3000/health/ready` и читает `status.json`. В Telegram-чат `DEV_ALERT_CHAT_ID` уходит сообщение `Daddyson: …`, если сайт или база не отвечают, копия не удалась, статуса нет дольше двух часов после старта или дамп старше 26 часов. Повтор той же причины — не чаще раза в 30 минут. Исходящие к Bot API идут через `TELEGRAM_PROXY`, если он задан. Сторож не ждёт, пока приложение станет healthy: иначе при падении процесса тревога не уйдёт.
+Сторож раз в минуту открывает `http://app:3000/health/ready` и читает `status.json`. В Telegram-чат `DEV_ALERT_CHAT_ID` уходит сообщение `Daddyson: …`, если сайт или база не отвечают, копия не удалась, статуса нет дольше двух часов после старта или дамп старше 26 часов. По умолчанию это `500459806`, в `.env` чат можно сменить. Повтор той же причины — не чаще раза в 30 минут. Исходящие к Bot API идут через `TELEGRAM_PROXY`, если он задан. Сторож не ждёт, пока приложение станет healthy: иначе при падении процесса тревога не уйдёт.
 
 ### Админка
 

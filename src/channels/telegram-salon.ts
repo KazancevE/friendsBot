@@ -2,6 +2,7 @@ import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import type { OutMessage } from "../salon/outbound.ts";
 import { SalonFlow } from "../salon/flow.ts";
 import type { Notifier } from "../salon/outbound.ts";
+import { adminCommandReply, isTelegramAdmin } from "../prod/telegram-admins.ts";
 import { telegramClientOptions } from "./telegram-client.ts";
 
 const markup = (message: OutMessage) => {
@@ -44,7 +45,7 @@ export const createSalonTelegramBot = (
   token: string,
   flow: SalonFlow,
   notifier: Notifier & { use?: (channel: "telegram", send: (externalId: string, message: OutMessage) => Promise<void>) => void },
-  hooks?: { onNotice?: (text: string) => Promise<void> },
+  hooks?: { onNotice?: (text: string) => Promise<void>; adminIds?: readonly bigint[]; publicUrl?: string },
 ) => {
   const client = telegramClientOptions();
   if (client) {
@@ -75,6 +76,10 @@ export const createSalonTelegramBot = (
     return result.notice;
   };
 
+  bot.command("admin", async (ctx) => {
+    const admin = isTelegramAdmin(BigInt(ctx.from?.id ?? 0), hooks?.adminIds ?? []);
+    await ctx.reply(adminCommandReply(admin, hooks?.publicUrl ?? ""));
+  });
   bot.command("start", async (ctx) => {
     const payload = ctx.match?.trim();
     await respond(ctx.chat.id, {
