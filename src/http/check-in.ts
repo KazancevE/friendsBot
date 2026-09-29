@@ -10,7 +10,7 @@ import {
   regenerateVenueCode,
   venueQrPayload,
 } from "../domain/venue-code.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { appTimezone } from "../domain/week.ts";
 import type { Store } from "../store/types.ts";
 import { resolveActor } from "./auth.ts";
 import { checkPinRateLimit, resetPinRateLimit } from "./pin-rate-limit.ts";
@@ -60,7 +60,7 @@ const requireRegistered = async (store: Store, initData: string, botToken: strin
 };
 
 const formatMoscowTime = (at: Date) => {
-  return at.toLocaleString("ru-RU", { timeZone: MOSCOW, hour: "2-digit", minute: "2-digit" });
+  return at.toLocaleString("ru-RU", { timeZone: appTimezone(), hour: "2-digit", minute: "2-digit" });
 };
 
 export const createCheckInRoutes = ({ store, botToken, botApi }: CreateCheckInRoutesParameters) => {

@@ -14,5 +14,5 @@ export type BotContext = Context &
   ConversationFlavor<Context> & {
     store: Store;
     dbUser: UserRecord | null;
-    config: { adminTelegramId: bigint; publicUrl: string };
+    config: { adminTelegramId: bigint; adminTelegramIds?: readonly bigint[]; publicUrl: string };
   };

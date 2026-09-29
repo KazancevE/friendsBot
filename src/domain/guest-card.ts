@@ -2,7 +2,7 @@ import { DateTime } from "luxon";
 import { daysUntilBirthday, isBirthdayWeek } from "./birthday.ts";
 import { getReferralStats } from "./referral.ts";
 import type { BonusLotCategory, ReferralStats, Role, UserRecord } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type LotSummary = {
@@ -98,11 +98,11 @@ export async function buildStaffGuestCard(
 };
 
 const formatMoscowDate = (value: Date) => {
-  return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("dd.MM.yyyy");
+  return DateTime.fromJSDate(value, { zone: appTimezone() }).toFormat("dd.MM.yyyy");
 };
 
 const formatMoscowDateTime = (value: Date) => {
-  return DateTime.fromJSDate(value, { zone: MOSCOW }).toFormat("dd.MM.yyyy HH:mm");
+  return DateTime.fromJSDate(value, { zone: appTimezone() }).toFormat("dd.MM.yyyy HH:mm");
 };
 
 const lotCategoryLabel = (category: BonusLotCategory) => {

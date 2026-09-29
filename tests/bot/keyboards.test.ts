@@ -9,16 +9,7 @@ import {
   MINI_APP_STAFF_LABEL,
   BTN_WEB_ADMIN,
 } from "../../src/bot/keyboards.ts";
-
-const miniAppUrl = (publicUrl: string) => {
-  const origin = publicUrl.replace(/\/$/, "");
-  return `${origin}/app/?v=20260831`;
-};
-
-const adminAppUrl = (publicUrl: string) => {
-  const origin = publicUrl.replace(/\/$/, "");
-  return `${origin}/admin/?v=20260831`;
-};
+import { adminAppUrl, miniAppUrl } from "../../src/web-app-url.ts";
 
 test("reply keyboard uses text buttons for mini app entry", () => {
   const guest = mainKeyboard({ role: "guest" }).keyboard.flat();

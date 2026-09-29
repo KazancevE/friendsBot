@@ -2,6 +2,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { Bot } from "grammy";
 import { webhookCallback } from "grammy";
 import { Hono } from "hono";
+import type { Hono as HonoApp } from "hono";
 import type { Store } from "../store/types.ts";
 import { createAdminRoutes } from "./admin.ts";
 import { createBookingRoutes } from "./booking.ts";
@@ -21,6 +22,7 @@ type CreateHttpAppParameters = {
   readonly bot?: Bot;
   readonly webhookSecret?: string;
   readonly checkReady?: () => Promise<unknown>;
+  readonly salon?: HonoApp;
 };
 
 const MINIAPP_INDEX = "miniapp/dist/index.html";
@@ -38,8 +40,11 @@ const rewriteAdminPath = (path: string) => {
   return `admin/dist/${file}`;
 };
 
-export const createHttpApp = ({ store, botToken, bot, webhookSecret, checkReady }: CreateHttpAppParameters) => {
+export const createHttpApp = ({ store, botToken, bot, webhookSecret, checkReady, salon }: CreateHttpAppParameters) => {
   const app = new Hono();
+  if (salon) {
+    app.route("/", salon);
+  }
   app.get("/health", (c) => c.json({ ok: true }));
   app.get("/health/ready", async (c) => {
     if (checkReady === undefined) {

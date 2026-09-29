@@ -3,20 +3,20 @@ import { DateTime } from "luxon";
 import { nanoid } from "nanoid";
 import { DomainError } from "./errors.ts";
 import type { VenueCodeRecord } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export const VENUE_CODE_HOURS = 2;
 export const VENUE_QR_PREFIX = "friends://checkin?t=";
 
 export const scheduledSlotStart = (at: Date) => {
-  const local = DateTime.fromJSDate(at).setZone(MOSCOW);
+  const local = DateTime.fromJSDate(at).setZone(appTimezone());
   const evenHour = local.hour - (local.hour % VENUE_CODE_HOURS);
   return local.set({ hour: evenHour, minute: 0, second: 0, millisecond: 0 }).toJSDate();
 };
 
 export const slotEndFromStart = (slotStart: Date) => {
-  return DateTime.fromJSDate(slotStart).setZone(MOSCOW).plus({ hours: VENUE_CODE_HOURS }).toJSDate();
+  return DateTime.fromJSDate(slotStart).setZone(appTimezone()).plus({ hours: VENUE_CODE_HOURS }).toJSDate();
 };
 
 export const newVenuePin = () => {

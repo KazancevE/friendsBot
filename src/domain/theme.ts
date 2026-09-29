@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import { DomainError } from "./errors.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type ThemeAssets = {
@@ -163,7 +163,7 @@ export const resolveActiveThemePack = (
       return manual;
     }
   }
-  const moscowNow = DateTime.fromJSDate(now, { zone: MOSCOW });
+  const moscowNow = DateTime.fromJSDate(now, { zone: appTimezone() });
   const scheduled = packs.filter((pack) => isDateInRange(moscowNow, pack.activeFrom, pack.activeTo));
   if (scheduled.length === 0) {
     return null;

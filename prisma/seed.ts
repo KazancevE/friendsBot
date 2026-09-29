@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts";
+import { seedSalon } from "./seed-salon.ts";
 
 const prisma = new PrismaClient();
 
@@ -17,7 +18,7 @@ async function main() {
     await prisma.setting.upsert({
       where: { key },
       create: { key, value },
-      update: { value },
+      update: {},
     });
   }
 
@@ -141,6 +142,7 @@ async function main() {
       },
     });
   }
+  await seedSalon(prisma);
 }
 
 main()

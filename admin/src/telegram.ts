@@ -1,9 +1,6 @@
-type SafeAreaInset = {
-  readonly top: number;
-  readonly bottom: number;
-  readonly left: number;
-  readonly right: number;
-};
+import { applySafeAreaCssVariables, type EdgeInsets } from "../../src/web/safe-area.ts";
+
+type SafeAreaInset = EdgeInsets;
 
 type TelegramWebApp = {
   readonly ready: () => void;
@@ -26,14 +23,10 @@ type TelegramNamespace = {
 const APP_BG = "#141018";
 
 const applySafeAreaInsets = (webApp: TelegramWebApp) => {
-  const inset = webApp.contentSafeAreaInset ?? webApp.safeAreaInset;
-  if (inset === undefined) {
-    return;
-  }
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-top", `${inset.top}px`);
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-bottom", `${inset.bottom}px`);
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-left", `${inset.left}px`);
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-right", `${inset.right}px`);
+  applySafeAreaCssVariables(document.documentElement, {
+    safeAreaInset: webApp.safeAreaInset,
+    contentSafeAreaInset: webApp.contentSafeAreaInset,
+  });
 };
 
 const webApp = (): TelegramWebApp | undefined => {

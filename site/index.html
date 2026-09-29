@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BRO — мужская парикмахерская, Барнаул</title>
+    <link rel="icon" href="/site/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Oswald:wght@500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/site/styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <a class="brand" href="/"><img src="/site/logo.png" alt="BRO, мужская парикмахерская" /></a>
+        <nav class="nav">
+          <a href="#branches">Филиалы</a>
+          <a href="#masters">Мастера</a>
+          <a href="#prices">Цены</a>
+          <a href="#contacts">Контакты</a>
+          <a href="/admin/">Админ</a>
+        </nav>
+      </header>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Барнаул · с апреля 2017</p>
+          <h1>Где приходят к мастеру, а не в парикмахерскую</h1>
+          <p class="lede">Твой стиль — наша работа. Четыре филиала, одна бонусная карта и запись без звонка.</p>
+          <div class="actions">
+            <a class="btn" id="book-app" href="/app/?demo=1">Записывайся, бро</a>
+            <a class="btn ghost" id="book-tg" href="/app/?demo=1">Telegram</a>
+            <a class="btn ghost" id="book-max" href="/app/?demo=1">MAX</a>
+          </div>
+          <div class="badges">
+            <span>2ГИС: Ленина 5.0 (522), Лазурная 5.0 (428), Семёнова 4.9 (326)</span>
+            <span>Лучший барбершоп 2026, Премия 2ГИС — Ленина</span>
+            <span>Хорошее место 2026, Яндекс — Ленина, Лазурная, Семёнова</span>
+            <span>Работают с апреля 2017</span>
+          </div>
+          <div class="stats">
+            <div><strong>10:00–21:00</strong>ежедневно</div>
+            <div><strong id="cashback">5%</strong>кэшбэк на карту</div>
+            <div><strong id="branch-count">4</strong>филиала</div>
+          </div>
+        </div>
+        <div class="hero-card">
+          <img src="/site/logo.png" alt="" />
+          <p>Одна карта на Ленина, Брестскую, Лазурную и Семёнова. Кэшбэк 5%, приведи друга — по 300 ₽ обоим.</p>
+        </div>
+      </section>
+      <section id="branches">
+        <h2>Филиалы</h2>
+        <div class="grid" id="branch-list"></div>
+      </section>
+      <section id="masters">
+        <h2>Мастера</h2>
+        <p class="muted">Уровни без имён: в открытом списке мастеров их нет, поэтому в демо карточки по уровню. Фото людей не подставляли. Цена от уровня не зависит.</p>
+        <div class="masters" id="master-list"></div>
+      </section>
+      <section id="prices">
+        <h2>Услуги и цены</h2>
+        <p class="muted">Цены одинаковые во всех филиалах. На Лазурной нет королевского бритья и комплекса со стрижкой. Длительности в прайсе не опубликованы — в демо стоят оценочные минуты, их можно поправить в админке.</p>
+        <div class="card" style="overflow:auto">
+          <table>
+            <thead><tr><th>Услуга</th><th>Где</th><th>Цена</th><th>Время, примерно</th></tr></thead>
+            <tbody id="price-rows"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="loyalty">
+        <div>
+          <h2>Карта гостя</h2>
+          <p>Кэшбэк 5% с визита, «приведи друга» по 300 ₽, бонус на день рождения. Баланс общий на все четыре филиала. Напоминание «пора стричься» — через 4 недели, если согласился на рассылку. На кассе гость показывает QR.</p>
+        </div>
+        <div class="actions" style="align-content:center">
+          <a class="btn" href="/app/?demo=1">Открыть карту</a>
+          <a class="btn ghost" href="/admin/">Кабинет администратора</a>
+        </div>
+      </section>
+      <section id="contacts">
+        <h2>Контакты</h2>
+        <div class="card">
+          <p>Телефон <a id="phone" href="tel:+73852994499">+7 (3852) 99-44-99</a>. Добавочные: Брестская 1, Ленина 2, Лазурная 3, Семёнова 4.</p>
+          <p>WhatsApp <a id="whatsapp" href="https://wa.me/79609542522">+7 960 954-25-22</a></p>
+          <p><a href="https://vk.com/bro.barnaul">ВКонтакте</a></p>
+        </div>
+      </section>
+      <footer>BRO · Барнаул · демо записи и бонусной карты. <a href="/site/chat.html">Диалог «Старт»</a> · <a href="/privacy">Политика конфиденциальности</a> · <a href="/consent">Согласие на обработку персональных данных</a></footer>
+    </div>
+    <script src="/site/app.js"></script>
+  </body>
+</html>

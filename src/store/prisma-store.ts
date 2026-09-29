@@ -69,7 +69,7 @@ import type {
   VenueTableRecord,
   VisitRecord,
 } from "../domain/types.ts";
-import { moscowYearStart, MOSCOW } from "../domain/week.ts";
+import { moscowYearStart, appTimezone } from "../domain/week.ts";
 import { DateTime } from "luxon";
 import { toStaffActionKind } from "./staff-action-kind.ts";
 import type { BroadcastGuestCandidate, NewUser, Store } from "./types.ts";
@@ -104,6 +104,9 @@ const SETTING_KEYS = [
   "bookingClosedWeekdays",
   "bookingDurationMinutes",
   "venueTimezone",
+  "haircutNudgeWeeks",
+  "reminderLeadHours",
+  "importWelcomeBonus",
 ] as const;
 
 const parseWeekdayList = (raw: string | undefined): number[] => {
@@ -210,6 +213,11 @@ export class PrismaStore implements Store {
         map.get("bookingDurationMinutes") ?? DEFAULT_SETTINGS.bookingDurationMinutes,
       ),
       venueTimezone: map.get("venueTimezone") ?? DEFAULT_SETTINGS.venueTimezone,
+      haircutNudgeWeeks: Number(map.get("haircutNudgeWeeks") ?? DEFAULT_SETTINGS.haircutNudgeWeeks),
+      reminderLeadHours: parseWeekdayList(map.get("reminderLeadHours")).length
+        ? parseWeekdayList(map.get("reminderLeadHours"))
+        : [...DEFAULT_SETTINGS.reminderLeadHours],
+      importWelcomeBonus: Number(map.get("importWelcomeBonus") ?? DEFAULT_SETTINGS.importWelcomeBonus),
     };
   }
 
@@ -245,6 +253,9 @@ export class PrismaStore implements Store {
       bookingClosedWeekdays: JSON.stringify(next.bookingClosedWeekdays),
       bookingDurationMinutes: String(next.bookingDurationMinutes),
       venueTimezone: next.venueTimezone,
+      haircutNudgeWeeks: String(next.haircutNudgeWeeks),
+      reminderLeadHours: JSON.stringify(next.reminderLeadHours),
+      importWelcomeBonus: String(next.importWelcomeBonus),
     };
     await Promise.all(
       SETTING_KEYS.map((key) =>
@@ -678,8 +689,8 @@ export class PrismaStore implements Store {
   }
 
   async hasCheckInToday(userId: string, now: Date): Promise<boolean> {
-    const start = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
-    const end = DateTime.fromJSDate(now, { zone: MOSCOW }).endOf("day").toJSDate();
+    const start = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day").toJSDate();
+    const end = DateTime.fromJSDate(now, { zone: appTimezone() }).endOf("day").toJSDate();
     const count = await this.prisma.checkInLog.count({
       where: { userId, createdAt: { gte: start, lte: end } },
     });

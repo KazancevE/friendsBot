@@ -175,14 +175,15 @@ describe("v2 phase 2", () => {
       birthdayCouponTitle: "ДР-коктейль",
       birthdayCouponClaimDays: 14,
     });
+    const today = new Date();
     const guest = await registerGuest(store, {
       telegramId: 401n,
       firstName: "Birth",
       lastName: "Day",
-      birthday: new Date("1990-08-30"),
+      birthday: new Date(Date.UTC(1990, today.getUTCMonth(), today.getUTCDate())),
       phone: "79994440001",
     });
-    const now = new Date("2026-08-30T12:00:00+03:00");
+    const now = today;
     const granted = await grantDueBirthdays(store, now);
     expect(granted).toBe(1);
     const coupons = await store.listActiveCoupons(guest.id);

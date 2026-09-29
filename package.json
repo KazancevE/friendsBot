@@ -17,14 +17,18 @@
     "@aws-sdk/client-s3": "^3.1121.0",
     "@grammyjs/conversations": "^2.1.1",
     "@hono/node-server": "^2.1.1",
+    "@maxhub/max-bot-api": "^0.2.5",
     "@prisma/client": "^6.19.3",
     "cron": "^4.4.0",
     "grammy": "^1.45.1",
     "hono": "^4.13.3",
+    "https-proxy-agent": "^7.0.6",
     "luxon": "^3.7.2",
     "nanoid": "^6.0.1",
     "qrcode": "^1.5.4",
-    "tsx": "^4.23.12"
+    "socks-proxy-agent": "^8.0.5",
+    "tsx": "^4.23.12",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/luxon": "^3.7.5",

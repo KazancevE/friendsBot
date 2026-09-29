@@ -1,23 +1,24 @@
 import { DateTime } from "luxon";
 import type { Api } from "grammy";
+import { venue } from "../venue/salon.ts";
 import { createLotForCredit } from "./bonus-lots.ts";
 import { expiresAfterDays } from "./settings.ts";
 import type { Store } from "../store/types.ts";
 import type { UserRecord } from "./types.ts";
-import { MOSCOW, moscowCalendarYear } from "./week.ts";
+import { appTimezone, moscowCalendarYear } from "./week.ts";
 
 const anniversaryInYear = (birthday: Date, year: number): DateTime => {
   const month = birthday.getUTCMonth() + 1;
   const day = birthday.getUTCDate();
-  const direct = DateTime.fromObject({ year, month, day }, { zone: MOSCOW });
+  const direct = DateTime.fromObject({ year, month, day }, { zone: appTimezone() });
   if (direct.isValid) {
     return direct.startOf("day");
   }
-  return DateTime.fromObject({ year, month: 2, day: 28 }, { zone: MOSCOW }).startOf("day");
+  return DateTime.fromObject({ year, month: 2, day: 28 }, { zone: appTimezone() }).startOf("day");
 };
 
 export function isBirthdayWeek(birthday: Date, now: Date): boolean {
-  const nowMsk = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day");
+  const nowMsk = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day");
   const years = [nowMsk.year - 1, nowMsk.year, nowMsk.year + 1];
   return years.some((year) => {
     const anniversary = anniversaryInYear(birthday, year);
@@ -28,13 +29,13 @@ export function isBirthdayWeek(birthday: Date, now: Date): boolean {
 }
 
 export function isBirthdayToday(birthday: Date, now: Date): boolean {
-  const nowMsk = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day");
+  const nowMsk = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day");
   const anniversary = anniversaryInYear(birthday, nowMsk.year);
   return nowMsk.hasSame(anniversary, "day");
 }
 
 export function daysUntilBirthday(birthday: Date, now: Date): number | null {
-  const nowMsk = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day");
+  const nowMsk = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day");
   const years = [nowMsk.year, nowMsk.year + 1];
   let best: number | null = null;
   for (const year of years) {
@@ -102,7 +103,7 @@ export async function grantDueBirthdays(store: Store, now: Date) {
 }
 
 const notifyGuest = async (api: Api, user: UserRecord, text: string) => {
-  if (user.broadcastOptOut) {
+  if (user.broadcastOptOut || user.telegramId <= 0n) {
     return false;
   }
   try {
@@ -129,7 +130,7 @@ export async function sendBirthdayWarnings(store: Store, api: Api, now: Date) {
     const ok = await notifyGuest(
       api,
       user,
-      "Скоро ваш день рождения — загляните в «Друзья» 🎂",
+      venue.copy.birthdaySoon,
     );
     if (ok) {
       await store.updateUser(user.id, { birthdayWarnedYear: year });
@@ -150,7 +151,7 @@ export async function sendBirthdayGreetings(store: Store, api: Api, now: Date) {
     if (!isBirthdayToday(user.birthday, now)) {
       continue;
     }
-    const ok = await notifyGuest(api, user, "С днём рождения! Ждём вас в «Друзья» 🎉");
+    const ok = await notifyGuest(api, user, venue.copy.birthdayToday);
     if (ok) {
       await store.updateUser(user.id, { birthdayGreetedYear: year });
       sent += 1;

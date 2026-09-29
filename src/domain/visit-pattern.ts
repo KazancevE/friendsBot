@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 const WEEKDAY_LABELS = ["", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -43,8 +43,8 @@ export async function getGuestVisitPattern(
     lastVisitAt === null
       ? null
       : Math.floor(
-          DateTime.fromJSDate(now, { zone: MOSCOW }).diff(
-            DateTime.fromJSDate(lastVisitAt, { zone: MOSCOW }),
+          DateTime.fromJSDate(now, { zone: appTimezone() }).diff(
+            DateTime.fromJSDate(lastVisitAt, { zone: appTimezone() }),
             "days",
           ).days,
         );
@@ -58,7 +58,7 @@ export async function getGuestVisitPattern(
     hourCounts.set(hour, 0);
   }
   for (const visit of visits) {
-    const moscow = DateTime.fromJSDate(visit.startedAt, { zone: MOSCOW });
+    const moscow = DateTime.fromJSDate(visit.startedAt, { zone: appTimezone() });
     const weekday = moscow.weekday;
     const hour = moscow.hour;
     weekdayCounts.set(weekday, (weekdayCounts.get(weekday) ?? 0) + 1);
@@ -77,8 +77,8 @@ export async function getGuestVisitPattern(
       ? null
       : Math.max(
           1,
-          DateTime.fromJSDate(now, { zone: MOSCOW }).diff(
-            DateTime.fromJSDate(guest.createdAt, { zone: MOSCOW }),
+          DateTime.fromJSDate(now, { zone: appTimezone() }).diff(
+            DateTime.fromJSDate(guest.createdAt, { zone: appTimezone() }),
             "months",
           ).months,
         );

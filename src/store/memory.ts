@@ -40,7 +40,7 @@ import type {
   VenueTableRecord,
   VisitRecord,
 } from "../domain/types.ts";
-import { MOSCOW, moscowCalendarYear } from "../domain/week.ts";
+import { appTimezone, moscowCalendarYear } from "../domain/week.ts";
 import type { BroadcastGuestCandidate, NewUser, Store } from "./types.ts";
 
 export class MemoryStore implements Store {
@@ -469,8 +469,8 @@ export class MemoryStore implements Store {
       .map((row) => ({ createdAt: row.createdAt }));
   }
   async hasCheckInToday(userId: string, now: Date) {
-    const start = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
-    const end = DateTime.fromJSDate(now, { zone: MOSCOW }).endOf("day").toJSDate();
+    const start = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day").toJSDate();
+    const end = DateTime.fromJSDate(now, { zone: appTimezone() }).endOf("day").toJSDate();
     return this.checkInLogs.some(
       (log) => log.userId === userId && log.createdAt >= start && log.createdAt <= end,
     );

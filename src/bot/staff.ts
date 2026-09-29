@@ -9,7 +9,7 @@ import { applyCheck, manualAdjust, redeemBonuses } from "../domain/ledger.ts";
 import { normalizePhone } from "../domain/phone.ts";
 import type { Role } from "../domain/types.ts";
 import { closeActiveVisit, extendActiveVisit, staffOpenVisit } from "../domain/visits.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { appTimezone } from "../domain/week.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
 import { BTN_FIND_GUEST } from "./keyboards.ts";
@@ -299,7 +299,7 @@ export async function staffVisitConversation(conversation: BotConversation, ctx:
       });
       return {
         ok: true as const,
-        endsAt: visit.endsAt.toLocaleString("ru-RU", { timeZone: MOSCOW }),
+        endsAt: visit.endsAt.toLocaleString("ru-RU", { timeZone: appTimezone() }),
       };
     } catch (err) {
       if (err instanceof DomainError) {
@@ -452,7 +452,7 @@ export function wireStaffHandlers(bot: Bot<BotContext>) {
         now: new Date(),
       });
       await showGuestCard(ctx, guestId);
-      await ctx.reply(`Визит продлён до ${visit.endsAt.toLocaleString("ru-RU", { timeZone: MOSCOW })}`);
+      await ctx.reply(`Визит продлён до ${visit.endsAt.toLocaleString("ru-RU", { timeZone: appTimezone() })}`);
     } catch (err) {
       const message = err instanceof DomainError ? err.message : "Ошибка";
       await ctx.reply(message);

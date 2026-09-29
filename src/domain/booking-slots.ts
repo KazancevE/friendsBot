@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import type { Settings } from "./types.ts";
-import { venueDayRange, venueTimezone } from "./venue-time.ts";
+import { venueDayRange } from "./venue-time.ts";
+import { appTimezone } from "./week.ts";
 
 export const bookingSlotStarts = (settings: Settings) => {
   const slots: Array<{ hour: number; minute: number }> = [];
@@ -25,7 +26,7 @@ export const venueDayRangeFor = (at: Date, settings: Settings) => {
 
 /** @deprecated Use venueDayRangeFor */
 export const moscowDayRange = (at: Date) => {
-  const zone = venueTimezone({ venueTimezone: "Europe/Moscow" });
+  const zone = appTimezone();
   const local = DateTime.fromJSDate(at, { zone });
   return {
     from: local.startOf("day").toJSDate(),

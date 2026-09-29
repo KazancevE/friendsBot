@@ -1,7 +1,7 @@
 import type { Api } from "grammy";
 import { CronJob } from "cron";
 import type { Store } from "../store/types.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { appTimezone } from "../domain/week.ts";
 import { runBirthdayJob } from "./birthday-job.ts";
 import { runBookingReminders } from "../domain/booking.ts";
 import { closeExpiredQuizSessions } from "../domain/quiz.ts";
@@ -18,19 +18,21 @@ const BOOKING_REMINDER_CRON = "*/5 * * * *";
 
 type StartSchedulerParameters = {
   readonly adminTelegramId: bigint;
+  readonly adminTelegramIds?: readonly bigint[];
 };
 
-const alertAdmin = (api: Api, adminTelegramId: bigint) => {
+const alertAdmin = (api: Api, adminTelegramIds: readonly bigint[]) => {
   return async (error: Error) => {
-    await api.sendMessage(
-      adminTelegramId.toString(),
-      `⚠️ Джоб упал: ${error.message.slice(0, 200)}`,
-    );
+    const text = `⚠️ Джоб упал: ${error.message.slice(0, 200)}`;
+    for (const adminTelegramId of adminTelegramIds) {
+      await api.sendMessage(adminTelegramId.toString(), text);
+    }
   };
 };
 
-export const startScheduler = (store: Store, api: Api, { adminTelegramId }: StartSchedulerParameters) => {
-  const onError = alertAdmin(api, adminTelegramId);
+export const startScheduler = (store: Store, api: Api, parameters: StartSchedulerParameters) => {
+  const ids = parameters.adminTelegramIds?.length ? parameters.adminTelegramIds : [parameters.adminTelegramId];
+  const onError = alertAdmin(api, ids);
   CronJob.from({
     cronTime: BIRTHDAY_CRON,
     onTick: () => {
@@ -41,7 +43,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: EXPIRY_CRON,
@@ -53,7 +55,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: WEEKLY_CRON,
@@ -65,7 +67,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: VENUE_CODE_CRON,
@@ -77,7 +79,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   CronJob.from({
     cronTime: BOOKING_REMINDER_CRON,
@@ -92,7 +94,7 @@ export const startScheduler = (store: Store, api: Api, { adminTelegramId }: Star
       });
     },
     start: true,
-    timeZone: MOSCOW,
+    timeZone: appTimezone(),
   });
   void runLoggedJob({
     name: "venue-code-startup",

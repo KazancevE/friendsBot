@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import { createLotForCredit } from "./bonus-lots.ts";
 import type { PromoRuleKind, PromoRuleRecord } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type CheckPromoInput = {
@@ -31,7 +31,7 @@ const isRuleActive = (rule: PromoRuleRecord, now: Date) => {
 };
 
 const weekdayMoscow = (now: Date) => {
-  return DateTime.fromJSDate(now, { zone: MOSCOW }).weekday - 1;
+  return DateTime.fromJSDate(now, { zone: appTimezone() }).weekday - 1;
 };
 
 const evaluateRule = (

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BRO — диалог /start</title>
+    <link rel="icon" href="/site/logo.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/site/styles.css" />
+    <style>
+      .phone { width: min(420px, 100%); margin: 12px auto 40px; background: #111; border: 1px solid rgba(240, 184, 32, 0.35); border-radius: 28px; overflow: hidden; }
+      .phone header { display: flex; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .phone header img { height: 48px; width: 48px; object-fit: cover; border-radius: 12px; }
+      .log { padding: 14px; display: flex; flex-direction: column; gap: 8px; min-height: 480px; }
+      .bubble { max-width: 88%; padding: 10px 12px; border-radius: 16px; white-space: pre-wrap; line-height: 1.4; font-size: 14px; }
+      .bot { background: #1c1c1c; border: 1px solid rgba(255,255,255,0.06); align-self: flex-start; }
+      .me { background: #F0B820; color: #111; align-self: flex-end; font-weight: 600; }
+      .keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+      .keys span { border: 1px solid rgba(240,184,32,0.7); color: #F0B820; border-radius: 999px; padding: 4px 8px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <p><a href="/">На главную</a></p>
+      <h1>Диалог /start</h1>
+      <p class="muted">Живой Telegram не подключён. Это тот же сценарий бота: приветствие, два согласия, телефон, имя, день рождения, меню.</p>
+      <div class="phone">
+        <header>
+          <img src="/site/logo.png" alt="" />
+          <div><strong>BRO</strong><div class="muted">бот записи</div></div>
+        </header>
+        <div class="log" id="log">Собираем диалог…</div>
+      </div>
+    </div>
+    <script>
+      const log = document.querySelector("#log");
+      const externalId = String(800000000000 + Math.floor(Math.random() * 1000000000));
+      const phone = "+79" + String(Math.floor(100000000 + Math.random() * 800000000));
+      const steps = [
+        { label: "/start", body: { text: "/start", firstName: "Егор" } },
+        { label: "Согласен", body: { callback: "pd:yes" } },
+        { label: "Согласен на рассылку", body: { callback: "pr:yes" } },
+        { label: "Телефон", body: { phone } },
+        { label: "Егор", body: { text: "Егор" } },
+        { label: "Пропустить день рождения", body: { callback: "bd:skip" } },
+      ];
+      const bubble = (text, kind, buttons) => {
+        const node = document.createElement("div");
+        node.className = "bubble " + kind;
+        node.textContent = text;
+        if (buttons?.length) {
+          const keys = document.createElement("div");
+          keys.className = "keys";
+          for (const row of buttons) {
+            for (const button of row) {
+              const chip = document.createElement("span");
+              chip.textContent = button.text;
+              keys.append(chip);
+            }
+          }
+          node.append(keys);
+        }
+        return node;
+      };
+      const run = async () => {
+        log.textContent = "";
+        for (const step of steps) {
+          log.append(bubble(step.label, "me"));
+          const response = await fetch("/api/salon/demo/chat", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ externalId, ...step.body }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            log.append(bubble(data.message || "Не удалось пройти шаг", "bot"));
+            return;
+          }
+          for (const message of data.messages || []) {
+            log.append(bubble(message.text, "bot", message.buttons));
+          }
+        }
+        document.body.dataset.ready = "1";
+      };
+      run().catch((error) => {
+        log.textContent = error instanceof Error ? error.message : "Ошибка";
+      });
+    </script>
+  </body>
+</html>
