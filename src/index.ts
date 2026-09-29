@@ -34,6 +34,7 @@ const webhookSecret =
   process.env.WEBHOOK_SECRET && process.env.WEBHOOK_SECRET.length > 0
     ? process.env.WEBHOOK_SECRET
     : deriveWebhookSecret(telegramToken || sessionSecret);
+const telegramPolling = process.env.TELEGRAM_TRANSPORT === "polling";
 
 const store = new PrismaStore(prisma);
 const salon = new SalonService(prisma, store, {
@@ -76,7 +77,7 @@ const salonHttp = createSalonRoutes({
 });
 
 const app = createHttpApp({
-  bot: telegramBot,
+  bot: telegramPolling ? undefined : telegramBot,
   store,
   botToken: telegramToken || "demo",
   webhookSecret,
@@ -95,7 +96,7 @@ const boot = async () => {
   }
   serve({ fetch: app.fetch, port }, async () => {
     const https = publicUrl.startsWith("https://");
-    const poll = process.env.TELEGRAM_TRANSPORT === "polling";
+    const poll = telegramPolling;
     if (telegramBot && https) {
       void telegramBot.api
         .setChatMenuButton({
