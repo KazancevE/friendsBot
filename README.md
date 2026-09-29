@@ -67,7 +67,7 @@ curl -s http://localhost:3000/health
 2. Username бота без `@` — в `TELEGRAM_BOT_USERNAME` (кнопка на сайте и реферальная ссылка).
 3. Узнайте свой id (например @userinfobot) и впишите в `TELEGRAM_ADMIN_ID` — туда придут новые и отменённые записи.
 4. Mini App: в BotFather укажите `https://ваш-домен/app/`. Локально без HTTPS бот ходит long polling, webhook не ставится.
-5. На HTTPS (`PUBLIC_URL` начинается с `https://`) процесс сам вызывает `setWebhook` на `/tg/webhook`.
+5. На HTTPS (`PUBLIC_URL` начинается с `https://`) процесс сам вызывает `setWebhook` на `/tg/webhook`. Если Telegram не открывает входящее соединение до VPS, поставьте `TELEGRAM_TRANSPORT=polling`: бот забирает апдейты сам, кнопка «Карта» всё равно ведёт на `PUBLIC_URL`.
 
 ### MAX
 

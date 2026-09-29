@@ -94,8 +94,9 @@ const boot = async () => {
     startScheduler(store, telegramBot.api, { adminTelegramId: BigInt(adminTelegramId) });
   }
   serve({ fetch: app.fetch, port }, async () => {
-    if (telegramBot && publicUrl.startsWith("https://")) {
-      await telegramBot.api.setWebhook(`${publicUrl}/tg/webhook`, { secret_token: webhookSecret });
+    const https = publicUrl.startsWith("https://");
+    const poll = process.env.TELEGRAM_TRANSPORT === "polling";
+    if (telegramBot && https) {
       await telegramBot.api.setChatMenuButton({
         menu_button: {
           type: "web_app",
@@ -103,8 +104,11 @@ const boot = async () => {
           web_app: { url: miniAppUrl(publicUrl) },
         },
       });
+    }
+    if (telegramBot && https && !poll) {
+      await telegramBot.api.setWebhook(`${publicUrl}/tg/webhook`, { secret_token: webhookSecret });
     } else if (telegramBot) {
-      console.log("telegram polling: PUBLIC_URL не https, webhook не ставится");
+      console.log(poll ? "telegram polling: TELEGRAM_TRANSPORT=polling" : "telegram polling: PUBLIC_URL не https, webhook не ставится");
       void telegramBot.start();
     } else {
       console.log("TELEGRAM_BOT_TOKEN пуст — бот Telegram не запущен, сайт работает");
