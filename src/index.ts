@@ -97,13 +97,17 @@ const boot = async () => {
     const https = publicUrl.startsWith("https://");
     const poll = process.env.TELEGRAM_TRANSPORT === "polling";
     if (telegramBot && https) {
-      await telegramBot.api.setChatMenuButton({
-        menu_button: {
-          type: "web_app",
-          text: "Карта",
-          web_app: { url: miniAppUrl(publicUrl) },
-        },
-      });
+      void telegramBot.api
+        .setChatMenuButton({
+          menu_button: {
+            type: "web_app",
+            text: "Карта",
+            web_app: { url: miniAppUrl(publicUrl) },
+          },
+        })
+        .catch((error: unknown) => {
+          console.error("telegram menu button", error);
+        });
     }
     if (telegramBot && https && !poll) {
       await telegramBot.api.setWebhook(`${publicUrl}/tg/webhook`, { secret_token: webhookSecret });
