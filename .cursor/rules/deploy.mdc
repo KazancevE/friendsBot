@@ -1,0 +1,21 @@
+---
+description: Выкладка демо салона на сервер reg.ru за существующим nginx.
+alwaysApply: false
+---
+
+# Выкладка демо
+
+Хост `root@194.67.101.109`. Каталог `/opt/<slug>`, свой `.env`, свой `docker compose`. Домен из брифа. Уже занято: Daddyson — `/opt/daddyson`, порт `127.0.0.1:3020`, сайт `daddy.mieganalytics.online`; BRO — `/opt/bro`, порт `127.0.0.1:3021`, сайт `bro.mieganalytics.online`.
+
+Не делать:
+
+- не заходить в `/opt/verstak` и не править `crm.mieganalytics.online` (прокси на `127.0.0.1:43123`);
+- не поднимать `docker-compose.prod.yml` и не запускать `scripts/bootstrap-ubuntu.sh` — Caddy публикует 80/443;
+- не биндить приложение на `0.0.0.0`. Только `127.0.0.1:<свободный порт>:3000`. Порт проверить `ss -ltnp`, 3020 и 3021 заняты;
+- не печатать `.env`.
+
+Живые демо крутятся обычным `docker compose` (файл `docker-compose.yml`), с `ALLOW_DEMO_GUEST=true` и `TELEGRAM_TRANSPORT=polling`. У daddyson порт задаёт серверный `docker-compose.override.yml` (в git его нет). У bro строка порта уже в `docker-compose.yml`: `127.0.0.1:${HOST_PORT:-3000}:3000`.
+
+Nginx: образец `/etc/nginx/sites-available/bro.mieganalytics.online`. HTTP 80 редирект на HTTPS, ACME из `/var/www/certbot`, HTTPS проксирует на `127.0.0.1:<порт>` с заголовками `Host`, `X-Forwarded-For`, `X-Forwarded-Proto`. Сертификат — certbot webroot `/var/www/certbot` (так записано в `/etc/letsencrypt/renewal/<домен>.conf`). Потом `nginx -t` и `systemctl reload nginx`.
+
+Проверка: `curl -fsS https://<домен>/health/ready` → `{"ok":true}`. Дальше сайт, `/app/?demo=1`, `/admin/`.

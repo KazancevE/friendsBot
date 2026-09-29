@@ -1,0 +1,28 @@
+---
+description: Какие команды проверки есть в репозитории и чего они не делают.
+alwaysApply: false
+---
+
+# Проверки
+
+Из `package.json`:
+
+```sh
+npm test
+npm run build
+```
+
+`npm test` запускает `vitest run` по `tests/**/*.test.ts`. Docker и Postgres для этого не нужны. `vitest.config.ts` ставит `VENUE_TIMEZONE=Europe/Moscow`. У салона в `.env.example` пояс `Asia/Barnaul`. Эту строку в конфиге тестов не менять при смене клиента: старые тесты завязаны на московский календарь.
+
+`npm run build` — Vite-сборки `miniapp/vite.config.ts` и `admin/vite.config.ts`.
+
+Живой процесс, когда стек поднят:
+
+```sh
+curl -s http://localhost:3000/health
+curl -s http://localhost:3000/health/ready
+```
+
+На сервере то же по публичному HTTPS. `/health` не трогает базу, `/health/ready` делает `SELECT 1`.
+
+После смены бренда: `npx tsx scripts/client-touchpoints.ts`. Команда печатает продуктовые файлы, где остались `Daddyson`, `daddyson-demo`, `Васильева 55` или `Училищный пер`. На ветке нового салона список должен быть пуст. Каталоги `docs/` и `AGENTS.md` она не читает.

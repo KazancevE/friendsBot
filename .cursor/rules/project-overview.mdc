@@ -1,0 +1,22 @@
+---
+description: Шаблон демо барбершопа на ветке daddyson. Продукт, карта кода и запреты.
+alwaysApply: true
+---
+
+# Шаблон салона
+
+Репозиторий friendsBot. Ветка `daddyson` — эталон демо записи и бонусной карты (Daddyson, Бийск). `main` — кальянная «Друзья», салон туда не мержить.
+
+Один процесс (`src/index.ts`): Postgres, сайт `site/`, Mini App `/app/`, админка `/admin/`, Telegram (grammY) и MAX. Сид салона — `prisma/seed-salon.ts`. Прайс шаблона — `prisma/data/prices_dikidi.csv` через `src/salon/catalog.ts`. Подробная карта — `AGENTS.md`.
+
+Новый клиент: бриф `docs/clients/<slug>/brief.md` по `docs/clients/_template/brief.md`, ветка от `daddyson`, процедура `docs/new-client.md`. Образец уже сделанного второго салона — ветка `bro` (там факты в `src/venue/salon.ts`; на `daddyson` этого файла нет).
+
+Запреты:
+
+- Не мержить в `main`. PR клиента — черновик в `daddyson`.
+- Один клиент — одна ветка от `daddyson`, не от `bro` и не поверх другого салона.
+- Секреты только в `.env`. Не коммитить и не логировать токены, пароли, дампы.
+- Не трогать `/opt/verstak` и nginx-сайт `crm.mieganalytics.online`.
+- На `194.67.101.109` не запускать `scripts/bootstrap-ubuntu.sh` и `docker-compose.prod.yml` (Caddy займёт 80/443, их уже держит nginx).
+- Не писать контактам салона и не рассылать по базе. Админский Telegram по умолчанию `500459806`.
+- В тексты попадают только факты брифа со ссылкой на источник.
