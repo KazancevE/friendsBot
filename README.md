@@ -69,6 +69,7 @@ curl -s http://localhost:3000/health
 4. Mini App: в BotFather укажите `https://ваш-домен/app/`. Локально без HTTPS бот ходит long polling, webhook не ставится.
 5. На HTTPS (`PUBLIC_URL` начинается с `https://`) процесс сам вызывает `setWebhook` на `/tg/webhook`. Если Telegram не открывает входящее соединение до VPS, поставьте `TELEGRAM_TRANSPORT=polling`: бот забирает апдейты сам, кнопка «Карта» всё равно ведёт на `PUBLIC_URL`.
 6. Если с сервера не открывается `api.telegram.org`, укажите `TELEGRAM_PROXY` (`socks5h://` или `http://`). Через него идут и polling, и отправка сообщений.
+7. Кнопка «Карта» должна принадлежать боту с тем же `TELEGRAM_BOT_TOKEN`. Mini App проверяет `initData` и показывает карту, только если человек уже нажал «Старт», «Согласен» и отправил телефон. Иначе на экране написано, что сделать в чате. В полноэкранном режиме шапка учитывает `safeAreaInset` и `contentSafeAreaInset`, чтобы логотип не заезжал под кнопки Telegram. У MAX тот же вход через `initData` и отступ `env(safe-area-inset-*)`, отдельных insets у моста MAX нет.
 
 ### MAX
 
