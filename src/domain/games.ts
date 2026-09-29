@@ -9,7 +9,7 @@ import {
 import { DomainError } from "./errors.ts";
 import type { Role } from "./types.ts";
 import { rankScores } from "./score-ranking.ts";
-import { MOSCOW, weekStartMoscow } from "./week.ts";
+import { appTimezone, weekStartMoscow } from "./week.ts";
 import { toWeeklyPoints } from "./weekly-points.ts";
 
 const LEADERBOARD_TOP = 10;
@@ -179,7 +179,7 @@ const playedGameToday = async (
   gameId: string,
   now: Date,
 ) => {
-  const dayStart = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day").toJSDate();
+  const dayStart = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day").toJSDate();
   const logs = await store.listRecentGameSessionLogs(userId, gameId, 12);
   return logs.some((log) => log.accepted && log.createdAt >= dayStart);
 };

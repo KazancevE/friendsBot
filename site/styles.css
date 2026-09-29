@@ -1,0 +1,142 @@
+:root {
+  color-scheme: dark;
+  --bg: #141414;
+  --bg-2: #1e1e1e;
+  --panel: #262626;
+  --ink: #f6f3ef;
+  --muted: #b7aea6;
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #c44650;
+  --accent-2: #ad2323;
+  --wood: #8a5a3a;
+  font-family: Manrope, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(196, 70, 80, 0.28), transparent 55%),
+    radial-gradient(900px 400px at 100% 0%, rgba(138, 90, 58, 0.18), transparent 50%),
+    var(--bg);
+  color: var(--ink);
+}
+a { color: inherit; }
+img { max-width: 100%; }
+
+.wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 22px 0;
+}
+.mark { line-height: 0.85; }
+.mark b {
+  display: block;
+  font-family: "Great Vibes", cursive;
+  font-weight: 400;
+  font-size: 46px;
+}
+.mark span {
+  display: block;
+  margin-top: 2px;
+  letter-spacing: 0.28em;
+  font-family: Oswald, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+}
+.nav { display: flex; gap: 18px; color: var(--muted); font-size: 14px; }
+.nav a { text-decoration: none; }
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 28px;
+  align-items: center;
+  padding: 18px 0 48px;
+}
+.hero h1 {
+  font-family: Oswald, sans-serif;
+  font-weight: 500;
+  font-size: clamp(40px, 6vw, 68px);
+  line-height: 0.95;
+  margin: 0 0 12px;
+  letter-spacing: 0.02em;
+}
+.lede { font-size: 18px; color: var(--muted); max-width: 46ch; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.btn {
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  color: white;
+  font-weight: 700;
+}
+.btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+.hero-card {
+  background: linear-gradient(160deg, #2a2a2a, #1a1a1a);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 28px;
+  min-height: 280px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+}
+.hero-card .script {
+  font-family: "Great Vibes", cursive;
+  font-size: 84px;
+  margin: 10px 0 0;
+}
+.hero-card .caps { letter-spacing: 0.42em; font-family: Oswald, sans-serif; color: var(--muted); }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; max-width: 52ch; }
+.badges span {
+  border: 1px solid rgba(196, 70, 80, 0.45);
+  background: rgba(196, 70, 80, 0.12);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.stats { display: flex; gap: 18px; margin-top: 22px; color: var(--muted); font-size: 14px; }
+.stats strong { display: block; color: var(--ink); font-size: 20px; }
+
+section { padding: 18px 0 36px; }
+h2 { font-family: Oswald, sans-serif; font-weight: 500; letter-spacing: 0.04em; font-size: 32px; margin: 0 0 14px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.card, .master, .price {
+  background: rgba(38, 38, 38, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px 18px;
+}
+.card h3, .master strong { margin: 0 0 6px; }
+.muted { color: var(--muted); }
+.masters, .prices { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.master span, .price span { color: var(--muted); font-size: 13px; }
+.level { color: var(--accent); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.loyalty {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  background: linear-gradient(120deg, #2a1719, #1c1c1c 55%);
+  border-radius: 24px;
+  padding: 22px;
+  border: 1px solid rgba(196, 70, 80, 0.35);
+}
+footer { color: var(--muted); padding: 10px 0 40px; font-size: 13px; }
+
+@media (max-width: 800px) {
+  .hero, .grid, .loyalty { grid-template-columns: 1fr; }
+  .nav { display: none; }
+  .hero-card .script { font-size: 64px; }
+}

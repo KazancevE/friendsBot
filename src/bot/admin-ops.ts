@@ -14,7 +14,7 @@ import {
 } from "../domain/stats.ts";
 import type { BotContext } from "./context.ts";
 import { enterConversation } from "./enter-conversation.ts";
-import { MOSCOW } from "../domain/week.ts";
+import { appTimezone } from "../domain/week.ts";
 
 type BotConversation = Conversation<BotContext, BotContext>;
 
@@ -45,7 +45,7 @@ const formatStaffLogLine = async (ctx: BotContext, row: Awaited<ReturnType<typeo
   const guest = row.guestId === null ? null : await ctx.store.findUserById(row.guestId);
   const actorName = actor ? `${actor.firstName ?? ""}`.trim() || "—" : "—";
   const guestName = guest ? `${guest.firstName ?? ""} ${guest.lastName ?? ""}`.trim() || "—" : "—";
-  const at = DateTime.fromJSDate(row.createdAt, { zone: MOSCOW }).toFormat("dd.MM HH:mm");
+  const at = DateTime.fromJSDate(row.createdAt, { zone: appTimezone() }).toFormat("dd.MM HH:mm");
   const payload =
     row.action === "check" && typeof row.payload.checkRubles === "number"
       ? ` · чек ${row.payload.checkRubles} ₽`

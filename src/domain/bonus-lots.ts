@@ -2,7 +2,7 @@ import { DateTime } from "luxon";
 import { DomainError } from "./errors.ts";
 import { expiresAfterDays } from "./settings.ts";
 import type { BonusLotCategory, BonusLotRecord, LedgerType, Settings } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type CreditLedgerType =
@@ -112,9 +112,9 @@ export function availableBalance(lots: ReadonlyArray<BonusLotRecord>, now: Date)
 }
 
 export function expiresOnMoscowDay(expiresAt: Date, daysFromToday: number, now: Date): boolean {
-  const today = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day");
+  const today = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day");
   const target = today.plus({ days: daysFromToday });
-  const expDay = DateTime.fromJSDate(expiresAt, { zone: MOSCOW }).startOf("day");
+  const expDay = DateTime.fromJSDate(expiresAt, { zone: appTimezone() }).startOf("day");
   return expDay.equals(target);
 }
 

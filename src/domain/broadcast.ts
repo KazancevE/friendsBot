@@ -3,7 +3,7 @@ import type { Api } from "grammy";
 import { DomainError } from "./errors.ts";
 import { isBirthdayWeek } from "./birthday.ts";
 import type { BroadcastSegmentId } from "./types.ts";
-import { MOSCOW, weekStartMoscow } from "./week.ts";
+import { appTimezone, weekStartMoscow } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type BroadcastSegmentParams = {
@@ -40,12 +40,12 @@ export async function recipientsForSegment(
     case "all":
       return filtered.map((guest) => guest.telegramId);
     case "inactive_30d": {
-      const since = DateTime.fromJSDate(input.now, { zone: MOSCOW }).minus({ days: 30 }).toJSDate();
+      const since = DateTime.fromJSDate(input.now, { zone: appTimezone() }).minus({ days: 30 }).toJSDate();
       const activeIds = new Set(await store.listGuestIdsActiveSince(since));
       return filtered.filter((guest) => !activeIds.has(guest.id)).map((guest) => guest.telegramId);
     }
     case "active_7d": {
-      const since = DateTime.fromJSDate(input.now, { zone: MOSCOW }).minus({ days: 7 }).toJSDate();
+      const since = DateTime.fromJSDate(input.now, { zone: appTimezone() }).minus({ days: 7 }).toJSDate();
       const activeIds = new Set(await store.listGuestIdsActiveSince(since));
       return filtered.filter((guest) => activeIds.has(guest.id)).map((guest) => guest.telegramId);
     }
@@ -68,7 +68,7 @@ export async function recipientsForSegment(
     case "weekly_top": {
       const place = input.params?.weeklyTopPlace ?? 3;
       const previousWeekStart = weekStartMoscow(
-        DateTime.fromJSDate(input.now, { zone: MOSCOW }),
+        DateTime.fromJSDate(input.now, { zone: appTimezone() }),
       ).minus({ weeks: 1 });
       const winnerIds = new Set(
         await store.listWeeklyAwardUserIds(previousWeekStart.toJSDate(), place),

@@ -15,6 +15,7 @@ const config = loadConfig();
 const store = new PrismaStore(prisma);
 const bot = createBot(config.botToken, store, {
   adminTelegramId: config.adminTelegramId,
+  adminTelegramIds: config.adminTelegramIds,
   publicUrl: config.publicUrl,
 });
 

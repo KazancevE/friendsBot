@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import { maskPhone } from "./phone.ts";
 import type { GuestListFilter, GuestListRow, GuestListSort } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type GuestListPage = {
@@ -45,7 +45,7 @@ const matchesFilter = async (
     return row.broadcastOptOut;
   }
   if (filter === "inactive_30d") {
-    const since = DateTime.fromJSDate(now, { zone: MOSCOW }).minus({ days: 30 }).toJSDate();
+    const since = DateTime.fromJSDate(now, { zone: appTimezone() }).minus({ days: 30 }).toJSDate();
     if (row.lastVisitAt === null) {
       return true;
     }

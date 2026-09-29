@@ -1,3 +1,5 @@
+import { applySafeAreaCssVariables, type EdgeInsets } from "../../src/web/safe-area.ts";
+
 type TelegramHapticFeedback = {
   readonly impactOccurred: (style: "light" | "medium" | "heavy") => void;
 };
@@ -45,29 +47,34 @@ type TelegramBackButton = {
   readonly offClick: (callback: () => void) => void;
 };
 
-type SafeAreaInset = {
-  readonly top: number;
-  readonly bottom: number;
-  readonly left: number;
-  readonly right: number;
-};
+type SafeAreaInset = EdgeInsets;
 
 type TelegramNamespace = {
   readonly WebApp: TelegramWebApp;
 };
 
 const APP_BG = "#1a1210";
-const WEBAPP_BUILD = "20260831";
+const WEBAPP_BUILD = "20260929";
 
-const applySafeAreaInsets = (webApp: TelegramWebApp) => {
-  const inset = webApp.contentSafeAreaInset ?? webApp.safeAreaInset;
-  if (inset === undefined) {
-    return;
-  }
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-top", `${inset.top}px`);
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-bottom", `${inset.bottom}px`);
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-left", `${inset.left}px`);
-  document.documentElement.style.setProperty("--tg-content-safe-area-inset-right", `${inset.right}px`);
+type InsetHost = {
+  safeAreaInset?: SafeAreaInset;
+  contentSafeAreaInset?: SafeAreaInset;
+  onEvent?: (eventType: string, callback: () => void) => void;
+};
+
+const applySafeAreaInsets = (webApp: InsetHost) => {
+  applySafeAreaCssVariables(document.documentElement, {
+    safeAreaInset: webApp.safeAreaInset,
+    contentSafeAreaInset: webApp.contentSafeAreaInset,
+  });
+};
+
+const watchSafeArea = (webApp: InsetHost) => {
+  const apply = () => applySafeAreaInsets(webApp);
+  apply();
+  webApp.onEvent?.("safeAreaChanged", apply);
+  webApp.onEvent?.("contentSafeAreaChanged", apply);
+  webApp.onEvent?.("viewportChanged", apply);
 };
 
 const telegramWebApp = (): TelegramWebApp | undefined => {
@@ -75,35 +82,58 @@ const telegramWebApp = (): TelegramWebApp | undefined => {
   return telegram?.WebApp;
 };
 
+type MaxWebApp = InsetHost & {
+  initData?: string;
+  ready?: () => void;
+};
+
+const maxWebApp = (): MaxWebApp | undefined => {
+  const host = window as Window & { WebApp?: MaxWebApp };
+  return host.WebApp;
+};
+
 export const readyTelegram = () => {
   const webApp = telegramWebApp();
-  if (!webApp) {
-    return;
+  if (webApp) {
+    webApp.ready();
+    webApp.setHeaderColor?.(APP_BG);
+    webApp.setBackgroundColor?.(APP_BG);
+    webApp.expand?.();
+    if (webApp.isVersionAtLeast?.("8.0")) {
+      webApp.requestFullscreen?.();
+    }
+    webApp.disableVerticalSwipes?.();
+    document.documentElement.dataset.build = WEBAPP_BUILD;
+    watchSafeArea(webApp);
   }
-
-  webApp.ready();
-  webApp.setHeaderColor?.(APP_BG);
-  webApp.setBackgroundColor?.(APP_BG);
-  webApp.expand?.();
-
-  if (webApp.isVersionAtLeast?.("8.0")) {
-    webApp.requestFullscreen?.();
+  const maxApp = maxWebApp();
+  if (maxApp) {
+    maxApp.ready?.();
+    watchSafeArea(maxApp);
   }
+};
 
-  webApp.disableVerticalSwipes?.();
+export type LaunchInit = { channel: "telegram" | "max"; initData: string };
 
-  document.documentElement.dataset.build = WEBAPP_BUILD;
-
-  applySafeAreaInsets(webApp);
-  webApp.onEvent?.("contentSafeAreaChanged", () => {
-    applySafeAreaInsets(webApp);
-  });
-  webApp.onEvent?.("safeAreaChanged", () => {
-    applySafeAreaInsets(webApp);
-  });
-  webApp.onEvent?.("viewportChanged", () => {
-    applySafeAreaInsets(webApp);
-  });
+export const readLaunchInitData = (): LaunchInit | null => {
+  const telegramData = telegramWebApp()?.initData ?? "";
+  if (telegramData) {
+    return { channel: "telegram", initData: telegramData };
+  }
+  const maxData = maxWebApp()?.initData ?? "";
+  if (maxData) {
+    return { channel: "max", initData: maxData };
+  }
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const fromTelegramHash = hash.get("tgWebAppData");
+  if (fromTelegramHash) {
+    return { channel: "telegram", initData: fromTelegramHash };
+  }
+  const fromMaxHash = hash.get("WebAppData");
+  if (fromMaxHash) {
+    return { channel: "max", initData: fromMaxHash };
+  }
+  return null;
 };
 
 export const initData = () => {

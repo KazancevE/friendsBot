@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import type { LedgerType, StaffActionKind } from "./types.ts";
-import { MOSCOW } from "./week.ts";
+import { appTimezone } from "./week.ts";
 import type { Store } from "../store/types.ts";
 
 export type StatsPeriod = {
@@ -30,12 +30,12 @@ export type StatsSummary = {
 };
 
 export const periodToday = (now: Date): StatsPeriod => {
-  const start = DateTime.fromJSDate(now, { zone: MOSCOW }).startOf("day");
+  const start = DateTime.fromJSDate(now, { zone: appTimezone() }).startOf("day");
   return { from: start.toJSDate(), to: now };
 };
 
 export const periodLastDays = (now: Date, days: number): StatsPeriod => {
-  const end = DateTime.fromJSDate(now, { zone: MOSCOW });
+  const end = DateTime.fromJSDate(now, { zone: appTimezone() });
   const start = end.minus({ days: days - 1 }).startOf("day");
   return { from: start.toJSDate(), to: now };
 };
@@ -97,8 +97,8 @@ export async function getStatsSummary(store: Store, period: StatsPeriod, now: Da
   const periodDays = Math.max(
     1,
     Math.ceil(
-      DateTime.fromJSDate(period.to, { zone: MOSCOW }).diff(
-        DateTime.fromJSDate(period.from, { zone: MOSCOW }),
+      DateTime.fromJSDate(period.to, { zone: appTimezone() }).diff(
+        DateTime.fromJSDate(period.from, { zone: appTimezone() }),
         "days",
       ).days,
     ),
@@ -158,19 +158,19 @@ export type StatsHeatmap = {
   total: number;
 };
 
-const moscowWeekKey = (date: Date) => DateTime.fromJSDate(date, { zone: MOSCOW }).toFormat("yyyy-'W'WW");
+const moscowWeekKey = (date: Date) => DateTime.fromJSDate(date, { zone: appTimezone() }).toFormat("yyyy-'W'WW");
 
-const moscowMonthKey = (date: Date) => DateTime.fromJSDate(date, { zone: MOSCOW }).toFormat("yyyy-MM");
+const moscowMonthKey = (date: Date) => DateTime.fromJSDate(date, { zone: appTimezone() }).toFormat("yyyy-MM");
 
 const bucketKeysInPeriod = (period: StatsPeriod, granularity: StatsGranularity): string[] => {
   if (granularity === "day") {
     return dayKeysInPeriod(period);
   }
-  const start = DateTime.fromJSDate(period.from, { zone: MOSCOW }).startOf("day");
-  const end = DateTime.fromJSDate(period.to, { zone: MOSCOW }).startOf("day");
+  const start = DateTime.fromJSDate(period.from, { zone: appTimezone() }).startOf("day");
+  const end = DateTime.fromJSDate(period.to, { zone: appTimezone() }).startOf("day");
   const keys: string[] = [];
   let cursor =
-    granularity === "week" ? start.startOf("week") : DateTime.fromObject({ year: start.year, month: start.month, day: 1 }, { zone: MOSCOW });
+    granularity === "week" ? start.startOf("week") : DateTime.fromObject({ year: start.year, month: start.month, day: 1 }, { zone: appTimezone() });
   while (cursor <= end) {
     keys.push(granularity === "week" ? cursor.toFormat("yyyy-'W'WW") : cursor.toFormat("yyyy-MM"));
     cursor = granularity === "week" ? cursor.plus({ weeks: 1 }) : cursor.plus({ months: 1 });
@@ -196,7 +196,7 @@ const buildHeatmapFromVisits = (dates: readonly Date[]) => {
     }
   }
   for (const date of dates) {
-    const moscow = DateTime.fromJSDate(date, { zone: MOSCOW });
+    const moscow = DateTime.fromJSDate(date, { zone: appTimezone() });
     const key = `${moscow.weekday}:${moscow.hour}`;
     cells.set(key, (cells.get(key) ?? 0) + 1);
   }
@@ -245,11 +245,11 @@ export type StatsStaffRow = {
   actions: number;
 };
 
-const moscowDayKey = (date: Date) => DateTime.fromJSDate(date, { zone: MOSCOW }).toFormat("yyyy-MM-dd");
+const moscowDayKey = (date: Date) => DateTime.fromJSDate(date, { zone: appTimezone() }).toFormat("yyyy-MM-dd");
 
 const dayKeysInPeriod = (period: StatsPeriod): string[] => {
-  const start = DateTime.fromJSDate(period.from, { zone: MOSCOW }).startOf("day");
-  const end = DateTime.fromJSDate(period.to, { zone: MOSCOW }).startOf("day");
+  const start = DateTime.fromJSDate(period.from, { zone: appTimezone() }).startOf("day");
+  const end = DateTime.fromJSDate(period.to, { zone: appTimezone() }).startOf("day");
   const keys: string[] = [];
   let cursor = start;
   while (cursor <= end) {
@@ -369,8 +369,8 @@ export async function getStatsStaff(
 };
 
 export const formatStatsSummary = (summary: StatsSummary): string => {
-  const from = DateTime.fromJSDate(summary.period.from, { zone: MOSCOW }).toFormat("dd.MM.yyyy");
-  const to = DateTime.fromJSDate(summary.period.to, { zone: MOSCOW }).toFormat("dd.MM.yyyy HH:mm");
+  const from = DateTime.fromJSDate(summary.period.from, { zone: appTimezone() }).toFormat("dd.MM.yyyy");
+  const to = DateTime.fromJSDate(summary.period.to, { zone: appTimezone() }).toFormat("dd.MM.yyyy HH:mm");
   return [
     `📊 Статистика (${from} — ${to})`,
     "",
