@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
-  --bg: #141414;
-  --bg-2: #1e1e1e;
-  --panel: #262626;
-  --ink: #f6f3ef;
-  --muted: #b7aea6;
-  --line: rgba(255, 255, 255, 0.08);
-  --accent: #c44650;
-  --accent-2: #ad2323;
-  --wood: #8a5a3a;
+  --bg: #000000;
+  --bg-2: #111111;
+  --panel: #161616;
+  --ink: #ffffff;
+  --muted: #c8c8c8;
+  --line: rgba(255, 255, 255, 0.12);
+  --accent: #F0B820;
+  --accent-2: #c4920c;
+  --wood: #F0B820;
   font-family: Manrope, "Segoe UI", sans-serif;
 }
 
@@ -16,8 +16,7 @@
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(196, 70, 80, 0.28), transparent 55%),
-    radial-gradient(900px 400px at 100% 0%, rgba(138, 90, 58, 0.18), transparent 50%),
+    radial-gradient(900px 420px at 8% -10%, rgba(240, 184, 32, 0.16), transparent 55%),
     var(--bg);
   color: var(--ink);
 }
@@ -31,21 +30,8 @@ img { max-width: 100%; }
   align-items: center;
   padding: 22px 0;
 }
-.mark { line-height: 0.85; }
-.mark b {
-  display: block;
-  font-family: "Great Vibes", cursive;
-  font-weight: 400;
-  font-size: 46px;
-}
-.mark span {
-  display: block;
-  margin-top: 2px;
-  letter-spacing: 0.28em;
-  font-family: Oswald, sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-}
+.brand img { height: 72px; width: auto; display: block; }
+.eyebrow { letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); font-size: 12px; margin: 0 0 8px; }
 .nav { display: flex; gap: 18px; color: var(--muted); font-size: 14px; }
 .nav a { text-decoration: none; }
 
@@ -76,29 +62,24 @@ img { max-width: 100%; }
   min-height: 46px;
   padding: 0 18px;
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
-  color: white;
+  background: var(--accent);
+  color: #111;
   font-weight: 700;
 }
 .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
 .hero-card {
-  background: linear-gradient(160deg, #2a2a2a, #1a1a1a);
-  border: 1px solid var(--line);
+  background: #000;
+  border: 1px solid rgba(240, 184, 32, 0.45);
   border-radius: 28px;
-  padding: 28px;
+  padding: 18px 18px 8px;
   min-height: 280px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
 }
-.hero-card .script {
-  font-family: "Great Vibes", cursive;
-  font-size: 84px;
-  margin: 10px 0 0;
-}
-.hero-card .caps { letter-spacing: 0.42em; font-family: Oswald, sans-serif; color: var(--muted); }
+.hero-card img { width: 100%; height: auto; display: block; }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; max-width: 52ch; }
 .badges span {
-  border: 1px solid rgba(196, 70, 80, 0.45);
-  background: rgba(196, 70, 80, 0.12);
+  border: 1px solid rgba(240, 184, 32, 0.45);
+  background: rgba(240, 184, 32, 0.1);
   color: var(--ink);
   border-radius: 999px;
   padding: 6px 12px;
@@ -128,15 +109,15 @@ th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--lin
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: 16px;
-  background: linear-gradient(120deg, #2a1719, #1c1c1c 55%);
+  background: #111;
   border-radius: 24px;
   padding: 22px;
-  border: 1px solid rgba(196, 70, 80, 0.35);
+  border: 1px solid rgba(240, 184, 32, 0.35);
 }
 footer { color: var(--muted); padding: 10px 0 40px; font-size: 13px; }
 
 @media (max-width: 800px) {
   .hero, .grid, .loyalty { grid-template-columns: 1fr; }
   .nav { display: none; }
-  .hero-card .script { font-size: 64px; }
+  .brand img { height: 56px; }
 }

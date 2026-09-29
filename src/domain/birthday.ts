@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import type { Api } from "grammy";
+import { venue } from "../venue/salon.ts";
 import { createLotForCredit } from "./bonus-lots.ts";
 import { expiresAfterDays } from "./settings.ts";
 import type { Store } from "../store/types.ts";
@@ -129,7 +130,7 @@ export async function sendBirthdayWarnings(store: Store, api: Api, now: Date) {
     const ok = await notifyGuest(
       api,
       user,
-      "Скоро ваш день рождения — в Daddyson для вас бонус на карте.",
+      venue.copy.birthdaySoon,
     );
     if (ok) {
       await store.updateUser(user.id, { birthdayWarnedYear: year });
@@ -150,7 +151,7 @@ export async function sendBirthdayGreetings(store: Store, api: Api, now: Date) {
     if (!isBirthdayToday(user.birthday, now)) {
       continue;
     }
-    const ok = await notifyGuest(api, user, "С днём рождения! Бонус уже на карте Daddyson.");
+    const ok = await notifyGuest(api, user, venue.copy.birthdayToday);
     if (ok) {
       await store.updateUser(user.id, { birthdayGreetedYear: year });
       sent += 1;

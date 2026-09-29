@@ -514,7 +514,7 @@ model Branch {
   slug         String         @unique
   name         String
   address      String
-  city         String         @default("Бийск")
+  city         String         @default("Барнаул")
   openMin      Int            @default(600)
   closeMin     Int            @default(1260)
   active       Boolean        @default(true)

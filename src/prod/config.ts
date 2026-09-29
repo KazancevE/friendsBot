@@ -1,7 +1,8 @@
 export type ProductionEnv = Record<string, string | undefined>;
 
-const DEMO_PASSWORDS = new Set(["daddyson-demo", "admin", "password", "changeme"]);
-const DEMO_SECRETS = new Set(["daddyson-demo-session", "change-me-please", "secret"]);
+const DEMO_PASSWORDS = new Set(["daddyson-demo", "bro-demo", "admin", "password", "changeme"]);
+const DEMO_SECRETS = new Set(["daddyson-demo-session", "bro-demo-session", "change-me-please", "secret"]);
+const DEMO_DB_PASSWORDS = new Set(["daddyson", "bro", "postgres", "password"]);
 
 export const productionProblems = (env: ProductionEnv): string[] => {
   if (env.APP_ENV !== "production") {
@@ -27,10 +28,10 @@ export const productionProblems = (env: ProductionEnv): string[] => {
   }
   if (!database.startsWith("postgresql://") && !database.startsWith("postgres://")) {
     problems.push("DATABASE_URL не задан");
-  } else if (database.includes("://daddyson:daddyson@")) {
+  } else if (database.includes("://daddyson:daddyson@") || database.includes("://bro:bro@")) {
     problems.push("DATABASE_URL использует пароль демо");
   }
-  if (!postgresPassword || postgresPassword === "daddyson") {
+  if (!postgresPassword || DEMO_DB_PASSWORDS.has(postgresPassword)) {
     problems.push("POSTGRES_PASSWORD пуст или совпадает с демо");
   }
   if (!publicUrl.startsWith("https://")) {
@@ -38,9 +39,6 @@ export const productionProblems = (env: ProductionEnv): string[] => {
   }
   if (!domain || domain === "localhost") {
     problems.push("CADDY_DOMAIN не задан");
-  }
-  if (!env.TELEGRAM_BOT_TOKEN?.trim()) {
-    problems.push("TELEGRAM_BOT_TOKEN пуст: без него нет ни бота, ни тревог");
   }
   if (!env.DEV_ALERT_CHAT_ID?.trim()) {
     problems.push("DEV_ALERT_CHAT_ID пуст");

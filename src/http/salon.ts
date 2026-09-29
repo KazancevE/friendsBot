@@ -16,6 +16,8 @@ import type { Notifier } from "../salon/outbound.ts";
 import { canDo, canDeleteAccount, scopedBranch } from "../prod/access.ts";
 import { authenticateAdmin, type StoredAdmin } from "../prod/admin-auth.ts";
 import { consentPageHtml, operatorFromEnv, privacyPolicyHtml } from "../prod/policy-page.ts";
+import type { InboundMessage, OutMessage } from "../salon/outbound.ts";
+import { publicBrand } from "../venue/salon.ts";
 import { hashPassword, passwordAccepted } from "../prod/passwords.ts";
 import { clientIp, loginAttempt } from "../prod/rate-limit.ts";
 
@@ -46,6 +48,7 @@ export const createSalonRoutes = (deps: {
   maxBotToken?: string;
   links: { telegram: string | null; max: string | null; app: string };
   onNotice?: (text: string) => Promise<void>;
+  flow?: { handle(inbound: InboundMessage): Promise<{ messages: OutMessage[] }> };
 }) => {
   const app = new Hono();
 
@@ -61,7 +64,7 @@ export const createSalonRoutes = (deps: {
 
   app.get("/api/salon/public", async (c) => {
     const catalog = await deps.salon.publicCatalog();
-    return c.json({ ...catalog, links: deps.links });
+    return c.json({ ...catalog, links: deps.links, brand: publicBrand() });
   });
 
   app.get("/api/salon/demo", async (c) => {
@@ -74,6 +77,31 @@ export const createSalonRoutes = (deps: {
     }
     const token = issueGuestToken(deps.sessionSecret, user.id, 60 * 60 * 24 * 14);
     return c.json({ token, userId: user.id });
+  });
+
+  app.post("/api/salon/demo/chat", async (c) => {
+    if (!deps.allowDemoGuest || !deps.flow) {
+      return c.json({ message: "Демо-чат выключен" }, 404);
+    }
+    const body = (await c.req.json()) as {
+      externalId?: string;
+      text?: string;
+      callback?: string;
+      phone?: string;
+      firstName?: string;
+    };
+    if (!body.externalId || !/^\d{5,18}$/.test(body.externalId)) {
+      return c.json({ message: "Нужен числовой id" }, 400);
+    }
+    const result = await deps.flow.handle({
+      channel: "telegram",
+      externalId: body.externalId,
+      text: body.text,
+      callback: body.callback,
+      phone: body.phone,
+      firstName: body.firstName,
+    });
+    return c.json({ messages: result.messages });
   });
 
   app.get("/api/salon/me", async (c) => {
@@ -267,6 +295,13 @@ export const createSalonRoutes = (deps: {
     }
     return true;
   };
+
+  app.get("/api/salon/admin/promos", async (c) => {
+    if (!ownerOnly(c)) {
+      return c.json({ message: "Только владелец" }, 403);
+    }
+    return c.json(await deps.salon.examplePromos());
+  });
 
   app.get("/api/salon/admin/session", (c) => {
     const actor = actorFrom(c);

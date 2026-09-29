@@ -20,7 +20,7 @@ const money = (value: number, from = false) => `${from ? "от " : ""}${value.to
 const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 
 const authHeader = () => {
-  const token = sessionStorage.getItem("daddyson-token");
+  const token = sessionStorage.getItem("bro-token");
   return token ? { authorization: `Bearer ${token}` } : {};
 };
 
@@ -40,7 +40,7 @@ const escapeText = (value: string) =>
   value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
 
 const showGate = (root: HTMLElement, message: string) => {
-  root.innerHTML = `<p class="mark">Daddyson</p><div class="caps">BARBERSHOP · БИЙСК</div><p class="notice">${escapeText(message)}</p>`;
+  root.innerHTML = `<img class="logo" src="/site/logo.png" alt="BRO" /><div class="caps">БАРНАУЛ</div><p class="notice">${escapeText(message)}</p>`;
 };
 
 const openMessengerSession = async () => {
@@ -55,7 +55,7 @@ const openMessengerSession = async () => {
   });
   const data = (await response.json().catch(() => ({}))) as { token?: string; message?: string };
   if (data.token) {
-    sessionStorage.setItem("daddyson-token", data.token);
+    sessionStorage.setItem("bro-token", data.token);
     return null;
   }
   return { message: data.message ?? "Не удалось открыть карту. Вернитесь в чат бота и нажмите «Старт»." };
@@ -68,11 +68,11 @@ export const bootSalonApp = async () => {
     return;
   }
   const params = new URLSearchParams(location.search);
-  if (!sessionStorage.getItem("daddyson-token") && params.get("demo") === "1") {
+  if (!sessionStorage.getItem("bro-token") && params.get("demo") === "1") {
     const demo = await api<{ token: string }>("/api/salon/demo");
-    sessionStorage.setItem("daddyson-token", demo.token);
+    sessionStorage.setItem("bro-token", demo.token);
   }
-  if (!sessionStorage.getItem("daddyson-token")) {
+  if (!sessionStorage.getItem("bro-token")) {
     try {
       const gate = await openMessengerSession();
       if (gate) {
@@ -91,8 +91,8 @@ export const bootSalonApp = async () => {
     if (screen === "card") {
       const card = await api<Card>("/api/salon/me");
       root.innerHTML = `
-        <p class="mark">Daddyson</p>
-        <div class="caps">BARBERSHOP · БИЙСК</div>
+        <img class="logo" src="/site/logo.png" alt="BRO" />
+        <div class="caps">БАРНАУЛ · ОДНА КАРТА</div>
         <div class="tabs">
           <button class="primary" type="button" id="tab-card">Карта</button>
           <button type="button" id="tab-book">Запись</button>
@@ -100,7 +100,7 @@ export const bootSalonApp = async () => {
         <section class="card">
           <div class="muted">${card.firstName ?? "Гость"}</div>
           <div class="balance">${card.balance} ₽</div>
-          <div>Кэшбэк ${card.cashbackPercent}% · общий на оба филиала</div>
+          <div>Кэшбэк ${card.cashbackPercent}% · общий на все филиалы</div>
           <p><img class="qr" alt="QR для кассы" src="${card.qrDataUrl}" /></p>
           <p class="muted">Покажите QR на кассе, чтобы списать бонусы.</p>
         </section>
@@ -115,7 +115,7 @@ export const bootSalonApp = async () => {
                 .join("")
             : `<p class="muted">Записей пока нет</p>`
         }</div>
-        <p class="muted">Приведите друга — обоим по ${card.referralBonus} ₽ после первого визита.<br>${card.referralLink}</p>`;
+        <p class="muted">Приведи друга — обоим по ${card.referralBonus} ₽ после первого визита.<br>${card.referralLink}</p>`;
       root.querySelector("#tab-book")?.addEventListener("click", () => {
         screen = "book";
         void paint();
@@ -131,7 +131,7 @@ export const bootSalonApp = async () => {
 
     const branches = await api<Branch[]>("/api/salon/branches");
     root.innerHTML = `
-      <p class="mark">Daddyson</p>
+      <img class="logo" src="/site/logo.png" alt="BRO" />
       <div class="tabs">
         <button type="button" id="tab-card">Карта</button>
         <button class="primary" type="button" id="tab-book">Запись</button>
@@ -214,7 +214,7 @@ export const bootSalonApp = async () => {
       masterBox.innerHTML = `<button type="button" data-id="any" class="primary">Любой мастер</button>${masters
         .map(
           (master) =>
-            `<button type="button" data-id="${master.id}">${master.name} · ${master.levelLabel} · ${money(master.priceRub, master.priceFrom)} · ${master.durationMinutes} мин</button>`,
+            `<button type="button" data-id="${master.id}">${master.name === master.levelLabel ? master.name : `${master.name} · ${master.levelLabel}`} · ${money(master.priceRub, master.priceFrom)} · ${master.durationMinutes} мин</button>`,
         )
         .join("")}`;
       masterBox.querySelectorAll("button").forEach((button) => {

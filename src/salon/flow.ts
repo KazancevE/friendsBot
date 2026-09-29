@@ -1,4 +1,6 @@
 import type { UserRecord } from "../domain/types.ts";
+import { venue } from "../venue/salon.ts";
+import { masterChoiceLabel } from "./catalog.ts";
 import { formatAppointmentWhen, formatMinutes, formatPrice } from "./format.ts";
 import type { InboundMessage, OutMessage } from "./outbound.ts";
 import type { OnboardingStep } from "./onboarding.ts";
@@ -61,7 +63,7 @@ export class SalonFlow {
       return this.cancelOne(user, inbound, data.slice(3), draft, step);
     }
     if (data.startsWith("rm:")) {
-      const messages = [this.menuMessage(user, "Ждём вас. Если планы изменятся — отмените запись в «Мои записи».")];
+      const messages = [this.menuMessage(user, "Ждём тебя. Если планы изменятся — отмени запись в «Мои записи».")];
       await this.persist(inbound, user.id, "menu", draft);
       return { userId: user.id, messages };
     }
@@ -102,7 +104,7 @@ export class SalonFlow {
       }
       draft = { ...draft, barberId: offer.barberId, offers: [offer] };
       const text = [
-        "Проверьте запись:",
+        "Проверь запись:",
         `${offer.barberName} · ${formatMinutes(offer.startMin)}`,
         this.salon.dayLabel(draft.date),
         formatPrice(offer.priceRub, offer.priceFrom),
@@ -132,8 +134,8 @@ export class SalonFlow {
     const settingsCard = await this.salon.card(user.id);
     const next = settingsCard.appointments[0];
     const lines = [
-      "Daddyson Barbershop",
-      "Бийск · два филиала · одна бонусная карта",
+      venue.copy.homeTitle,
+      venue.copy.homeSubtitle,
       "",
       `${user.firstName ?? "Гость"}, на карте ${settingsCard.balance} ₽ · кэшбэк ${settingsCard.cashbackPercent}%`,
     ];
@@ -308,7 +310,7 @@ export class SalonFlow {
     if (step === "phone") {
       const messages: OutMessage[] = [
         {
-          text: "Отправьте номер кнопкой «Отправить телефон». Если в базе салона уже есть карта на этот номер, привяжем её сюда.",
+          text: venue.copy.phoneAsk,
           requestContact: true,
         },
       ];
@@ -321,7 +323,7 @@ export class SalonFlow {
     if (step === "birthday") {
       const messages: OutMessage[] = [
         {
-          text: [note, "День рождения указывать не обязательно. Если укажете, в этот день начислим бонус на карту. Формат ДД.ММ.ГГГГ."]
+          text: [note, venue.copy.birthdayAsk]
             .filter(Boolean)
             .join("\n\n"),
           buttons: [[{ text: "Пропустить", callback: "bd:skip" }]],
@@ -338,10 +340,7 @@ export class SalonFlow {
     const messages: OutMessage[] = [];
     if (kind === "ask") {
       messages.push({
-        text: [
-          "Здравствуйте! Это Daddyson Barbershop в Бийске.",
-          "Здесь записывают к барберу, копят бонусы и открывают карту. Сначала коротко оформим её: согласие, телефон и имя. День рождения можно пропустить.",
-        ].join("\n"),
+        text: venue.copy.greeting,
       });
     }
     const text =
@@ -389,8 +388,8 @@ export class SalonFlow {
     const known = user.firstName?.trim() ?? "";
     const canKeep = known.length >= 2;
     const question = canKeep
-      ? `Как к вам обращаться? В профиле указано: ${known}. Напишите другое имя или оставьте это.`
-      : "Как к вам обращаться? Напишите имя и, если хотите, фамилию.";
+      ? venue.copy.nameAskKnown.replace("{name}", known)
+      : venue.copy.nameAsk;
     const messages: OutMessage[] = [
       {
         text: [note, question].filter(Boolean).join("\n\n"),
@@ -409,7 +408,7 @@ export class SalonFlow {
 
   private async finishProfile(user: UserRecord, inbound: InboundMessage, intro: boolean, note: string) {
     const home = await this.home(user);
-    const lead = [note, intro ? "Карта готова. Кэшбэк копится на обоих филиалах." : ""].filter(Boolean).join("\n\n");
+    const lead = [note, intro ? venue.copy.cardReady : ""].filter(Boolean).join("\n\n");
     const messages = [
       {
         ...home,
@@ -424,7 +423,7 @@ export class SalonFlow {
     const branches = await this.salon.branches();
     const messages: OutMessage[] = [
       {
-        text: "Выберите филиал",
+        text: "Выбери филиал",
         buttons: [
           ...branches.map((branch) => [{ text: branch.name, callback: `br:${branch.id}` }]),
           [{ text: "В меню", callback: "nav:menu" }],
@@ -461,7 +460,7 @@ export class SalonFlow {
     }
     const messages: OutMessage[] = [
       {
-        text: "Выберите услугу",
+        text: "Выбери услугу",
         buttons: [...buttons, ...nav, [{ text: "Филиал", callback: "nav:book" }]],
       },
     ];
@@ -478,13 +477,13 @@ export class SalonFlow {
       [{ text: "Любой мастер", callback: "ms:any" }],
       ...masters.map((master) => [
         {
-          text: `${master.name} · ${master.levelLabel} · ${formatPrice(master.priceRub, master.priceFrom)}`,
+          text: `${masterChoiceLabel(master.name, master.levelLabel)} · ${formatPrice(master.priceRub, master.priceFrom)}`,
           callback: `ms:${master.id}`,
         },
       ]),
       [{ text: "В меню", callback: "nav:menu" }],
     ];
-    const messages: OutMessage[] = [{ text: "Выберите мастера", buttons }];
+    const messages: OutMessage[] = [{ text: "Выбери мастера", buttons }];
     await this.persist(inbound, user.id, "book_master", draft);
     return { userId: user.id, messages };
   }
@@ -506,7 +505,7 @@ export class SalonFlow {
     }
     const messages: OutMessage[] = [
       {
-        text: "Выберите день",
+        text: "Выбери день",
         buttons: [...buttons, ...(pager.length ? [pager] : []), [{ text: "В меню", callback: "nav:menu" }]],
       },
     ];
@@ -529,7 +528,7 @@ export class SalonFlow {
     if (offers.length === 0) {
       const messages: OutMessage[] = [
         {
-          text: "В этот день свободных окон нет. Выберите другую дату.",
+          text: "В этот день свободных окон нет. Выбери другую дату.",
           buttons: [[{ text: "Другой день", callback: `ms:${draft.barberId}` }]],
         },
       ];
@@ -575,7 +574,7 @@ export class SalonFlow {
       const messages = [
         this.menuMessage(
           user,
-          `Вы записаны: ${when}, ${booked.appointment.service.name}, ${booked.appointment.barber.name}, ${booked.appointment.branch.name}.`,
+          `Готово, ты записан: ${when}, ${booked.appointment.service.name}, ${booked.appointment.barber.name}, ${booked.appointment.branch.name}.`,
         ),
       ];
       await this.persist(inbound, user.id, "menu", {});
@@ -632,7 +631,7 @@ export class SalonFlow {
     const card = await this.salon.card(user.id);
     const messages: OutMessage[] = [
       {
-        text: `На карте ${card.balance} ₽. Кэшбэк ${card.cashbackPercent}% с визита — общий для обоих филиалов. На кассе покажите QR в мини-приложении.`,
+        text: `На карте ${card.balance} ₽. Кэшбэк ${card.cashbackPercent}% с визита — общий на все филиалы. На кассе покажи QR в мини-приложении.`,
         buttons: [[{ text: "В меню", callback: "nav:menu" }]],
       },
     ];
@@ -644,7 +643,7 @@ export class SalonFlow {
     const card = await this.salon.card(user.id);
     const messages: OutMessage[] = [
       {
-        text: `Пригласите друга: обоим по ${card.referralBonus} ₽ после его первого визита.\n${card.referralLink}`,
+        text: `Приведи друга: обоим по ${card.referralBonus} ₽ после его первого визита.\n${card.referralLink}`,
         buttons: [[{ text: "В меню", callback: "nav:menu" }]],
       },
     ];

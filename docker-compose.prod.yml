@@ -44,8 +44,8 @@ services:
       CADDY_DOMAIN: ${CADDY_DOMAIN:?задайте CADDY_DOMAIN}
       VENUE_TIMEZONE: ${VENUE_TIMEZONE:?задайте VENUE_TIMEZONE}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?задайте TELEGRAM_BOT_TOKEN}
-      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?задайте TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_ADMIN_ID: ${TELEGRAM_ADMIN_ID:-500459806}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
@@ -110,7 +110,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL:?задайте DATABASE_URL}
-      BACKUP_DIR: /var/backups/daddyson
+      BACKUP_DIR: /var/backups/bro
       BACKUP_HOUR: ${BACKUP_HOUR:-3}
       VENUE_TIMEZONE: ${VENUE_TIMEZONE:?задайте VENUE_TIMEZONE}
       BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
@@ -118,9 +118,9 @@ services:
       BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
       BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
       BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
-      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-daddyson}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-bro}
     volumes:
-      - backups:/var/backups/daddyson
+      - backups:/var/backups/bro
     deploy:
       resources:
         limits:
@@ -136,12 +136,12 @@ services:
       - app
     environment:
       HEALTH_URL: http://app:3000/health/ready
-      BACKUP_DIR: /var/backups/daddyson
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?задайте TELEGRAM_BOT_TOKEN}
+      BACKUP_DIR: /var/backups/bro
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
       DEV_ALERT_CHAT_ID: ${DEV_ALERT_CHAT_ID:-500459806}
     volumes:
-      - backups:/var/backups/daddyson
+      - backups:/var/backups/bro
     deploy:
       resources:
         limits:

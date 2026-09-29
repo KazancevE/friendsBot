@@ -1,51 +1,10 @@
-import { readFileSync } from "node:fs";
 import { DateTime } from "luxon";
 import type { PrismaClient } from "@prisma/client";
-import {
-  ALL_LEVELS,
-  parsePriceCsv,
-  serviceSlug,
-  type BarberLevelName,
-} from "../src/salon/catalog.ts";
-import { SALON_DEFAULT_CASHBACK_PERCENT } from "../src/salon/money.ts";
+import { serviceSlug, type BarberLevelName } from "../src/salon/catalog.ts";
 import { newQrToken } from "../src/domain/qr-token.ts";
 import { telegramAdminIdsFromEnv } from "../src/prod/telegram-admins.ts";
 import { DEMO_GUEST_TELEGRAM_ID, SALON_STAFF_TELEGRAM_ID } from "../src/salon/service.ts";
-
-const BRANCHES = [
-  {
-    slug: "vasilyeva",
-    name: "Васильева 55",
-    address: "Бийск, ул. им. Героя Советского Союза Васильева, 55, 1 этаж",
-    sort: 1,
-  },
-  {
-    slug: "uchilishny",
-    name: "Училищный 7",
-    address: "Бийск, Училищный пер., 7",
-    sort: 2,
-  },
-] as const;
-
-const MASTERS: Array<{
-  branch: "vasilyeva" | "uchilishny";
-  name: string;
-  level: BarberLevelName;
-  rating: number | null;
-  ratingCount: number;
-  sort: number;
-}> = [
-  { branch: "vasilyeva", name: "Денис", level: "chef", rating: 5, ratingCount: 95, sort: 1 },
-  { branch: "vasilyeva", name: "Алексей", level: "senior", rating: 4.8, ratingCount: 11, sort: 2 },
-  { branch: "vasilyeva", name: "Севда", level: "senior", rating: 5, ratingCount: 43, sort: 3 },
-  { branch: "vasilyeva", name: "Владислав", level: "barber", rating: 5, ratingCount: 6, sort: 4 },
-  { branch: "uchilishny", name: "Арут", level: "chef", rating: 5, ratingCount: 30, sort: 1 },
-  { branch: "uchilishny", name: "Анна", level: "senior", rating: 5, ratingCount: 46, sort: 2 },
-  { branch: "uchilishny", name: "Роман", level: "barber", rating: 5, ratingCount: 31, sort: 3 },
-  { branch: "uchilishny", name: "Вячеслав", level: "barber", rating: 5, ratingCount: 17, sort: 4 },
-  { branch: "uchilishny", name: "Виктория", level: "barber", rating: 5, ratingCount: 2, sort: 5 },
-  { branch: "uchilishny", name: "Елена", level: "junior", rating: null, ratingCount: 0, sort: 6 },
-];
+import { venue } from "../src/venue/salon.ts";
 
 const setSetting = async (prisma: PrismaClient, key: string, value: string) => {
   await prisma.setting.upsert({
@@ -58,90 +17,102 @@ const setSetting = async (prisma: PrismaClient, key: string, value: string) => {
 export async function seedSalon(prisma: PrismaClient) {
   const already = await prisma.setting.findUnique({ where: { key: "salon.seeded" } });
   if (!already) {
-    await setSetting(prisma, "percent", String(SALON_DEFAULT_CASHBACK_PERCENT));
-    await setSetting(prisma, "venueTimezone", "Asia/Barnaul");
-    await setSetting(prisma, "haircutNudgeWeeks", "4");
-    await setSetting(prisma, "reminderLeadHours", JSON.stringify([24, 2]));
-    await setSetting(prisma, "referralBonusReferrer", "300");
-    await setSetting(prisma, "referralBonusReferee", "300");
-    await setSetting(prisma, "birthdayBonus", "500");
-    await setSetting(prisma, "bookingHoursStart", "10");
-    await setSetting(prisma, "bookingHoursEnd", "21");
+    await setSetting(prisma, "percent", String(venue.loyalty.cashbackPercent));
+    await setSetting(prisma, "venueTimezone", venue.timezone);
+    await setSetting(prisma, "haircutNudgeWeeks", String(venue.loyalty.haircutNudgeWeeks));
+    await setSetting(prisma, "reminderLeadHours", JSON.stringify(venue.loyalty.reminderLeadHours));
+    await setSetting(prisma, "referralBonusReferrer", String(venue.loyalty.referralReferrer));
+    await setSetting(prisma, "referralBonusReferee", String(venue.loyalty.referralReferee));
+    await setSetting(prisma, "birthdayBonus", String(venue.loyalty.birthdayBonus));
+    await setSetting(prisma, "bookingHoursStart", String(venue.openMin / 60));
+    await setSetting(prisma, "bookingHoursEnd", String(venue.closeMin / 60));
     await setSetting(prisma, "bookingSlotMinutes", "30");
+    await setSetting(prisma, "importWelcomeBonus", String(venue.loyalty.importWelcomeBonus));
     await prisma.contentPage.upsert({
       where: { slug: "contacts" },
-      create: {
-        slug: "contacts",
-        body: "Daddyson, Бийск. Два филиала, ежедневно 10:00–21:00. Запись в боте и в карте гостя.",
-        mapUrl: null,
-      },
-      update: {
-        body: "Daddyson, Бийск. Два филиала, ежедневно 10:00–21:00. Запись в боте и в карте гостя.",
-      },
+      create: { slug: "contacts", body: venue.copy.contactsBody, mapUrl: null },
+      update: { body: venue.copy.contactsBody },
     });
     await setSetting(prisma, "salon.seeded", "1");
   }
 
-  for (const branch of BRANCHES) {
+  for (const branch of venue.branches) {
     await prisma.branch.upsert({
       where: { slug: branch.slug },
-      create: { ...branch, openMin: 600, closeMin: 1260, city: "Бийск" },
-      update: { name: branch.name, address: branch.address, sort: branch.sort },
+      create: {
+        slug: branch.slug,
+        name: branch.name,
+        address: branch.address,
+        sort: branch.sort,
+        openMin: venue.openMin,
+        closeMin: venue.closeMin,
+        city: branch.city,
+      },
+      update: {
+        name: branch.name,
+        address: branch.address,
+        sort: branch.sort,
+        city: branch.city,
+        openMin: venue.openMin,
+        closeMin: venue.closeMin,
+      },
     });
   }
   const branches = await prisma.branch.findMany();
   const branchId = new Map(branches.map((branch) => [branch.slug, branch.id]));
 
   if ((await prisma.service.count()) === 0) {
-    const csv = readFileSync("prisma/data/prices_dikidi.csv", "utf8");
-    const parsed = parsePriceCsv(csv);
-    const services = new Map<string, { name: string; category: string; sort: number }>();
-    let sort = 0;
-    for (const row of parsed) {
-      if (!services.has(row.serviceName)) {
-        services.set(row.serviceName, { name: row.serviceName, category: row.category, sort });
-        sort += 1;
-      }
-    }
-    for (const service of services.values()) {
+    const services = venue.services.map((service, sort) => ({ ...service, sort }));
+    for (const service of services) {
       await prisma.service.create({
         data: { slug: serviceSlug(service.name), name: service.name, category: service.category, sort: service.sort },
       });
     }
     const serviceRows = await prisma.service.findMany();
     const serviceId = new Map(serviceRows.map((service) => [service.name, service.id]));
-    const prices = new Map<string, { serviceId: string; branchId: string; level: BarberLevelName; priceRub: number; priceFrom: boolean; durationMinutes: number; anyLevel: boolean }>();
-    for (const row of parsed) {
-      const sid = serviceId.get(row.serviceName);
-      const bid = branchId.get(row.branchSlug);
-      if (!sid || !bid) {
+    const levelsAtBranch = new Map<string, Set<BarberLevelName>>();
+    for (const master of venue.masters) {
+      const set = levelsAtBranch.get(master.branch) ?? new Set<BarberLevelName>();
+      set.add(master.level);
+      levelsAtBranch.set(master.branch, set);
+    }
+    const prices: Array<{
+      serviceId: string;
+      branchId: string;
+      level: BarberLevelName;
+      priceRub: number;
+      priceFrom: boolean;
+      durationMinutes: number;
+      anyLevel: boolean;
+    }> = [];
+    for (const service of venue.services) {
+      const sid = serviceId.get(service.name);
+      if (!sid) {
         continue;
       }
-      const levels: BarberLevelName[] = row.level === "any" ? ALL_LEVELS : [row.level];
-      for (const level of levels) {
-        const key = `${sid}|${bid}|${level}`;
-        const existing = prices.get(key);
-        if (existing && !existing.anyLevel) {
+      for (const slug of service.branches) {
+        const bid = branchId.get(slug);
+        const levels = levelsAtBranch.get(slug);
+        if (!bid || !levels) {
           continue;
         }
-        if (existing && row.level === "any") {
-          continue;
+        for (const level of levels) {
+          prices.push({
+            serviceId: sid,
+            branchId: bid,
+            level,
+            priceRub: service.priceRub,
+            priceFrom: false,
+            durationMinutes: service.durationMinutes,
+            anyLevel: false,
+          });
         }
-        prices.set(key, {
-          serviceId: sid,
-          branchId: bid,
-          level,
-          priceRub: row.priceRub,
-          priceFrom: row.priceFrom,
-          durationMinutes: row.durationMinutes,
-          anyLevel: row.level === "any",
-        });
       }
     }
-    await prisma.servicePrice.createMany({ data: [...prices.values()] });
+    await prisma.servicePrice.createMany({ data: prices });
   }
 
-  for (const master of MASTERS) {
+  for (const master of venue.masters) {
     const bid = branchId.get(master.branch);
     if (!bid) {
       continue;
@@ -154,8 +125,8 @@ export async function seedSalon(prisma: PrismaClient) {
           name: master.name,
           level: master.level,
           branchId: bid,
-          rating: master.rating,
-          ratingCount: master.ratingCount,
+          rating: null,
+          ratingCount: 0,
           sort: master.sort,
         },
       }));
@@ -165,11 +136,15 @@ export async function seedSalon(prisma: PrismaClient) {
         data: [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
           barberId: barber.id,
           weekday,
-          startMin: 600,
-          endMin: 1260,
+          startMin: venue.openMin,
+          endMin: venue.closeMin,
         })),
       });
     }
+  }
+
+  if ((await prisma.promo.count()) === 0) {
+    await prisma.promo.create({ data: { body: venue.examplePromo, showInFeed: true } });
   }
 
   const guest = await prisma.user.upsert({
@@ -181,7 +156,7 @@ export async function seedSalon(prisma: PrismaClient) {
       lastName: "Гость",
       balance: 740,
       qrToken: "demo-guest-qr",
-      referralCode: "DADDYSON",
+      referralCode: "BRO",
       phone: null,
       birthday: new Date("1992-04-15"),
     },
@@ -193,7 +168,7 @@ export async function seedSalon(prisma: PrismaClient) {
       telegramId: SALON_STAFF_TELEGRAM_ID,
       role: "admin",
       firstName: "Касса",
-      lastName: "Daddyson",
+      lastName: venue.brandName,
       qrToken: "salon-staff-qr",
       phone: null,
     },
@@ -219,42 +194,48 @@ export async function seedSalon(prisma: PrismaClient) {
 
   const demoBookings = await prisma.appointment.count({ where: { userId: guest.id } });
   if (demoBookings === 0) {
-    const zone = "Asia/Barnaul";
-    const haircut = await prisma.service.findFirst({ where: { name: "Стрижка" } });
-    const beard = await prisma.service.findFirst({ where: { name: "Оформление бороды и усов" } });
-    const denis = await prisma.barber.findFirst({ where: { name: "Денис" } });
-    const arut = await prisma.barber.findFirst({ where: { name: "Арут" } });
+    const zone = venue.timezone;
+    const haircut = await prisma.service.findFirst({ where: { name: "Мужская стрижка" } });
+    const beard = await prisma.service.findFirst({ where: { name: "Оформление бороды" } });
+    const lenina = branchId.get("lenina126");
+    const lazurnaya = branchId.get("lazurnaya19");
+    const ambassador = lenina
+      ? await prisma.barber.findFirst({ where: { branchId: lenina, level: "chef" } })
+      : null;
+    const top = lazurnaya
+      ? await prisma.barber.findFirst({ where: { branchId: lazurnaya, level: "senior" } })
+      : null;
     const tomorrow = DateTime.now().setZone(zone).plus({ days: 1 }).set({ hour: 12, minute: 0, second: 0, millisecond: 0 });
     const after = DateTime.now().setZone(zone).plus({ days: 2 }).set({ hour: 16, minute: 0, second: 0, millisecond: 0 });
-    if (haircut && denis) {
+    if (haircut && ambassador) {
       const price = await prisma.servicePrice.findFirst({
-        where: { serviceId: haircut.id, branchId: denis.branchId, level: denis.level },
+        where: { serviceId: haircut.id, branchId: ambassador.branchId, level: ambassador.level },
       });
       await prisma.appointment.create({
         data: {
           userId: guest.id,
-          branchId: denis.branchId,
+          branchId: ambassador.branchId,
           serviceId: haircut.id,
-          barberId: denis.id,
+          barberId: ambassador.id,
           startsAt: tomorrow.toJSDate(),
-          endsAt: tomorrow.plus({ minutes: price?.durationMinutes ?? 40 }).toJSDate(),
-          priceRub: price?.priceRub ?? 1900,
+          endsAt: tomorrow.plus({ minutes: price?.durationMinutes ?? 50 }).toJSDate(),
+          priceRub: price?.priceRub ?? 1800,
           status: "confirmed",
         },
       });
     }
-    if (beard && arut) {
+    if (beard && top) {
       const price = await prisma.servicePrice.findFirst({
-        where: { serviceId: beard.id, branchId: arut.branchId, level: arut.level },
+        where: { serviceId: beard.id, branchId: top.branchId, level: top.level },
       });
       await prisma.appointment.create({
         data: {
           userId: guest.id,
-          branchId: arut.branchId,
+          branchId: top.branchId,
           serviceId: beard.id,
-          barberId: arut.id,
+          barberId: top.id,
           startsAt: after.toJSDate(),
-          endsAt: after.plus({ minutes: price?.durationMinutes ?? 30 }).toJSDate(),
+          endsAt: after.plus({ minutes: price?.durationMinutes ?? 40 }).toJSDate(),
           priceRub: price?.priceRub ?? 1300,
           status: "confirmed",
         },

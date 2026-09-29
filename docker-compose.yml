@@ -3,13 +3,13 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-daddyson}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-daddyson}
-      POSTGRES_DB: ${POSTGRES_DB:-daddyson}
+      POSTGRES_USER: ${POSTGRES_USER:-bro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bro}
+      POSTGRES_DB: ${POSTGRES_DB:-bro}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-daddyson} -d ${POSTGRES_DB:-daddyson}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bro} -d ${POSTGRES_DB:-bro}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -21,10 +21,10 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${HOST_PORT:-3000}:3000"
     environment:
       PORT: 3000
-      DATABASE_URL: ${DATABASE_URL:-postgresql://daddyson:daddyson@postgres:5432/daddyson}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://bro:bro@postgres:5432/bro}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
       VENUE_TIMEZONE: ${VENUE_TIMEZONE:-Asia/Barnaul}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -39,8 +39,8 @@ services:
       MAX_BOT_URL: ${MAX_BOT_URL:-}
       MAX_ADMIN_USER_ID: ${MAX_ADMIN_USER_ID:-}
       ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-daddyson-demo}
-      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-daddyson-demo-session}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-bro-demo}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-bro-demo-session}
       ALLOW_DEMO_GUEST: ${ALLOW_DEMO_GUEST:-true}
     volumes:
       - uploads_data:/app/uploads

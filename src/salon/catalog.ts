@@ -1,3 +1,5 @@
+import { venue } from "../venue/salon.ts";
+
 export type BarberLevelName = "junior" | "barber" | "senior" | "chef";
 
 export type CatalogPriceRow = {
@@ -74,6 +76,7 @@ export const canonicalService = (raw: string): { name: string; category: Catalog
   return { name: raw.trim(), category: "extra" };
 };
 
+// Разбор старого CSV прайса. Демо BRO сидится из src/venue/salon.ts, не из этого формата.
 export const branchFromLabel = (label: string): { slug: CatalogPriceRow["branchSlug"]; name: string } | null => {
   if (label.includes("Василь")) {
     return { slug: "vasilyeva", name: "Васильева 55" };
@@ -125,10 +128,13 @@ export const serviceSlug = (name: string) => {
 };
 
 export const LEVEL_LABEL: Record<BarberLevelName, string> = {
-  junior: "Новый барбер",
-  barber: "Барбер",
-  senior: "Старший барбер",
-  chef: "Шеф-барбер",
+  junior: venue.levelLabels.junior,
+  barber: venue.levelLabels.barber,
+  senior: venue.levelLabels.senior,
+  chef: venue.levelLabels.chef,
 };
+
+export const masterChoiceLabel = (name: string, levelLabel: string) =>
+  name.trim() === levelLabel.trim() ? name : `${name} · ${levelLabel}`;
 
 export const ALL_LEVELS: BarberLevelName[] = ["junior", "barber", "senior", "chef"];

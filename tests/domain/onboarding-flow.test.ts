@@ -236,7 +236,7 @@ const harness = () => {
     },
     async branches() {
       branchCalls.push("branches");
-      return [{ id: "b1", name: "Васильева 55" }];
+      return [{ id: "b1", name: "Ленина 126" }];
     },
   };
   const flow = new SalonFlow(salon as unknown as SalonService);
@@ -254,7 +254,7 @@ const start = (payload?: string): InboundMessage => ({
 test("start walks greeting, both consents, phone, name, birthday, then the menu", async () => {
   const { flow, rows, branchCalls } = harness();
   const greet = await flow.handle(start("ref_ABCD1234"));
-  expect(greet.messages[0]?.text).toContain("Здравствуйте");
+  expect(greet.messages[0]?.text).toContain("Привет");
   expect(greet.messages[1]?.text).toContain("https://daddy.example/privacy");
   expect(greet.messages[1]?.text).toContain("https://daddy.example/consent");
   expect(greet.messages[1]?.buttons?.[0]?.[0]?.text).toBe("Согласен");
@@ -313,7 +313,7 @@ test("a later start=ref_ survives onboarding and a policy change does not ask fo
     firstName: "Пётр",
     startPayload: "ref_ABCD1234",
   });
-  expect(again.messages[0]?.text).toContain("Здравствуйте");
+  expect(again.messages[0]?.text).toContain("Привет");
   expect([...rows.values()][0]?.referredByUserId).toBe("friend");
 
   await flow.handle({ channel: "max", externalId: "7", callback: "pd:yes" });
@@ -327,12 +327,12 @@ test("a later start=ref_ survives onboarding and a policy change does not ask fo
   setPolicy("2027-01-01");
   const renew = await flow.handle({ channel: "max", externalId: "7", callback: "nav:book" });
   expect(renew.messages[0]?.text).toContain("обновилась");
-  expect(renew.messages[0]?.text).not.toContain("Здравствуйте");
+  expect(renew.messages[0]?.text).not.toContain("Привет");
   expect(branchCalls).toEqual([]);
   await flow.handle({ channel: "max", externalId: "7", callback: "pd:yes" });
   const promo = await flow.handle({ channel: "max", externalId: "7", callback: "pr:no" });
-  expect(promo.messages[0]?.text).toContain("Daddyson");
-  expect(promo.messages[0]?.text).not.toContain("Отправьте номер");
+  expect(promo.messages[0]?.text).toContain("BRO");
+  expect(promo.messages[0]?.text).not.toContain("Отправь номер");
   expect(branchCalls).toEqual([]);
   expect([...rows.values()][0]?.phone).toBe("+79990001122");
   expect(isPromoAudience([...rows.values()][0]!, "2027-01-01")).toBe(false);

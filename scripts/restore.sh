@@ -1,6 +1,6 @@
 #!/bin/sh
 # Восстановление из custom-дампа pg_dump.
-# Запуск из каталога салона: ./scripts/restore.sh /var/backups/daddyson/daily/daily-2026-09-29.dump
+# Запуск из каталога салона: ./scripts/restore.sh /var/backups/bro/daily/daily-2026-09-29.dump
 set -eu
 FILE=${1:?укажите файл дампа}
 COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.prod.yml}

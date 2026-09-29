@@ -7,7 +7,7 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { backupStamp, isWeeklySlot, pruneBackups, type BackupFile } from "../src/prod/retention.ts";
 import { log } from "../src/prod/log.ts";
 
-const dir = process.env.BACKUP_DIR ?? "/var/backups/daddyson";
+const dir = process.env.BACKUP_DIR ?? "/var/backups/bro";
 
 const stampOf = (name: string) => name.slice(name.indexOf("-") + 1, name.indexOf("-") + 11);
 
@@ -41,7 +41,7 @@ const upload = async (file: string) => {
       secretAccessKey: process.env.BACKUP_S3_SECRET_ACCESS_KEY ?? "",
     },
   });
-  const key = `${process.env.BACKUP_S3_PREFIX ?? "daddyson"}/${path.basename(path.dirname(file))}/${path.basename(file)}`;
+  const key = `${process.env.BACKUP_S3_PREFIX ?? "bro"}/${path.basename(path.dirname(file))}/${path.basename(file)}`;
   await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: createReadStream(file) }));
   log("info", "backup uploaded", { key });
 };

@@ -6,8 +6,9 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import { collectProblems, shouldSendAlert, type BackupStatus } from "../src/prod/alerts.ts";
 import { log } from "../src/prod/log.ts";
 import { devAlertChatId } from "../src/prod/telegram-admins.ts";
+import { venue } from "../src/venue/salon.ts";
 
-const backupDir = process.env.BACKUP_DIR ?? "/var/backups/daddyson";
+const backupDir = process.env.BACKUP_DIR ?? `/var/backups/${venue.id}`;
 const startedAt = Date.now();
 const cooldownMs = 30 * 60 * 1000;
 const stateFile = `${backupDir}/alert-state.json`;
@@ -76,7 +77,12 @@ export const watchOnce = async (now = Date.now()) => {
     }
     return problems;
   }
-  const text = `Daddyson: ${problems.join("; ")}`;
+  const text = `${venue.copy.alertPrefix}: ${problems.join("; ")}`;
+  if (!process.env.TELEGRAM_BOT_TOKEN) {
+    log("warn", "alert skipped, no telegram token", { problems });
+    await writeFile(stateFile, JSON.stringify({ lastKey: problems.join("|"), lastSentAt: now }));
+    return problems;
+  }
   await sendTelegram(text);
   await writeFile(stateFile, JSON.stringify({ lastKey: problems.join("|"), lastSentAt: now }));
   log("warn", "alert sent", { problems });

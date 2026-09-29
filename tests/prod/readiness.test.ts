@@ -32,6 +32,8 @@ const productionEnv = () => ({
 test("production mode rejects demo secrets and ignores other environments", () => {
   expect(productionProblems({ APP_ENV: "development", ADMIN_PASSWORD: "daddyson-demo" })).toEqual([]);
   expect(productionProblems(productionEnv())).toEqual([]);
+  expect(productionProblems({ ...productionEnv(), TELEGRAM_BOT_TOKEN: "" })).toEqual([]);
+  expect(productionProblems({ ...productionEnv(), ADMIN_PASSWORD: "bro-demo" }).join(" ")).toContain("ADMIN_PASSWORD");
   const problems = productionProblems({
     ...productionEnv(),
     ADMIN_PASSWORD: "daddyson-demo",
@@ -172,7 +174,7 @@ test("consent is explicit and anonymized profile drops personal fields", () => {
 });
 
 test("policy pages print the operator and escape markup", () => {
-  const operator = { legalName: "ИП <Тест>", inn: "7700000000", address: "Бийск", policyVersion: "2026-09-29" };
+  const operator = { legalName: "ИП <Тест>", inn: "7700000000", address: "Барнаул", policyVersion: "2026-09-29" };
   const privacy = privacyPolicyHtml(operator);
   const consent = consentPageHtml(operator);
   expect(privacy).toContain("ИП &lt;Тест&gt;");

@@ -22,6 +22,7 @@ import { parseVenueDay } from "../domain/venue-time.ts";
 import { appTimezone } from "../domain/week.ts";
 import type { Store } from "../store/types.ts";
 import { ALL_LEVELS, LEVEL_LABEL, type BarberLevelName } from "./catalog.ts";
+import { venue } from "../venue/salon.ts";
 import { formatAppointmentWhen, formatDayLabel, formatMinutes, formatPrice } from "./format.ts";
 import { channelIdsToMove, decidePhoneLink, type SalonChannelName } from "./identity.ts";
 import { commitClientImport, type ImportReport } from "./import-commit.ts";
@@ -844,14 +845,20 @@ export class SalonService {
     return {
       cashbackPercent: settings.percent,
       haircutNudgeWeeks: settings.haircutNudgeWeeks,
-      branches: branches.map((branch) => ({
-        id: branch.id,
-        slug: branch.slug,
-        name: branch.name,
-        address: branch.address,
-        city: branch.city,
-        hours: `${formatMinutes(branch.openMin)}–${formatMinutes(branch.closeMin)}`,
-      })),
+      branches: branches.map((branch) => {
+        const meta = venue.branches.find((item) => item.slug === branch.slug);
+        return {
+          id: branch.id,
+          slug: branch.slug,
+          name: branch.name,
+          address: branch.address,
+          city: branch.city,
+          hours: `${formatMinutes(branch.openMin)}–${formatMinutes(branch.closeMin)}`,
+          phone: venue.contacts.phone,
+          phoneExt: meta?.phoneExt ?? null,
+          note: meta?.note ?? "",
+        };
+      }),
       services: services.map((service) => ({
         id: service.id,
         name: service.name,
@@ -877,6 +884,16 @@ export class SalonService {
       })),
       levels: ALL_LEVELS.map((level) => ({ id: level, label: LEVEL_LABEL[level] })),
     };
+  }
+
+  async examplePromos() {
+    const rows = await this.prisma.promo.findMany({ orderBy: { createdAt: "desc" }, take: 20 });
+    return rows.map((row) => ({
+      id: row.id,
+      body: row.body,
+      createdAt: row.createdAt.toISOString(),
+      example: true,
+    }));
   }
 
   async reminderBatch(now = new Date()) {
@@ -988,7 +1005,7 @@ export class SalonService {
       }
       due.push({
         userId: user.id,
-        text: `Пора стричься — с прошлого визита прошло около ${settings.haircutNudgeWeeks} недель. Запишитесь в Daddyson.`,
+        text: venue.copy.nudge.replace("{weeks}", String(settings.haircutNudgeWeeks)),
         deliveries: this.deliveries(user.telegramId, user.maxUserId),
       });
     }

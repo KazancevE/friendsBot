@@ -41,7 +41,7 @@ const adminTelegramIds = telegramAdminIdsFromEnv(process.env.TELEGRAM_ADMIN_ID);
 const sessionSecret =
   process.env.ADMIN_SESSION_SECRET ||
   process.env.WEBHOOK_SECRET ||
-  "daddyson-demo-session";
+  "bro-demo-session";
 const webhookSecret =
   process.env.WEBHOOK_SECRET && process.env.WEBHOOK_SECRET.length > 0
     ? process.env.WEBHOOK_SECRET
@@ -83,9 +83,10 @@ const salonHttp = createSalonRoutes({
   store,
   notifier,
   adminLogin: process.env.ADMIN_LOGIN || "admin",
-  adminPassword: process.env.ADMIN_PASSWORD || "daddyson-demo",
+  adminPassword: process.env.ADMIN_PASSWORD || "bro-demo",
   sessionSecret,
   allowDemoGuest: process.env.ALLOW_DEMO_GUEST !== "false",
+  flow,
   telegramBotToken: telegramToken,
   maxBotToken: maxToken,
   admins: createAdminDirectory(prisma),

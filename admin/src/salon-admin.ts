@@ -25,8 +25,8 @@ export const bootSalonAdmin = (root: HTMLElement) => {
   root.innerHTML = `
     <div class="login">
       <form id="login">
-        <p class="mark">Daddyson</p>
-        <p class="muted">Кабинет сети. Данные остаются у вас.</p>
+        <img class="brand-logo" src="/site/logo.png" alt="BRO" />
+        <p class="muted">Кабинет сети BRO, Барнаул.</p>
         <div class="row"><input name="login" placeholder="Логин" value="admin" /></div>
         <div class="row"><input name="password" type="password" placeholder="Пароль" /></div>
         <button class="primary" type="submit">Войти</button>
@@ -93,6 +93,7 @@ const renderApp = async (root: HTMLElement) => {
             ["Мастера", renderMasters],
             ["Услуги", renderPrices],
             ["Рассылка", renderBroadcast],
+            ["Акции", renderPromos],
             ["Настройки", renderSettings],
             ["Уведомления", renderNotices],
             ["Доступ", renderAccounts],
@@ -101,7 +102,7 @@ const renderApp = async (root: HTMLElement) => {
   root.innerHTML = `
     <div class="shell">
       <nav>
-        <div class="mark" style="font-size:36px">Daddyson</div>
+        <img class="brand-logo small" src="/site/logo.png" alt="BRO" />
         ${tabs
           .map(([label], index) => `<button data-tab="${index}" class="${index === 0 ? "active" : ""}">${label}</button>`)
           .join("")}
@@ -539,8 +540,8 @@ type ImportPreview = {
 
 const renderImport = (view: HTMLElement) => {
   view.innerHTML = `
-    <h1>Импорт из DIKIDI</h1>
-    <p class="muted">CSV или Excel. Клиенты попадают в базу без сообщения в мессенджер. Повтор того же файла не плодит дубли: сверка по телефону.</p>
+    <h1>Импорт базы</h1>
+    <p class="muted">CSV или Excel из текущей записи. Клиенты попадают в базу без сообщения в мессенджер. Повтор того же файла не плодит дубли: сверка по телефону.</p>
     <div class="row">
       <input id="file" type="file" accept=".csv,.xlsx,.xls,text/csv" />
       <button id="parse" class="primary" type="button">Разобрать</button>
@@ -615,6 +616,13 @@ const renderImport = (view: HTMLElement) => {
     view.querySelector("#report")!.textContent = `Создано ${report.created}, обновлено ${report.updated}, без изменений ${report.unchanged}, ошибок ${report.errors}, записей ${report.bookingsCreated}. Сообщений: ${report.messagesSent}.`;
     await run();
   });
+};
+
+const renderPromos = async (view: HTMLElement) => {
+  const promos = (await api("/api/salon/admin/promos")) as Array<{ body: string }>;
+  view.innerHTML = `<h1>Акции</h1><p class="muted">Карточка ниже — пример. Скидка в записи и в чеке сама не считается.</p>${
+    promos.map((promo) => `<article class="panel"><p>${promo.body}</p></article>`).join("") || "<p class='muted'>Пока пусто</p>"
+  }`;
 };
 
 const renderNotices = async (view: HTMLElement) => {

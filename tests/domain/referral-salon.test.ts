@@ -14,7 +14,7 @@ test("referral pays both clients when the friend pays the first check", async ()
     phone: "79001110001",
   });
   const code = await ensureReferralCode(store, referrer.id);
-  expect(referralLink("daddyson_bot", code)).toBe(`https://t.me/daddyson_bot?start=ref_${code}`);
+  expect(referralLink("bro_bot", code)).toBe(`https://t.me/bro_bot?start=ref_${code}`);
   const referee = await registerGuest(store, {
     telegramId: 502n,
     firstName: "Пётр",
