@@ -2,6 +2,7 @@ import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import type { OutMessage } from "../salon/outbound.ts";
 import { SalonFlow } from "../salon/flow.ts";
 import type { Notifier } from "../salon/outbound.ts";
+import { telegramClientOptions } from "./telegram-client.ts";
 
 const markup = (message: OutMessage) => {
   if (message.requestContact) {
@@ -43,7 +44,11 @@ export const createSalonTelegramBot = (
   notifier: Notifier & { use?: (channel: "telegram", send: (externalId: string, message: OutMessage) => Promise<void>) => void },
   hooks?: { onNotice?: (text: string) => Promise<void> },
 ) => {
-  const bot = new Bot(token);
+  const client = telegramClientOptions();
+  if (client) {
+    console.log("telegram proxy: исходящие запросы к Bot API идут через TELEGRAM_PROXY");
+  }
+  const bot = new Bot(token, client ? { client } : undefined);
   notifier.use?.("telegram", async (externalId, message) => {
     await sendTelegram(bot, externalId, message);
   });

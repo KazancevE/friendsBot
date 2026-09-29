@@ -68,6 +68,7 @@ curl -s http://localhost:3000/health
 3. Узнайте свой id (например @userinfobot) и впишите в `TELEGRAM_ADMIN_ID` — туда придут новые и отменённые записи.
 4. Mini App: в BotFather укажите `https://ваш-домен/app/`. Локально без HTTPS бот ходит long polling, webhook не ставится.
 5. На HTTPS (`PUBLIC_URL` начинается с `https://`) процесс сам вызывает `setWebhook` на `/tg/webhook`. Если Telegram не открывает входящее соединение до VPS, поставьте `TELEGRAM_TRANSPORT=polling`: бот забирает апдейты сам, кнопка «Карта» всё равно ведёт на `PUBLIC_URL`.
+6. Если с сервера не открывается `api.telegram.org`, укажите `TELEGRAM_PROXY` (`socks5h://` или `http://`). Через него идут и polling, и отправка сообщений.
 
 ### MAX
 
