@@ -103,6 +103,8 @@ curl -s http://localhost:3000/health/ready
 
 Оба с `ALLOW_DEMO_GUEST=true` и `TELEGRAM_TRANSPORT=polling`. Это не боевой режим `APP_ENV=production`.
 
+У daddyson на сервере, и только там, лежит `docker-compose.override.yml`. Он подменяет публикацию порта на `127.0.0.1:3020:3000`, задаёт `extra_hosts` для `api.telegram.org` и выключает IPv6 в контейнере приложения. В git файла нет. У bro override нет: порт берётся из `HOST_PORT`. IP из `extra_hosts` в репозиторий не копировать.
+
 Порядок для следующего салона:
 
 1. Свободный порт: `ss -ltnp`. 3020 и 3021 заняты. В `docker-compose.yml` публикация `127.0.0.1:${HOST_PORT:-3000}:3000`, в `.env` на сервере свой `HOST_PORT`. Не биндить `0.0.0.0`.
