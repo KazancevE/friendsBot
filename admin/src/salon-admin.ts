@@ -158,7 +158,7 @@ const renderCalendar = async (view: HTMLElement) => {
     view.querySelector("#grid")!.innerHTML = `
       <div class="cal" style="--cols:${cols}">
         <div></div>
-        ${data.barbers.map((barber) => `<div class="cal-head"><strong>${barber.name}</strong><div class="muted">${barber.levelLabel}</div></div>`).join("")}
+        ${data.barbers.map((barber) => `<div class="cal-head"><strong>${barber.name}</strong>${barber.name === barber.levelLabel ? "" : `<div class="muted">${barber.levelLabel}</div>`}</div>`).join("")}
         <div class="hours">${hours.map((hour) => `<div>${hour}</div>`).join("")}</div>
         ${data.barbers
           .map((barber) => {
@@ -384,13 +384,13 @@ const renderMasters = async (view: HTMLElement) => {
     <form id="add" class="row panel">
       <input name="name" placeholder="Имя" required />
       <select name="branchId">${catalog.branches.map((branch) => `<option value="${branch.id}">${branch.name}</option>`).join("")}</select>
-      <select name="level"><option value="junior">Новый барбер</option><option value="barber">Барбер</option><option value="senior">Старший барбер</option><option value="chef">Шеф-барбер</option></select>
+      <select name="level"><option value="barber">Мастер</option><option value="senior">Топ-мастер</option><option value="chef">Амбассадор</option></select>
       <button class="primary" type="submit">Добавить</button>
     </form>
     <table>${masters
       .map(
         (master) =>
-          `<tr><td><strong>${master.name}</strong><div class="muted">${master.levelLabel} · ${master.branchName}</div></td><td>${master.schedules.map((row) => `${days[row.weekday]} ${row.label}`).join(", ")}</td></tr>`,
+          `<tr><td><strong>${master.name}</strong><div class="muted">${master.name === master.levelLabel ? master.branchName : `${master.levelLabel} · ${master.branchName}`}</div></td><td>${master.schedules.map((row) => `${days[row.weekday]} ${row.label}`).join(", ")}</td></tr>`,
       )
       .join("")}</table>`;
   view.querySelector("#add")?.addEventListener("submit", async (event) => {
