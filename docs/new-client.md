@@ -92,9 +92,9 @@ curl -s http://localhost:3000/health/ready
 
 Хост `root@194.67.101.109`. На нём уже nginx на 80/443. `scripts/bootstrap-ubuntu.sh` и `docker compose -f docker-compose.prod.yml up` здесь не запускать: боевой compose публикует 80 и 443 через Caddy и заденет чужие сайты.
 
-Не открывать `/opt/verstak` и не править `/etc/nginx/sites-available/crm.mieganalytics.online` (прокси на `127.0.0.1:43123`).
+Не открывать чужие `/opt/*` (`verstak`, `searchlead-agent`, `searchlead-bot`, чужой салон) и не править `/etc/nginx/sites-available/crm.mieganalytics.online` (прокси на `127.0.0.1:43123`; ACME у CRM — `/var/www/crm-acme`, не `/var/www/certbot`).
 
-Как выложены текущие демо (проверено по процессам, без чтения секретов):
+Как выложены текущие демо (перепроверено по SSH 2026-10-03: каталоги, `ss`, nginx, certbot renew, `/health/ready`; значения `.env` не читались, только имена ключей):
 
 | Салон | Каталог | Compose | Порт на хосте | Сайт |
 |---|---|---|---|---|

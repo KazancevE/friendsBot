@@ -9,7 +9,7 @@ alwaysApply: false
 
 Не делать:
 
-- не заходить в `/opt/verstak` и не править `crm.mieganalytics.online` (прокси на `127.0.0.1:43123`);
+- не заходить в чужие `/opt/*` (`verstak`, `searchlead-*`, чужой салон) и не править `crm.mieganalytics.online` (прокси на `127.0.0.1:43123`);
 - не поднимать `docker-compose.prod.yml` и не запускать `scripts/bootstrap-ubuntu.sh` — Caddy публикует 80/443;
 - не биндить приложение на `0.0.0.0`. Только `127.0.0.1:<свободный порт>:3000`. Порт проверить `ss -ltnp`, 3020 и 3021 заняты;
 - не печатать `.env`.
