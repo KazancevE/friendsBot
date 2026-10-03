@@ -77,7 +77,10 @@ const buildGuestHomeText = async (ctx: BotContext, user: NonNullable<BotContext[
   if (visit !== null) {
     lines.push(`🟢 В зале до ${formatMoscowTime(visit.endsAt)}`);
   } else {
-    lines.push("⚪ Не в зале — отметьтесь для игр");
+    const settings = await ctx.store.getSettings();
+    lines.push(
+      settings.allowGamesOutsideVisit ? "⚪ Не в зале" : "⚪ Не в зале — отметьтесь для игр",
+    );
   }
   if (overall.me.place !== null) {
     lines.push(`🏆 Неделя: #${overall.me.place} · ${overall.me.points} очков`);

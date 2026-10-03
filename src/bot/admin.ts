@@ -192,6 +192,8 @@ const formatSettings = (settings: Settings): string => {
     `Бонус регистрации: ${settings.registrationBonus}`,
     `Бонус на день рождения: ${settings.birthdayBonus}`,
     `Длина визита (часы): ${settings.visitHours}`,
+    `Игры вне заведения: ${settings.allowGamesOutsideVisit ? "вкл" : "выкл"}`,
+    `Античит игр: ${settings.gameAnticheatEnabled ? "вкл" : "выкл"}`,
     `Срок чековых бонусов (дни): ${settings.checkBonusTtlDays}`,
     `Срок подарочных/призовых (дни): ${settings.giftBonusTtlDays}`,
     `Срок купона — дефолт (дни): ${settings.couponClaimDaysDefault}`,

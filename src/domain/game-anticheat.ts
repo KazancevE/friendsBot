@@ -54,6 +54,12 @@ export async function evaluateGameSession(
   input: AnticheatInput,
 ): Promise<AnticheatVerdict> {
   const settings = await store.getSettings();
+  if (!settings.gameAnticheatEnabled) {
+    if (input.points < 1 || input.points > input.maxScorePerSession) {
+      return { accepted: false, reason: "score_cap", code: "score_cap" };
+    }
+    return { accepted: true };
+  }
   const profile = GAME_ANTICHEAT[input.slug] ?? defaultProfile();
 
   if (input.points < 1 || input.points > input.maxScorePerSession) {
@@ -77,10 +83,12 @@ export async function evaluateGameSession(
     return { accepted: false, reason: "flappy_impossible_score", code: "bad_session" };
   }
 
-  const hourAgo = DateTime.fromJSDate(input.now).minus({ hours: 1 }).toJSDate();
-  const sessionsLastHour = await store.countGameSessionsSince(input.userId, hourAgo);
-  if (sessionsLastHour >= settings.maxSessionsPerHour) {
-    return { accepted: false, reason: "sessions_per_hour", code: "rate_limit" };
+  if (settings.maxSessionsPerHour > 0) {
+    const hourAgo = DateTime.fromJSDate(input.now).minus({ hours: 1 }).toJSDate();
+    const sessionsLastHour = await store.countGameSessionsSince(input.userId, hourAgo);
+    if (sessionsLastHour >= settings.maxSessionsPerHour) {
+      return { accepted: false, reason: "sessions_per_hour", code: "rate_limit" };
+    }
   }
 
   const recent = await store.listRecentGameSessionLogs(input.userId, input.gameId, 2);

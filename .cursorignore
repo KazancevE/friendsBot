@@ -1,0 +1,21 @@
+# Не даём агенту Cursor читать тяжёлое — экономия токенов
+**/node_modules/
+**/dist/
+build/
+coverage/
+logs/
+*.log
+*.map
+*.tsbuildinfo
+**/package-lock.json
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp4
+*.pdf
+*.db
+*.sqlite
+.env*
+!.env.example

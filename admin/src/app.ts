@@ -1410,9 +1410,11 @@ const renderSettings = async (host: HTMLElement) => {
         ${settingLabel("registrationBonus", "Регистрация", `<input type="number" name="registrationBonus" value="${s.registrationBonus}" min="0" />`)}
         ${settingLabel("birthdayBonus", "ДР бонус", `<input type="number" name="birthdayBonus" value="${s.birthdayBonus}" min="0" />`)}
         ${settingLabel("visitHours", "Визит, ч", `<input type="number" name="visitHours" value="${s.visitHours}" min="1" max="24" />`)}
+        <label class="checkbox-row">${infoIcon(SETTING_HINTS.allowGamesOutsideVisit ?? "")}<input type="checkbox" name="allowGamesOutsideVisit" ${s.allowGamesOutsideVisit ? "checked" : ""} /><span>Игры вне заведения</span></label>
         ${settingLabel("referralBonusReferrer", "Реф. пригласившему", `<input type="number" name="referralBonusReferrer" value="${s.referralBonusReferrer}" min="0" />`)}
         ${settingLabel("referralBonusReferee", "Реф. другу", `<input type="number" name="referralBonusReferee" value="${s.referralBonusReferee}" min="0" />`)}
         ${settingLabel("maxSessionsPerHour", "Античит/ч", `<input type="number" name="maxSessionsPerHour" value="${s.maxSessionsPerHour}" min="0" />`)}
+        <label class="checkbox-row">${infoIcon(SETTING_HINTS.gameAnticheatEnabled ?? "")}<input type="checkbox" name="gameAnticheatEnabled" ${s.gameAnticheatEnabled ? "checked" : ""} /><span>Лимиты и античит игр</span></label>
         ${settingLabel("bookingHoursStart", "Бронь с", `<input type="time" name="bookingHoursStart" value="${encodedToTimeValue(s.bookingHoursStart)}" step="3600" />`)}
         ${settingLabel("bookingHoursEnd", "Бронь до", `<input type="time" name="bookingHoursEnd" value="${encodedToTimeValue(s.bookingHoursEnd)}" step="3600" />`)}
         ${settingLabel("bookingSlotMinutes", "Шаг, мин", `<input type="number" name="bookingSlotMinutes" value="${s.bookingSlotMinutes}" min="15" step="15" />`)}
@@ -1471,9 +1473,11 @@ const renderSettings = async (host: HTMLElement) => {
       registrationBonus: Number(data.get("registrationBonus")),
       birthdayBonus: Number(data.get("birthdayBonus")),
       visitHours: Number(data.get("visitHours")),
+      allowGamesOutsideVisit: data.get("allowGamesOutsideVisit") === "on",
       referralBonusReferrer: Number(data.get("referralBonusReferrer")),
       referralBonusReferee: Number(data.get("referralBonusReferee")),
       maxSessionsPerHour: Number(data.get("maxSessionsPerHour")),
+      gameAnticheatEnabled: data.get("gameAnticheatEnabled") === "on",
       bookingHoursStart: bookingStartHour,
       bookingHoursEnd: bookingEndHour,
       bookingSlotMinutes: Number(data.get("bookingSlotMinutes")),

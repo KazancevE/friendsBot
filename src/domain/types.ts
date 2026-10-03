@@ -25,6 +25,7 @@ export type Settings = {
   registrationBonus: number;
   birthdayBonus: number;
   visitHours: number;
+  allowGamesOutsideVisit: boolean;
   winnersCount: number;
   prizeTable: PrizePlace[];
   checkBonusTtlDays: number;
@@ -41,6 +42,7 @@ export type Settings = {
   birthdayNotifyDaysBefore: number;
   birthdayCouponTitle: string | null;
   birthdayCouponClaimDays: number;
+  gameAnticheatEnabled: boolean;
   maxSessionsPerHour: number;
   bookingHoursStart: number;
   bookingHoursEnd: number;

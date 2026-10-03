@@ -36,11 +36,35 @@ async function seed() {
   return { store, user, staff };
 }
 
-test("rejects score without visit", async () => {
+test("counts score without visit when outside play is allowed", async () => {
   const { store, user } = await seed();
+  const result = await submitScoreOrPractice(store, {
+    userId: user.id,
+    slug: "match3",
+    points: 100,
+    now,
+    ...sessionTiming(now, 15),
+  });
+  expect(result.counted).toBe(true);
+});
+
+test("rejects score without visit when outside play is disabled", async () => {
+  const { store, user } = await seed();
+  await store.updateSettings({ allowGamesOutsideVisit: false });
   await expect(
     submitScoreOrPractice(store, { userId: user.id, slug: "match3", points: 100, now, ...sessionTiming(now, 15) }),
   ).rejects.toMatchObject({ code: "no_visit" });
+});
+
+test("counts score without session timing when anticheat is off", async () => {
+  const { store, user } = await seed();
+  const result = await submitScoreOrPractice(store, {
+    userId: user.id,
+    slug: "match3",
+    points: 100,
+    now,
+  });
+  expect(result.counted).toBe(true);
 });
 
 test("master practice score succeeds without persisting", async () => {

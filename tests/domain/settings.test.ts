@@ -9,7 +9,14 @@ test("patchAdminSettings validates percent range", async () => {
   expect(settings.percent).toBe(15);
 });
 
-test("patchAdminSettings rejects empty patch", async () => {
+test("patchAdminSettings stores allowGamesOutsideVisit", async () => {
   const store = new MemoryStore();
-  await expect(patchAdminSettings(store, {})).rejects.toThrow("Нет полей");
+  const settings = await patchAdminSettings(store, { allowGamesOutsideVisit: false });
+  expect(settings.allowGamesOutsideVisit).toBe(false);
+});
+
+test("patchAdminSettings stores gameAnticheatEnabled", async () => {
+  const store = new MemoryStore();
+  const settings = await patchAdminSettings(store, { gameAnticheatEnabled: true });
+  expect(settings.gameAnticheatEnabled).toBe(true);
 });

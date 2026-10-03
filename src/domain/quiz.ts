@@ -1,5 +1,5 @@
 import { DomainError } from "./errors.ts";
-import { submitScoreOrPractice } from "./games.ts";
+import { assertGuestVisitForGames, submitScoreOrPractice } from "./games.ts";
 import type { QuizQuestionRecord, QuizSessionRecord } from "./types.ts";
 import type { Store } from "../store/types.ts";
 
@@ -63,10 +63,11 @@ export async function submitQuizAnswer(
   if (user === null || user.role !== "guest") {
     throw new DomainError("forbidden", "Викторина доступна гостям");
   }
-  const visit = await store.getActiveVisit(user.id, input.now);
-  if (visit === null) {
-    throw new DomainError("no_visit", "Викторина доступна во время визита");
-  }
+  await assertGuestVisitForGames(store, {
+    userId: user.id,
+    now: input.now,
+    message: "Викторина доступна во время визита",
+  });
   const session = await store.findQuizSessionById(input.sessionId);
   if (session === null || session.status !== "live") {
     throw new DomainError("not_found", "Сессия викторины недоступна");

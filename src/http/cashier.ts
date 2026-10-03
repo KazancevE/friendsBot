@@ -156,13 +156,17 @@ export const createCashierRoutes = ({ store, botToken }: CreateCashierRoutesPara
   app.post("/api/me", async (c) => {
     const now = new Date();
     const { user } = await actorFromRequest(c);
-    const visit = await store.getActiveVisit(user.id, now);
-    const checkedInToday = await store.hasCheckInToday(user.id, now);
+    const [visit, checkedInToday, settings] = await Promise.all([
+      store.getActiveVisit(user.id, now),
+      store.hasCheckInToday(user.id, now),
+      store.getSettings(),
+    ]);
     return c.json({
       id: user.id,
       role: user.role,
       balance: user.balance,
       visitActive: visit !== null,
+      allowGamesOutsideVisit: settings.allowGamesOutsideVisit,
       checkedInToday,
       visitEndsAt: visit?.endsAt.toISOString() ?? null,
     });

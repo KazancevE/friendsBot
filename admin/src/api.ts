@@ -289,6 +289,7 @@ export type SettingsView = {
   registrationBonus: number;
   birthdayBonus: number;
   visitHours: number;
+  allowGamesOutsideVisit: boolean;
   winnersCount: number;
   checkBonusTtlDays: number;
   giftBonusTtlDays: number;
@@ -302,6 +303,7 @@ export type SettingsView = {
   birthdayNotifyDaysBefore: number;
   birthdayCouponTitle: string | null;
   birthdayCouponClaimDays: number;
+  gameAnticheatEnabled: boolean;
   maxSessionsPerHour: number;
   bookingHoursStart: number;
   bookingHoursEnd: number;

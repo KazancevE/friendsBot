@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS: Settings = {
   registrationBonus: 500,
   birthdayBonus: 500,
   visitHours: 4,
+  allowGamesOutsideVisit: true,
   winnersCount: 3,
   prizeTable: [
     { place: 1, bonuses: 1000, couponTitle: null },
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   birthdayNotifyDaysBefore: 7,
   birthdayCouponTitle: null,
   birthdayCouponClaimDays: 14,
+  gameAnticheatEnabled: false,
   maxSessionsPerHour: 30,
   bookingHoursStart: 18,
   bookingHoursEnd: 26,

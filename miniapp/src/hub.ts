@@ -599,7 +599,8 @@ export const renderHub = async (root: HTMLElement, options: RenderHubOptions = {
 
   const role = options.role ?? me.data.role;
   const staffViewer = isStaffViewer(role, options.staffMode === true);
-  const visitLocked = !staffViewer && !me.data.visitActive;
+  const visitLocked =
+    !staffViewer && !me.data.visitActive && !(me.data.allowGamesOutsideVisit ?? true);
 
   const [games, rules, overallBoard, schedule] = await Promise.all([
     fetchGames(),

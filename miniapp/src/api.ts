@@ -7,6 +7,7 @@ export type Me = {
   readonly role: Role;
   readonly balance: number;
   readonly visitActive: boolean;
+  readonly allowGamesOutsideVisit: boolean;
   readonly checkedInToday: boolean;
   readonly visitEndsAt: string | null;
 };
@@ -88,6 +89,7 @@ const isMe = (value: unknown): value is Me => {
     isRole(value.role) &&
     typeof value.balance === "number" &&
     typeof value.visitActive === "boolean" &&
+    (typeof value.allowGamesOutsideVisit === "boolean" || value.allowGamesOutsideVisit === undefined) &&
     (typeof value.checkedInToday === "boolean" || value.checkedInToday === undefined) &&
     (typeof value.visitEndsAt === "string" || value.visitEndsAt === null || value.visitEndsAt === undefined)
   );

@@ -81,6 +81,7 @@ const SETTING_KEYS = [
   "registrationBonus",
   "birthdayBonus",
   "visitHours",
+  "allowGamesOutsideVisit",
   "winnersCount",
   "prizeTable",
   "checkBonusTtlDays",
@@ -97,6 +98,7 @@ const SETTING_KEYS = [
   "birthdayNotifyDaysBefore",
   "birthdayCouponTitle",
   "birthdayCouponClaimDays",
+  "gameAnticheatEnabled",
   "maxSessionsPerHour",
   "bookingHoursStart",
   "bookingHoursEnd",
@@ -158,6 +160,9 @@ export class PrismaStore implements Store {
       registrationBonus: Number(map.get("registrationBonus") ?? DEFAULT_SETTINGS.registrationBonus),
       birthdayBonus: Number(map.get("birthdayBonus") ?? DEFAULT_SETTINGS.birthdayBonus),
       visitHours: Number(map.get("visitHours") ?? DEFAULT_SETTINGS.visitHours),
+      allowGamesOutsideVisit:
+        (map.get("allowGamesOutsideVisit") ?? String(DEFAULT_SETTINGS.allowGamesOutsideVisit)) ===
+        "true",
       winnersCount: Number(map.get("winnersCount") ?? DEFAULT_SETTINGS.winnersCount),
       prizeTable: prizeRaw ? parsePrizeTable(prizeRaw) : structuredClone(DEFAULT_SETTINGS.prizeTable),
       checkBonusTtlDays: Number(map.get("checkBonusTtlDays") ?? DEFAULT_SETTINGS.checkBonusTtlDays),
@@ -197,6 +202,9 @@ export class PrismaStore implements Store {
       birthdayCouponClaimDays: Number(
         map.get("birthdayCouponClaimDays") ?? DEFAULT_SETTINGS.birthdayCouponClaimDays,
       ),
+      gameAnticheatEnabled:
+        (map.get("gameAnticheatEnabled") ?? String(DEFAULT_SETTINGS.gameAnticheatEnabled)) ===
+        "true",
       maxSessionsPerHour: Number(
         map.get("maxSessionsPerHour") ?? DEFAULT_SETTINGS.maxSessionsPerHour,
       ),
@@ -220,6 +228,7 @@ export class PrismaStore implements Store {
       registrationBonus: String(next.registrationBonus),
       birthdayBonus: String(next.birthdayBonus),
       visitHours: String(next.visitHours),
+      allowGamesOutsideVisit: String(next.allowGamesOutsideVisit),
       winnersCount: String(next.winnersCount),
       prizeTable: JSON.stringify(next.prizeTable),
       checkBonusTtlDays: String(next.checkBonusTtlDays),
@@ -238,6 +247,7 @@ export class PrismaStore implements Store {
       birthdayNotifyDaysBefore: String(next.birthdayNotifyDaysBefore),
       birthdayCouponTitle: next.birthdayCouponTitle ?? "",
       birthdayCouponClaimDays: String(next.birthdayCouponClaimDays),
+      gameAnticheatEnabled: String(next.gameAnticheatEnabled),
       maxSessionsPerHour: String(next.maxSessionsPerHour),
       bookingHoursStart: String(next.bookingHoursStart),
       bookingHoursEnd: String(next.bookingHoursEnd),

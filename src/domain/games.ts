@@ -34,6 +34,20 @@ const sessionTiming = (input: SubmitScoreParameters): SessionTiming | null => {
   return { startedAt: input.sessionStartedAt, endedAt: input.sessionEndedAt };
 };
 
+export const assertGuestVisitForGames = async (
+  store: Store,
+  input: { readonly userId: string; readonly now: Date; readonly message: string },
+) => {
+  const settings = await store.getSettings();
+  if (settings.allowGamesOutsideVisit) {
+    return;
+  }
+  const visit = await store.getActiveVisit(input.userId, input.now);
+  if (visit === null) {
+    throw new DomainError("no_visit", input.message);
+  }
+};
+
 const validateGameAndPoints = async (
   store: Store,
   slug: string,
@@ -55,10 +69,11 @@ export const submitScoreOrPractice = async (store: Store, input: SubmitScorePara
     throw new DomainError("not_found", "Гость не найден");
   }
   if (user.role === "guest") {
-    const visit = await store.getActiveVisit(user.id, input.now);
-    if (visit === null) {
-      throw new DomainError("no_visit", "Игры доступны во время визита в «Друзьях»");
-    }
+    await assertGuestVisitForGames(store, {
+      userId: user.id,
+      now: input.now,
+      message: "Игры доступны во время визита в «Друзьях»",
+    });
     const game = await validateGameAndPoints(store, input.slug, input.points);
     const timing = sessionTiming(input);
     const verdict = await evaluateGameSession(store, {

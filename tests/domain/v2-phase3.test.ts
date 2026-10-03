@@ -63,6 +63,7 @@ const seedQuiz = (store: MemoryStore) => {
 describe("v2 phase 3", () => {
   test("rejects score without session timing", async () => {
     const store = new MemoryStore();
+    await store.updateSettings({ gameAnticheatEnabled: true });
     const guest = await seedGuestWithVisit(store);
     await expect(
       submitScoreOrPractice(store, { userId: guest.id, slug: "match3", points: 100, now }),
@@ -71,6 +72,7 @@ describe("v2 phase 3", () => {
 
   test("rejects impossibly fast flappy score", async () => {
     const store = new MemoryStore();
+    await store.updateSettings({ gameAnticheatEnabled: true });
     const guest = await seedGuestWithVisit(store);
     const game = await store.findGameBySlug("flappy");
     expect(game).not.toBeNull();
