@@ -1,0 +1,17 @@
+---
+description: Как собрать демо нового салона от ветки daddyson по брифу.
+alwaysApply: false
+---
+
+# Новое демо салона
+
+Полный порядок — `docs/new-client.md`. Кратко:
+
+1. Заполнить `docs/clients/<slug>/brief.md` из `docs/clients/_template/brief.md`. Нет источника — поле пустое, не выдумывать.
+2. Ветка от `daddyson`: `git checkout daddyson && git checkout -b cursor/<slug>-<суффикс>`. Не от `bro` и не от `main`.
+3. Факты собрать так, как на `bro`: новый `src/venue/salon.ts` (филиалы, прайс, мастера, тексты). Сид `prisma/seed-salon.ts` читает его. На `daddyson` этого файла нет, прайс лежит в CSV.
+4. Заменить бренд в файлах из `npx tsx scripts/client-touchpoints.ts --list`: сайт, CSS (`site/styles.css`, `admin/src/salon.css`, `miniapp/src/salon.css`), тексты бота (`src/salon/flow.ts`, `src/salon/service.ts`, `src/domain/birthday.ts`), `.env.example`, оба compose, каталог бэкапа, `README.md`.
+5. `src/salon/catalog.ts` узнаёт только «Василь» и «Училищ». Чужой CSV туда не класть, пока парсер не расширен. На `bro` CSV удалён, сид берёт прайс из `src/venue/salon.ts`.
+6. Демо-пароль нового салона добавить в набор в `src/prod/config.ts`, старые демо-пароли не стирать.
+7. `npm test` и `npm run build`. Маркеры шаблона в продуктовых файлах — `npx tsx scripts/client-touchpoints.ts` — должны уйти. `docs/` скрипт не сканирует.
+8. PR черновиком в `daddyson`. В `main` не целиться и не мержить.
